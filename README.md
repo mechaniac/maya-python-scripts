@@ -1,6 +1,7 @@
 # maya-python-scripts
 
 **renderLayerSetter:** <br>
+tested on Maya 2017 / 2018
 (uses the legacy render layers)<br> <br>
 
 creates:<br>
@@ -12,7 +13,7 @@ one mask render layer per group in group renderset (def CreateMaskShaderNetworks
 <br>
 
 prerequisites:<br>
-all your geometry to render in one Group called 'renderset'. Each group will get its own mask<br>
+all your geometry to render in one Group called 'renderset'. Each direct child of 'renderset' will get its own mask<br>
 a camera called 'rendercam' (will be used for rendering)<br>
 DO NOT USE shader assignment per face: only per object!<br>
 
