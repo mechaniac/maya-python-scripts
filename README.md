@@ -1,7 +1,7 @@
 # maya-python-scripts
 
-<h3> renderLayerSetter: <br>
-<p> (uses the legacy render layers)<br> <br>
+**renderLayerSetter:** <br>
+(uses the legacy render layers)<br> <br>
 
 creates:<br>
 one render layer for each light in the scene <br>
