@@ -1,6 +1,6 @@
 # maya-python-scripts
 
-<h3> renderLayerSetter:  <br>
+<h3> renderLayerSetter: <br>
 <p> (uses the legacy render layers)<br> <br>
 
 creates:<br>
