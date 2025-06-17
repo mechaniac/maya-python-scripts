@@ -20,6 +20,70 @@ def safeDelete(o):
 	if m.objExists(o):
 		m.delete(o)           
 		
+		
+def delete_history_recursive(group_name):
+    """
+    Deletes construction history of the given group and all its descendants.
+    """
+    if not cmds.objExists(group_name):
+        cmds.warning(f"Object '{group_name}' does not exist.")
+        return
+
+    # Get all descendants and include the group itself
+    descendants = cmds.listRelatives(group_name, allDescendents=True, fullPath=True) or []
+    targets = [group_name] + descendants
+
+    # Filter objects with history
+    nodes_with_history = [obj for obj in targets if cmds.listHistory(obj, pruneDagObjects=True)]
+
+    for node in nodes_with_history:
+        try:
+            cmds.delete(node, constructionHistory=True)
+        except Exception as e:
+            cmds.warning(f"Could not delete history on {node}: {e}")	
+
+def optimizeMesh(objects):
+    """
+    Sets all mesh vertex normals under the given objects to face (one normal per face).
+    """
+    if not objects:
+        cmds.warning("No objects provided.")
+        return
+
+    all_meshes = []
+
+    for obj in objects:
+        if not cmds.objExists(obj):
+            cmds.warning(f"Object does not exist: {obj}")
+            continue
+
+        descendants = cmds.listRelatives(obj, allDescendents=True, fullPath=True) or []
+        descendants.append(obj)
+
+        for d in descendants:
+            shapes = cmds.listRelatives(d, shapes=True, fullPath=True) or []
+            for shape in shapes:
+                if cmds.nodeType(shape) == "mesh":
+                    all_meshes.append(shape)
+
+    all_meshes = list(set(all_meshes))
+
+    for mesh in all_meshes:
+        try:
+            # Select the mesh
+            cmds.select(mesh, replace=True)
+
+            # Unlock normals before editing
+            cmds.polyNormalPerVertex(unFreezeNormal=True)
+
+            # Set to face (aka split per face)
+            cmds.polySetToFaceNormal(mesh)
+
+        except Exception as e:
+            cmds.warning(f"Failed on {mesh}: {e}")
+
+    cmds.select(clear=True)
+
 
 def MirrorMeshes(path):
     """
@@ -75,44 +139,86 @@ def MirrorMeshes(path):
     print("Processed and mirrored path: {}".format(path))
     print("Final mesh: {}".format(final_mesh))
 
-    	
+def merge_meshes(mesh_list=None, group_name=None, output_name="merged_finalMesh"):
+    """
+    Merges a list of mesh transforms and all meshes under a group into a single mesh.
+
+    Args:
+        mesh_list (list): List of mesh transform names to include.
+        group_name (str): Optional group whose child meshes should be included.
+        output_name (str): Name of the final merged mesh object.
+    """
+    mesh_list = mesh_list or []
+    merged_meshes = list(mesh_list)  # make a copy
+
+    # Add meshes under the group if provided
+    if group_name and cmds.objExists(group_name):
+        descendants = cmds.listRelatives(group_name, allDescendents=True, fullPath=True) or []
+        for node in descendants:
+            shapes = cmds.listRelatives(node, shapes=True, fullPath=True) or []
+            for shape in shapes:
+                if cmds.nodeType(shape) == "mesh":
+                    parent = cmds.listRelatives(shape, parent=True, fullPath=True)[0]
+                    if parent not in merged_meshes:
+                        merged_meshes.append(parent)
+    elif group_name:
+        cmds.warning(f"Group not found: {group_name}")
+
+    # Filter to valid existing transforms
+    merged_meshes = [m for m in merged_meshes if cmds.objExists(m)]
+
+    if not merged_meshes:
+        cmds.warning("No valid meshes to merge.")
+        return None
+
+    # Merge
+    cmds.select(merged_meshes, replace=True)
+    merged = cmds.polyUnite(merged_meshes, mergeUVSets=True, centerPivot=True, ch=False)[0]
+
+    # Rename & clean up
+    if cmds.objExists(output_name):
+        cmds.delete(output_name)
+    merged = cmds.rename(merged, output_name)
+
+    cmds.delete(merged, constructionHistory=True)
+    cmds.xform(merged, centerPivots=True)
+
+    print(f"Merged mesh created: {merged}")
+    return merged
+        	
 def preRig(*args):
     m.delete(m.ls(type='constraint'))
     m.delete(m.ls(type='character'))
     mm.eval('DeleteAllChannels')
 
-    safeDelete('G_scaleGroup|G_meshes_toMirror1')
-    safeDelete('G_arm_leg_rght1')
-    safeDelete('G_scaleGroup|p_cc_hand')
-    safeDelete('G_scaleGroup|G_ccs')
-    safeDelete('G_scaleGroup|p_mesh_head_01|G_meshes_head_scale|G_eye_mirror1')
-    safeDelete('G_scaleGroup|p_mesh_head_01|G_meshes_head_scale|G_meshes_toMirror_Face1')
+    delete_history_recursive("G_MESHES")
+
+    safeDelete('G_MESHES|G_meshesRght1')
+    safeDelete('G_MESHES|TOES_RGHT1')
+    safeDelete('G_MESHES|HandEDIT1')
+    safeDelete('DELETEABLES')
+    safeDelete('bodylOOMIS')    
     
-    cmds.makeIdentity("G_scaleGroup", apply=True, translate=True, rotate=True, scale=True, normal=False)    
 
-    MirrorMeshes("G_scaleGroup|p_mesh_head_01|G_meshes_head_scale|G_eye_mirror")
-    MirrorMeshes("G_scaleGroup|p_mesh_head_01|G_meshes_head_scale|G_meshes_toMirror_Face")
-    MirrorMeshes("G_meshes_toMirror")
-    MirrorMeshes("G_arm_leg_rght")
-#    MirrorMeshes("G_eye_mirror_final")
-  
-    # torso
-    m.polyUnite("G_meshes_center", name="torso_and_neck")
-    cmds.delete("torso_and_neck", constructionHistory=True)		
-    cmds.polyMergeVertex( d=0.15 )    
-                
-    #COMBINE ALL                
-    m.polyUnite("torso_and_neck", "G_meshes_toMirror_Face_final","G_arm_leg_rght_final", "G_scaleGroup","G_meshes_toMirror_final", "G_eye_mirror_final", name="body")
-    cmds.delete("body", constructionHistory=True)			
-    safeDelete('G_scaleGroup')
-    safeDelete('G_doubleMeter')
-    safeDelete('G_loc_toes')
-    safeDelete('transform5')
-    safeDelete('G_eye_rght_final2')
-    safeDelete('G_eye_mirror_final2')
+    MirrorMeshes("G_MESHES|G_meshesRght")
+    MirrorMeshes("G_MESHES|HandEDIT")
+    MirrorMeshes("G_MESHES|TOES_RGHT")
+    
+    merge_meshes(
+        mesh_list=["G_meshesRght_final", "HandEDIT_final", "TOES_RGHT_final"],
+        group_name="G_MESHES",
+        output_name="finalCharacterMesh"
+    )
 
-def createRig(*args):    				
-    mm.eval('source "AdvancedSkeleton5Files/../AdvancedSkeleton5.mel";AdvancedSkeleton5;')
+    optimizeMesh(["finalCharacterMesh"])
+    
+    safeDelete('G_MESHES')
+
+#    optimizeMesh(["G_meshesRght_final"])
+
+  				
+def createRig(*args):
+    mm.eval('source "C:/ProgramData/Autodesk/ApplicationPlugins/AdvancedSkeleton/Contents/scripts/AdvancedSkeleton.mel"; AdvancedSkeleton;')
     mm.eval("asReBuildAdvancedSkeleton")
     
 def bindSkinToCharacter(*args):    
@@ -126,14 +232,9 @@ def bindSkinToCharacter(*args):
     parent_objects("p_mesh_head_01","Group|Geometry")
 
 def bindSkinAndHeadToCharacter(*args): 
-    cmds.polyUnite("body", "mesh_head_01", "mesh_eyes","mesh_ears", name="mesh_body")
-    cmds.delete("mesh_body", constructionHistory=True)		
-    m.skinCluster('mesh_body', 'Root_M')
-    
-    safeDelete("G_scaleGroup")
-    safeDelete("G_ccs")
-    
-    parent_objects("mesh_body","Group|Geometry")
+	
+    m.skinCluster('finalCharacterMesh', 'Root_M')
+    parent_objects("finalCharacterMesh","Group|Geometry")
 
 def select_all_curve_vertices(transform_node):
     # Check if the specified transform node exists
