@@ -211,7 +211,7 @@ def preRig(*args):
     )
 
     optimizeMesh(["finalCharacterMesh"])
-    
+    MirrorMeshes("G_eyes")
     safeDelete('G_MESHES')
 
 #    optimizeMesh(["G_meshesRght_final"])
@@ -545,31 +545,33 @@ def adjustControllersFingers(size):
 
 #mouthScripts
 def adjustControllersMouthUp(size):
-    select_all_curve_vertices('FKUpperLip_M')
-    m.scale(size,size,size)
-    cmds.select(clear=True)
-
-    select_all_curve_vertices('FKMouthCorner_R')
+    select_all_curve_vertices('FKupperlip_L')
     m.scale(size,size,size)
     cmds.select(clear=True)
     
-    select_all_curve_vertices('FKMouthCorner_L')
+    select_all_curve_vertices('FKupperlip_R')
+    m.scale(size,size,size)
+    cmds.select(clear=True)
+
+    select_all_curve_vertices('FKmouthCorner_L')
+    m.scale(size,size,size)
+    cmds.select(clear=True)
+    
+    select_all_curve_vertices('FKmouthCorner_R')
     m.scale(size,size,size)
     cmds.select(clear=True)    
 
 
 def adjustControllersMouthLow(size):
-    select_all_curve_vertices('FKLowerLip_M')
+    select_all_curve_vertices('FKLowerLip_L')
+    m.scale(size,size,size)
+    cmds.select(clear=True)
+    
+    select_all_curve_vertices('FKLowerLip_R')
     m.scale(size,size,size)
     cmds.select(clear=True)
 
-    select_all_curve_vertices('FKLowerLipOuter_R')
-    m.scale(size,size,size)
-    cmds.select(clear=True)
 
-    select_all_curve_vertices('FKLowerLipOuter_L')
-    m.scale(size,size,size)
-    cmds.select(clear=True)
     
 
 def adjustBrowsAndCheeks(size):
@@ -601,10 +603,10 @@ def adjustBrowsAndCheeks(size):
     
 def pushMouthVerticesForward():
 
-    select_specific_vertices('FKLowerLip_MShape', [0,1, 5,6,7])
+    select_specific_vertices('FKlowerlip_R_MShape', [0,1, 5,6,7])
     move_selected_vertices_with_soft_selection([10, 0, 0], 30)
     
-    select_specific_vertices('FKUpperLip_MShape', [1,2, 3,4,5])
+    select_specific_vertices('FKlowerlip_L_MShape', [1,2, 3,4,5])
     move_selected_vertices_with_soft_selection([10, 0, 0], 30)
     
     select_specific_vertices('FKLowerLipOuter_RShape', [0,4,5,6,7])
@@ -613,10 +615,10 @@ def pushMouthVerticesForward():
     select_specific_vertices('FKLowerLipOuter_LShape', [2,3,4,5,6])
     move_selected_vertices_with_soft_selection([10, 0, 0], 30)
     
-    select_specific_vertices('FKMouthCorner_RShape', [2,3,4,5,6])
+    select_specific_vertices('FKmouthCorner_RShape', [2,3,4,5,6])
     move_selected_vertices_with_soft_selection([10, 0, 0], 30)
 
-    select_specific_vertices('FKMouthCorner_LShape', [0,4,5,6,7])
+    select_specific_vertices('FKmouthCorner_LShape', [0,4,5,6,7])
     move_selected_vertices_with_soft_selection([10, 0, 0], 30)
 
 def adjustEyeBrowCheekControllers():
@@ -742,7 +744,7 @@ def createAllArmor(*args):
 def createArmor(*args):
     aSG = createArmorMaterial()
     rghtJoints = ["Shoulder", "Elbow", "Hip", "Knee"]
-    rghtEndJoints = ["Wrist", "Foot"]
+    rghtEndJoints = ["Wrist", "Ankle"]
     middleJoints = ["Root", "Spine1", "Chest", "Neck", "Head"]
 
     gL = m.group(n="LFT", em=True)
@@ -827,7 +829,7 @@ def mirrorArmor(*args):
         print("Error: create Armor first")
 
     rghtJoints = ["Shoulder", "Elbow", "Hip", "Knee"]
-    rghtEndJoints = ["Wrist", "Foot"]
+    rghtEndJoints = ["Wrist", "Ankle"]
     middleJoints = ["Root", "Spine1", "Chest", "Neck", "Head"]
 
     gL = m.select("LFT")
