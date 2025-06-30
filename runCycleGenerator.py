@@ -53,6 +53,7 @@ class RunCycleGenerator:
         
         # Arm Swing
         self.shoulder_down_y = -30.0
+        self.scapula_down_y = -12.0  # default value matching your UI
         self.scapula_z = 10.0
         self.elbow_z = 15.0
 
@@ -140,8 +141,13 @@ class RunCycleGenerator:
         cmds.frameLayout(label="Arms (Left / Right)", collapsable=True, marginWidth=10)
         two_column_row(
             "Shoulder Down (Y):", lambda: setattr(self, 'shoulder_down_y_field', cmds.floatField(value=self.shoulder_down_y)),
+            "Scapula Down (Y):", lambda: setattr(self, 'scapula_down_y_field', cmds.floatField(value=self.scapula_down_y))
+        )
+        two_column_row(
+            "Shoulder Swing (X):", lambda: setattr(self, 'shoulder_x_field', cmds.floatField(value=0)),
             "Scapula Swing (Z):", lambda: setattr(self, 'scapula_z_field', cmds.floatField(value=self.scapula_z))
         )
+
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(160, 80))
         cmds.text(label="Elbow Swing (Z, fwd only):")
         self.elbow_z_field = cmds.floatField(value=self.elbow_z)
@@ -205,6 +211,8 @@ class RunCycleGenerator:
         self.hip_side = cmds.floatField(self.hip_side_field, q=True, value=True)
         
         self.shoulder_down_y = cmds.floatField(self.shoulder_down_y_field, q=True, value=True)
+        self.scapula_down_y = cmds.floatField(self.scapula_down_y_field, q=True, value=True)
+
         self.scapula_z = cmds.floatField(self.scapula_z_field, q=True, value=True)
         self.elbow_z = abs(cmds.floatField(self.elbow_z_field, q=True, value=True))  # ensure non-negative
 
@@ -250,6 +258,7 @@ class RunCycleGenerator:
         self.head_sway = settings.get('head_sway', self.head_sway)
         self.head_swing = settings.get('head_swing', self.head_swing)
 
+        self.scapula_down_y = arm.get('scapula_down_y', self.scapula_down_y)
 
         self.hip_swing = settings.get('hip_swing', self.hip_swing)
         self.hip_side = settings.get('hip_side', self.hip_side)
@@ -281,7 +290,9 @@ class RunCycleGenerator:
                 'shoulder_down_y': self.shoulder_down_y,
                 'scapula_z': self.scapula_z,
                 'elbow_z': self.elbow_z,
-            }
+            },
+            'scapula_down_y': self.scapula_down_y
+
         }
         print("// RunCycleGenerator Settings:\n" + json.dumps(settings, indent=2))
         
@@ -431,10 +442,10 @@ class RunCycleGenerator:
         self.set_key(ctrl, 'translateY', three_quarter, -self.head_bounce)
         self.set_key(ctrl, 'translateY', end, self.head_bounce)
     
-        # Rock (rotateX): oscillation on 5ths
-        self.set_key(ctrl, 'rotateX', quarter, -self.head_rock)
-        self.set_key(ctrl, 'rotateX', mid, 0)
-        self.set_key(ctrl, 'rotateX', three_quarter, self.head_rock)
+        # Rock (rotateX): 3-key loop
+        self.set_key(ctrl, 'rotateX', start, -self.head_rock)
+        self.set_key(ctrl, 'rotateX', mid, self.head_rock)
+        self.set_key(ctrl, 'rotateX', end, -self.head_rock)
     
         # Lean (rotateZ): static offset
         self.set_key(ctrl, 'rotateZ', start, self.head_lean)
@@ -456,6 +467,12 @@ class RunCycleGenerator:
             scapula = self.arm_ctrls[f'scapula_{side}']
             shoulder = self.arm_ctrls[f'shoulder_{side}']
             elbow = self.arm_ctrls[f'elbow_{side}']
+            
+            # Scapula Down (translateY)
+            cmds.setAttr(f"{scapula}.translateY", self.scapula_down_y)
+            self.set_key(scapula, 'translateY', start, self.scapula_down_y)
+            self.set_key(scapula, 'translateY', end, self.scapula_down_y)
+
 
             # Static arm down
             cmds.setAttr(f"{shoulder}.rotateY", self.shoulder_down_y)
