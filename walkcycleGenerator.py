@@ -12,10 +12,12 @@ class WalkCycleTool:
         self.root_bounce = 1.5
         self.root_sway = 2.0
         self.root_rock = 1.0
+        self.foot_raise = 10.0  # new default value
+
 
         self.arm_params = {
             'shoulder_down_y': -30.0,
-            'scapula_down': -15.0,  # ?? NEW
+            'scapula_down': -15.0,  # 🔹 NEW
             'scapula_z': 8.0,
             'shoulder_z': 20.0,
             'shoulder_x': 0.0,
@@ -23,12 +25,15 @@ class WalkCycleTool:
             'wrist_z': 6.0,
         }
 
+        self.root_rock_offset = 0.0  # 🔹 NEW
+        
         self.upper_body_params = {
-            'spine1': {'name': 'FKSpine1_M', 'rx': 5.0, 'ry': 2.0, 'rz': 1.5},  # ?? NEW
-            'chest':  {'name': 'FKChest_M',  'rx': 7.0, 'ry': 3.0, 'rz': 2.0},
-            'neck':   {'name': 'FKNeck_M',   'rx': 4.0, 'ry': 2.0, 'rz': 1.0},
-            'head':   {'name': 'FKHead_M',   'rx': 3.0, 'ry': 1.5, 'rz': 1.5},
+            'spine1': {'name': 'FKSpine1_M', 'rx': 5.0, 'ry': 2.0, 'rz': 1.5, 'rz_offset': 0.0},
+            'chest':  {'name': 'FKChest_M',  'rx': 7.0, 'ry': 3.0, 'rz': 2.0, 'rz_offset': 0.0},
+            'neck':   {'name': 'FKNeck_M',   'rx': 4.0, 'ry': 2.0, 'rz': 1.0, 'rz_offset': 0.0},
+            'head':   {'name': 'FKHead_M',   'rx': 3.0, 'ry': 1.5, 'rz': 1.5, 'rz_offset': 0.0},
         }
+
 
 
         self.frames_stride_halved = []
@@ -72,6 +77,10 @@ class WalkCycleTool:
     
         cmds.text(label="Hip Sway (rotateY)")
         self.hip_sway_field = cmds.floatField(value=self.hip_sway_lr)
+        
+        cmds.text(label="Foot Raise (rotateX)")
+        self.foot_raise_field = cmds.floatField(value=self.foot_raise)
+
     
         cmds.setParent('..')
         cmds.setParent('..')
@@ -88,6 +97,10 @@ class WalkCycleTool:
     
         cmds.text(label="Rock (rotateX)")
         self.root_rock_field = cmds.floatField(value=self.root_rock)
+        
+        cmds.text(label="Rock Offset (rotateZ)")
+        self.root_rock_offset_field = cmds.floatField(value=self.root_rock_offset)
+
     
         cmds.setParent('..')
         cmds.setParent('..')
@@ -109,7 +122,11 @@ class WalkCycleTool:
             self.upper_body_params[key]['ry_field'] = cmds.floatField(value=self.upper_body_params[key]['ry'])
             
             cmds.text(label="Rotate Z:")
-            self.upper_body_params[key]['rz_field'] = cmds.floatField(value=self.upper_body_params[key]['rz'])  # ?? NEW
+            self.upper_body_params[key]['rz_field'] = cmds.floatField(value=self.upper_body_params[key]['rz'])  # 🔹 NEW
+            
+            cmds.text(label="Offset Z:")
+            self.upper_body_params[key]['rz_offset_field'] = cmds.floatField(value=self.upper_body_params[key]['rz_offset'])
+
 
             cmds.setParent('..')
         cmds.setParent('..')
@@ -153,36 +170,16 @@ class WalkCycleTool:
         cmds.setParent('..')
     
         cmds.showWindow(self.window)
-
+        
     def resolve_node_case_insensitive(self, name):
         """
-        Resolves a node name, supporting case-insensitive search and name aliasing.
+        Tries to find a scene node that matches the given name (case-insensitive).
+        Returns the actual name if found, otherwise returns None.
         """
-        aliases = {
-            'fkscapula_r': 'fkscapula1_r',
-            'fkscapula_l': 'fkscapula1_l',
-        }
-    
-        name_lower = name.lower()
-    
-        # Try alias lookup first
-        if name_lower in aliases:
-            alias_target = aliases[name_lower]
-        else:
-            alias_target = name_lower
-    
         all_nodes = cmds.ls(type="transform") + cmds.ls(type="joint") + cmds.ls(type="locator")
-    
-        # First try exact case-insensitive match of alias
         for node in all_nodes:
-            if node.lower() == alias_target:
+            if node.lower() == name.lower():
                 return node
-    
-        # Then try original name (maybe it's valid)
-        for node in all_nodes:
-            if node.lower() == name_lower:
-                return node
-    
         return None
 
 
@@ -197,13 +194,9 @@ class WalkCycleTool:
         all_controls += [ctrl.replace('_R', '_L') for ctrl in self.arm_ctrls.values()]
     
         for ctrl in all_controls:
-            resolved = self.resolve_node_case_insensitive(ctrl)
-            if not resolved:
-                continue
             for attr in attrs:
-                if cmds.attributeQuery(attr, node=resolved, exists=True):
-                    cmds.cutKey(resolved, at=attr, time=(start, end))
-
+                if cmds.objExists(ctrl) and cmds.attributeQuery(attr, node=ctrl, exists=True):
+                    cmds.cutKey(ctrl, at=attr, time=(start, end))
 
 
     def create_walk_cycle(self, *args):
@@ -216,11 +209,17 @@ class WalkCycleTool:
         self.root_bounce = cmds.floatField(self.root_bounce_field, query=True, value=True)
         self.root_sway = cmds.floatField(self.root_sway_field, query=True, value=True)
         self.root_rock = cmds.floatField(self.root_rock_field, query=True, value=True)
+        self.root_rock_offset = cmds.floatField(self.root_rock_offset_field, query=True, value=True)
+        self.foot_raise = cmds.floatField(self.foot_raise_field, query=True, value=True)
+
+
 
         for key in self.upper_body_params:
             self.upper_body_params[key]['rx'] = cmds.floatField(self.upper_body_params[key]['rx_field'], query=True, value=True)
             self.upper_body_params[key]['ry'] = cmds.floatField(self.upper_body_params[key]['ry_field'], query=True, value=True)
             self.upper_body_params[key]['rz'] = cmds.floatField(self.upper_body_params[key]['rz_field'], query=True, value=True)
+            self.upper_body_params[key]['rz_offset'] = cmds.floatField(self.upper_body_params[key]['rz_offset_field'], query=True, value=True)
+
 
 
         for key in ['shoulder_down_y', 'scapula_z', 'shoulder_z', 'elbow_z', 'wrist_z']:
@@ -234,6 +233,7 @@ class WalkCycleTool:
         self.clear_keys()
         self.compute_frame_data()
         self.set_feet_keys()
+        self.set_foot_raise_keys()
         self.set_hip_swinger_keys()
         self.set_spine_keys()
         self.set_root_keys()
@@ -255,22 +255,9 @@ class WalkCycleTool:
         ]
 
     def set_key(self, obj, attr, time, value):
-        if not cmds.objExists(obj):
-            resolved = self.resolve_node_case_insensitive(obj)
-            if resolved:
-                obj = resolved
-            else:
-                print(f"?? Skipping key: {obj}.{attr} (not found)")
-                return
-    
-        if not cmds.attributeQuery(attr, node=obj, exists=True):
-            print(f"?? Skipping key: {obj}.{attr} (attr not found)")
-            return
-    
         cmds.currentTime(time, edit=True)
         cmds.setAttr(f"{obj}.{attr}", value)
         cmds.setKeyframe(obj, attribute=attr, t=time)
-
 
     def apply_keyframe_pattern(self, obj_attr, values_per_frame):
         obj, attr = obj_attr
@@ -308,21 +295,64 @@ class WalkCycleTool:
         root = self.limbs['root']
         start, mid, end = [f[0] for f in self.frames_stride_halved]
 
-        # Bounce and rock: 5 keys
-        for attr, up, down in [('translateY', self.root_bounce, -self.root_bounce),
-                               ('rotateX', self.root_rock, -self.root_rock)]:
+        # Bounce (translateY only)
+        for attr, up, down in [('translateY', self.root_bounce, -self.root_bounce)]:
             self.set_key(root, attr, start, up)
             self.set_key(root, attr, self.quarter, down)
             self.set_key(root, attr, mid, up)
             self.set_key(root, attr, self.three_quarter, down)
             self.set_key(root, attr, end, up)
+
+            
+            rx_vals = [self.root_rock + self.root_rock_offset, -self.root_rock + self.root_rock_offset,
+                       self.root_rock + self.root_rock_offset, -self.root_rock + self.root_rock_offset,
+                       self.root_rock + self.root_rock_offset]
+            
+            times = [start, self.quarter, mid, self.three_quarter, end]
+            for t, v in zip(times, rx_vals):
+                self.set_key(root, 'rotateX', t, v)
+
+
         
         # Sway: only 3 keys
         self.set_key(root, 'rotateY', start, self.root_sway)
         self.set_key(root, 'rotateY', mid, -self.root_sway)
         self.set_key(root, 'rotateY', end, self.root_sway)
 
+    def set_foot_raise_keys(self):
+        leg_l = self.limbs['left_leg']
+        leg_r = self.limbs['right_leg']
+        start, mid, end = [f[0] for f in self.frames_stride_halved]
+    
+        # 5ths
+        quarter = self.quarter
+        three_quarter = self.three_quarter
+        fifth1 = start
+        fifth2 = quarter
+        fifth3 = mid
+        fifth4 = three_quarter
+        fifth5 = end
+    
+        # IKLeg_L keys
+        self.set_key(leg_l, 'rotateX', fifth1, 0)
+        self.set_key(leg_l, 'rotateX', fifth2, 0)
+        self.set_key(leg_l, 'rotateX', (fifth2 + fifth3) / 2.0, self.foot_raise)
+        self.set_key(leg_l, 'rotateX', fifth3, 0)
+        self.set_key(leg_l, 'rotateX', fifth4, 0)
+        self.set_key(leg_l, 'rotateX', fifth5, 0)
+    
+        # IKLeg_R keys
+        self.set_key(leg_r, 'rotateX', fifth1, 0)
+        self.set_key(leg_r, 'rotateX', fifth2, 0)
+        self.set_key(leg_r, 'rotateX', fifth3, 0)
+        self.set_key(leg_r, 'rotateX', fifth4, 0)
+        self.set_key(leg_r, 'rotateX', (fifth4 + fifth5) / 2.0, self.foot_raise)
+        self.set_key(leg_r, 'rotateX', fifth5, 0)
+
+
     def set_spine_keys(self):
+        times = [f[0] for f in self.frames_stride_halved]  # ← Add this line
+        
         for key, data in self.upper_body_params.items():
             ctrl = data['name']
             rx_vals = [data['rx'], -data['rx'], data['rx']]
@@ -331,47 +361,38 @@ class WalkCycleTool:
             self.apply_keyframe_pattern((ctrl, 'rotateY'), ry_vals)
             # Rock (rotateZ)
             rz = data['rz']
-            times = [self.frames_stride_halved[0][0], self.quarter, self.frames_stride_halved[1][0], self.three_quarter, self.frames_stride_halved[2][0]]
-            values = [ rz, -rz,  rz, -rz,  rz ]
+            offset = data.get('rz_offset', 0)
+            values = [ rz + offset, -rz + offset,  rz + offset, -rz + offset,  rz + offset ]
             for t, v in zip(times, values):
                 self.set_key(ctrl, 'rotateZ', t, v)
 
 
     def set_right_arm_keys(self):
         start, mid, end = [f[0] for f in self.frames_stride_halved]
-        shoulder = self.resolve_node_case_insensitive(self.arm_ctrls['shoulder'])
-        scapula = self.resolve_node_case_insensitive(self.arm_ctrls['scapula'])
-        elbow = self.resolve_node_case_insensitive(self.arm_ctrls['elbow'])
-        wrist = self.resolve_node_case_insensitive(self.arm_ctrls['wrist'])
-    
         static_ry = self.arm_params['shoulder_down_y']
+        cmds.setAttr(f"{self.arm_ctrls['shoulder']}.rotateY", static_ry)
+        self.set_key(self.arm_ctrls['shoulder'], 'rotateY', start, static_ry)
+        self.set_key(self.arm_ctrls['shoulder'], 'rotateY', end, static_ry)
+        scapula_ctrl = self.arm_ctrls['scapula']
         scapula_down = self.arm_params['scapula_down']
-    
-        if shoulder:
-            cmds.setAttr(f"{shoulder}.rotateY", static_ry)
-            self.set_key(shoulder, 'rotateY', start, static_ry)
-            self.set_key(shoulder, 'rotateY', end, static_ry)
-            x_vals = [self.arm_params['shoulder_x'], -self.arm_params['shoulder_x'], self.arm_params['shoulder_x']]
-            self.apply_keyframe_pattern((shoulder, 'rotateX'), x_vals)
-    
-        if scapula:
-            cmds.setAttr(f"{scapula}.rotateY", scapula_down)
-            self.set_key(scapula, 'rotateY', start, scapula_down)
-            self.set_key(scapula, 'rotateY', end, scapula_down)
-    
-        for key, ctrl_raw in zip(['scapula_z', 'shoulder_z', 'elbow_z', 'wrist_z'],
-                                 ['scapula', 'shoulder', 'elbow', 'wrist']):
+        cmds.setAttr(f"{scapula_ctrl}.rotateY", scapula_down)
+        self.set_key(scapula_ctrl, 'rotateY', start, scapula_down)
+        self.set_key(scapula_ctrl, 'rotateY', end, scapula_down)
+
+        # Animate Shoulder X
+        x_vals = [self.arm_params['shoulder_x'], -self.arm_params['shoulder_x'], self.arm_params['shoulder_x']]
+        self.apply_keyframe_pattern((self.arm_ctrls['shoulder'], 'rotateX'), x_vals)
+
+        
+        for key, ctrl in zip(['scapula_z', 'shoulder_z', 'elbow_z', 'wrist_z'],
+                             ['scapula', 'shoulder', 'elbow', 'wrist']):
             val = self.arm_params[key]
-            ctrl = self.resolve_node_case_insensitive(self.arm_ctrls[ctrl_raw])
-            if not ctrl:
-                continue
             if key == 'elbow_z':
                 val = max(val, 0)
                 values = [0, val, 0]
             else:
                 values = [val, -val, val]
-            self.apply_keyframe_pattern((ctrl, 'rotateZ'), values)
-
+            self.apply_keyframe_pattern((self.arm_ctrls[ctrl], 'rotateZ'), values)
 
 
 
@@ -380,40 +401,30 @@ class WalkCycleTool:
     
     def set_left_arm_keys(self):
         start, mid, end = [f[0] for f in self.frames_stride_halved]
-        # Resolve L controls
-        shoulder = self.resolve_node_case_insensitive(self.arm_ctrls['shoulder'].replace('_R', '_L'))
-        scapula = self.resolve_node_case_insensitive(self.arm_ctrls['scapula'].replace('_R', '_L'))
-        elbow = self.resolve_node_case_insensitive(self.arm_ctrls['elbow'].replace('_R', '_L'))
-        wrist = self.resolve_node_case_insensitive(self.arm_ctrls['wrist'].replace('_R', '_L'))
-    
         static_ry = self.arm_params['shoulder_down_y']
+        cmds.setAttr(f"{self.arm_ctrls['shoulder'].replace('_R', '_L')}.rotateY", static_ry)
+        self.set_key(self.arm_ctrls['shoulder'].replace('_R', '_L'), 'rotateY', start, static_ry)
+        self.set_key(self.arm_ctrls['shoulder'].replace('_R', '_L'), 'rotateY', end, static_ry)
+        scapula_ctrl = self.arm_ctrls['scapula'].replace('_R', '_L')
         scapula_down = self.arm_params['scapula_down']
+        cmds.setAttr(f"{scapula_ctrl}.rotateY", scapula_down)
+        self.set_key(scapula_ctrl, 'rotateY', start, scapula_down)
+        self.set_key(scapula_ctrl, 'rotateY', end, scapula_down)
+
+        # Animate Shoulder X (mirrored)
+        x_vals = [-self.arm_params['shoulder_x'], self.arm_params['shoulder_x'], -self.arm_params['shoulder_x']]
+        self.apply_keyframe_pattern((self.arm_ctrls['shoulder'].replace('_R', '_L'), 'rotateX'), x_vals)
+
     
-        if shoulder:
-            cmds.setAttr(f"{shoulder}.rotateY", static_ry)
-            self.set_key(shoulder, 'rotateY', start, static_ry)
-            self.set_key(shoulder, 'rotateY', end, static_ry)
-            x_vals = [-self.arm_params['shoulder_x'], self.arm_params['shoulder_x'], -self.arm_params['shoulder_x']]
-            self.apply_keyframe_pattern((shoulder, 'rotateX'), x_vals)
-    
-        if scapula:
-            cmds.setAttr(f"{scapula}.rotateY", scapula_down)
-            self.set_key(scapula, 'rotateY', start, scapula_down)
-            self.set_key(scapula, 'rotateY', end, scapula_down)
-    
-        for key, ctrl_raw in zip(['scapula_z', 'shoulder_z', 'elbow_z', 'wrist_z'],
-                                 ['scapula', 'shoulder', 'elbow', 'wrist']):
+        for key, ctrl in zip(['scapula_z', 'shoulder_z', 'elbow_z', 'wrist_z'],
+                             ['scapula', 'shoulder', 'elbow', 'wrist']):
             val = self.arm_params[key]
-            ctrl = self.resolve_node_case_insensitive(self.arm_ctrls[ctrl_raw].replace('_R', '_L'))
-            if not ctrl:
-                continue
             if key == 'elbow_z':
                 val = max(val, 0)
                 values = [val, 0, val]
             else:
                 values = [-val, val, -val]
-            self.apply_keyframe_pattern((ctrl, 'rotateZ'), values)
-
+            self.apply_keyframe_pattern((self.arm_ctrls[ctrl].replace('_R', '_L'), 'rotateZ'), values)
 
 
 
@@ -428,8 +439,14 @@ class WalkCycleTool:
             'root_bounce': self.root_bounce,
             'root_sway': self.root_sway,
             'root_rock': self.root_rock,
+            'foot_raise': self.foot_raise,
             'upper_body': {
-                k: {'rx': v['rx'], 'ry': v['ry'], 'rz': v['rz']} for k, v in self.upper_body_params.items()
+                k: {
+                    'rx': v['rx'],
+                    'ry': v['ry'],
+                    'rz': v['rz'],
+                    'rz_offset': v.get('rz_offset', 0)
+                } for k, v in self.upper_body_params.items()
             },
             'arms': {k: self.arm_params[k] for k in self.arm_params if not k.endswith('_field')}
         }
@@ -445,36 +462,43 @@ class WalkCycleTool:
         if result != 'Apply':
             return
         try:
-            text = cmds.promptDialog(query=True, text=True)
+            text = cmds.promptDialog(query=True, text=True).strip()
+            if not text:
+                raise ValueError("No input provided.")
             settings = json.loads(text)
             self.apply_settings(settings)
-            
-            # manually update field values instead of calling self.show()
             self.update_ui_fields_from_settings()
-
         except Exception as e:
             cmds.confirmDialog(title="Error", message=str(e))
 
-    def apply_settings(self, settings):
-        self.stride = settings.get('stride', self.stride)
-        self.stride_width = settings.get('stride_width', self.stride_width)
-        self.stride_height = settings.get('stride_height', self.stride_height)
-        self.swing_extend = settings.get('swing_extend', self.swing_extend)
-        self.hip_sway_lr = settings.get('hip_sway_lr', self.hip_sway_lr)
-        self.root_bounce = settings.get('root_bounce', self.root_bounce)
-        self.root_sway = settings.get('root_sway', self.root_sway)
-        self.root_rock = settings.get('root_rock', self.root_rock)
 
+    def apply_settings(self, settings):
+        self.stride = settings.get('stride', 0.0)
+        self.stride_width = settings.get('stride_width', 0.0)
+        self.stride_height = settings.get('stride_height', 0.0)
+        self.swing_extend = settings.get('swing_extend', 0.0)
+        self.hip_sway_lr = settings.get('hip_sway_lr', 0.0)
+        self.root_bounce = settings.get('root_bounce', 0.0)
+        self.root_sway = settings.get('root_sway', 0.0)
+        self.root_rock = settings.get('root_rock', 0.0)
+        self.root_rock_offset = settings.get('root_rock_offset', 0.0)
+        self.foot_raise = settings.get('foot_raise', 0.0)
+
+    
         for key, vals in settings.get('upper_body', {}).items():
             if key in self.upper_body_params:
-                self.upper_body_params[key]['rx'] = vals.get('rx', self.upper_body_params[key]['rx'])
-                self.upper_body_params[key]['ry'] = vals.get('ry', self.upper_body_params[key]['ry'])
-                self.upper_body_params[key]['rz'] = vals.get('rz', self.upper_body_params[key]['rz'])  # ?? NEW
+                self.upper_body_params[key]['rx'] = vals.get('rx', 0.0)
+                self.upper_body_params[key]['ry'] = vals.get('ry', 0.0)
+                self.upper_body_params[key]['rz'] = vals.get('rz', 0.0)
+                self.upper_body_params[key]['rz_offset'] = vals.get('rz_offset', 0.0)
+    
+        arm_defaults = ['shoulder_down_y', 'scapula_down', 'scapula_z', 'shoulder_z', 'shoulder_x', 'elbow_z', 'wrist_z']
+        for k in arm_defaults:
+            if 'arms' in settings:
+                self.arm_params[k] = settings['arms'].get(k, 0.0)
+            else:
+                self.arm_params[k] = 0.0
 
-
-        for k in ['shoulder_down_y', 'scapula_down', 'scapula_z', 'shoulder_z', 'shoulder_x', 'elbow_z', 'wrist_z']:
-            if 'arms' in settings and k in settings['arms']:
-                self.arm_params[k] = settings['arms'][k]
 
     def update_ui_fields_from_settings(self):
         cmds.floatField(self.stride_field, e=True, value=self.stride)
@@ -485,12 +509,15 @@ class WalkCycleTool:
         cmds.floatField(self.root_bounce_field, e=True, value=self.root_bounce)
         cmds.floatField(self.root_sway_field, e=True, value=self.root_sway)
         cmds.floatField(self.root_rock_field, e=True, value=self.root_rock)
+        cmds.floatField(self.root_rock_offset_field, e=True, value=self.root_rock_offset)
+        cmds.floatField(self.foot_raise_field, e=True, value=self.foot_raise)
+
     
         for key in self.upper_body_params:
             cmds.floatField(self.upper_body_params[key]['rx_field'], e=True, value=self.upper_body_params[key]['rx'])
             cmds.floatField(self.upper_body_params[key]['ry_field'], e=True, value=self.upper_body_params[key]['ry'])
-            cmds.floatField(self.upper_body_params[key]['rz_field'], e=True, value=self.upper_body_params[key]['rz'])  # ?? NEW
-
+            cmds.floatField(self.upper_body_params[key]['rz_field'], e=True, value=self.upper_body_params[key]['rz'])  # 🔹 NEW
+            cmds.floatField(self.upper_body_params[key]['rz_offset_field'], e=True, value=self.upper_body_params[key]['rz_offset'])
     
         for key in ['shoulder_down_y', 'scapula_down', 'scapula_z', 'shoulder_z', 'shoulder_x', 'elbow_z', 'wrist_z']:
             field_key = key + '_field'
