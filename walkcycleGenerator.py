@@ -13,6 +13,17 @@ class WalkCycleTool:
         self.root_sway = 2.0
         self.root_rock = 1.0
         self.foot_raise = 10.0  # new default value
+        self.root_bounce_offset = 0.0  # translateY
+
+        self.root_twist = 0.0  # 🔹 NEW — rotateZ on thirds
+
+
+        self.root_bounce_offset = 0.0  # 🔹 NEW
+        self.root_side_sway = 0.0      # 🔹 NEW
+        
+        self.root_backforth = 0.0  # 🔹 NEW — translateZ on fifths
+        self.root_leftright = 0.0  # 🔹 NEW — translateX on thirds (replaces/renames root_side_sway)
+
 
 
         self.arm_params = {
@@ -80,6 +91,12 @@ class WalkCycleTool:
         
         cmds.text(label="Foot Raise (rotateX)")
         self.foot_raise_field = cmds.floatField(value=self.foot_raise)
+        
+        cmds.rowLayout(numberOfColumns=2)
+        cmds.text(label="Bounce Offset (Y):")
+        self.root_bounce_offset_field = cmds.floatField(value=self.root_bounce_offset)
+        cmds.setParent('..')
+        
 
     
         cmds.setParent('..')
@@ -98,8 +115,17 @@ class WalkCycleTool:
         cmds.text(label="Rock (rotateX)")
         self.root_rock_field = cmds.floatField(value=self.root_rock)
         
-        cmds.text(label="Rock Offset (rotateZ)")
+        cmds.text(label="Rock Offset (rotateX)")
         self.root_rock_offset_field = cmds.floatField(value=self.root_rock_offset)
+        
+        cmds.text(label="Twist (rotateZ)")
+        self.root_twist_field = cmds.floatField(value=self.root_twist)
+
+        cmds.text(label="LeftRight (translateX on thirds):")
+        self.root_leftright_field = cmds.floatField(value=self.root_leftright)
+        
+        cmds.text(label="BackForth (translateZ on fifths):")
+        self.root_backforth_field = cmds.floatField(value=self.root_backforth)
 
     
         cmds.setParent('..')
@@ -211,6 +237,11 @@ class WalkCycleTool:
         self.root_rock = cmds.floatField(self.root_rock_field, query=True, value=True)
         self.root_rock_offset = cmds.floatField(self.root_rock_offset_field, query=True, value=True)
         self.foot_raise = cmds.floatField(self.foot_raise_field, query=True, value=True)
+        self.root_bounce_offset = cmds.floatField(self.root_bounce_offset_field, query=True, value=True)
+        self.root_twist = cmds.floatField(self.root_twist_field, query=True, value=True)
+        self.root_backforth = cmds.floatField(self.root_backforth_field, query=True, value=True)
+        self.root_leftright = cmds.floatField(self.root_leftright_field, query=True, value=True)
+
 
 
 
@@ -294,30 +325,46 @@ class WalkCycleTool:
     def set_root_keys(self):
         root = self.limbs['root']
         start, mid, end = [f[0] for f in self.frames_stride_halved]
-
-        # Bounce (translateY only)
-        for attr, up, down in [('translateY', self.root_bounce, -self.root_bounce)]:
-            self.set_key(root, attr, start, up)
-            self.set_key(root, attr, self.quarter, down)
-            self.set_key(root, attr, mid, up)
-            self.set_key(root, attr, self.three_quarter, down)
-            self.set_key(root, attr, end, up)
-
+        quarter = self.quarter
+        three_quarter = self.three_quarter
+    
+        # Bounce with offset (translateY)
+        bounce_vals = [self.root_bounce + self.root_bounce_offset,
+                       -self.root_bounce + self.root_bounce_offset,
+                        self.root_bounce + self.root_bounce_offset,
+                       -self.root_bounce + self.root_bounce_offset,
+                        self.root_bounce + self.root_bounce_offset]
+        for t, v in zip([start, quarter, mid, three_quarter, end], bounce_vals):
+            self.set_key(root, 'translateY', t, v)
+    
+        # LeftRight sway on thirds (translateX)
+        leftright_vals = [self.root_leftright, 0, -self.root_leftright, 0, self.root_leftright]
+        for t, v in zip([start, quarter, mid, three_quarter, end], leftright_vals):
+            self.set_key(root, 'translateX', t, v)
             
-            rx_vals = [self.root_rock + self.root_rock_offset, -self.root_rock + self.root_rock_offset,
-                       self.root_rock + self.root_rock_offset, -self.root_rock + self.root_rock_offset,
-                       self.root_rock + self.root_rock_offset]
-            
-            times = [start, self.quarter, mid, self.three_quarter, end]
-            for t, v in zip(times, rx_vals):
-                self.set_key(root, 'rotateX', t, v)
+        # BackForth on fifths (translateZ)
+        backforth_vals = [self.root_backforth, -self.root_backforth, self.root_backforth, -self.root_backforth, self.root_backforth]
+        for t, v in zip([start, quarter, mid, three_quarter, end], backforth_vals):
+            self.set_key(root, 'translateZ', t, v)
 
-
-        
-        # Sway: only 3 keys
+    
+        # Rock (rotateX) with offset
+        rx_vals = [self.root_rock + self.root_rock_offset, 
+                   -self.root_rock + self.root_rock_offset,
+                    self.root_rock + self.root_rock_offset,
+                   -self.root_rock + self.root_rock_offset,
+                    self.root_rock + self.root_rock_offset]
+        for t, v in zip([start, quarter, mid, three_quarter, end], rx_vals):
+            self.set_key(root, 'rotateX', t, v)
+    
+        # Sway (rotateY) — still just on thirds
         self.set_key(root, 'rotateY', start, self.root_sway)
         self.set_key(root, 'rotateY', mid, -self.root_sway)
         self.set_key(root, 'rotateY', end, self.root_sway)
+        # Twist (rotateZ) on thirds
+        rz_vals = [self.root_twist, -self.root_twist, self.root_twist]
+        self.apply_keyframe_pattern((root, 'rotateZ'), rz_vals)
+
 
     def set_foot_raise_keys(self):
         leg_l = self.limbs['left_leg']
@@ -351,20 +398,27 @@ class WalkCycleTool:
 
 
     def set_spine_keys(self):
-        times = [f[0] for f in self.frames_stride_halved]  # ← Add this line
-        
+        start, mid, end = [f[0] for f in self.frames_stride_halved]
+        quarter = self.quarter
+        three_quarter = self.three_quarter
+        fifths = [start, quarter, mid, three_quarter, end]
+    
         for key, data in self.upper_body_params.items():
             ctrl = data['name']
+    
+            # X and Y remain on thirds
             rx_vals = [data['rx'], -data['rx'], data['rx']]
             ry_vals = [data['ry'], -data['ry'], data['ry']]
             self.apply_keyframe_pattern((ctrl, 'rotateX'), rx_vals)
             self.apply_keyframe_pattern((ctrl, 'rotateY'), ry_vals)
-            # Rock (rotateZ)
+    
+            # Z (Rock) is now on fifths
             rz = data['rz']
             offset = data.get('rz_offset', 0)
-            values = [ rz + offset, -rz + offset,  rz + offset, -rz + offset,  rz + offset ]
-            for t, v in zip(times, values):
+            rz_vals = [ rz + offset, -rz + offset,  rz + offset, -rz + offset,  rz + offset ]
+            for t, v in zip(fifths, rz_vals):
                 self.set_key(ctrl, 'rotateZ', t, v)
+
 
 
     def set_right_arm_keys(self):
@@ -440,6 +494,11 @@ class WalkCycleTool:
             'root_sway': self.root_sway,
             'root_rock': self.root_rock,
             'foot_raise': self.foot_raise,
+            'root_bounce_offset': self.root_bounce_offset,
+            'root_twist': self.root_twist,
+            'root_backforth': self.root_backforth,
+            'root_leftright': self.root_leftright,
+
             'upper_body': {
                 k: {
                     'rx': v['rx'],
@@ -483,6 +542,11 @@ class WalkCycleTool:
         self.root_rock = settings.get('root_rock', 0.0)
         self.root_rock_offset = settings.get('root_rock_offset', 0.0)
         self.foot_raise = settings.get('foot_raise', 0.0)
+        self.root_bounce_offset = settings.get('root_bounce_offset', 0.0)
+        self.root_twist = settings.get('root_twist', 0.0)
+
+        self.root_backforth = settings.get('root_backforth', 0.0)
+        self.root_leftright = settings.get('root_leftright', 0.0)
 
     
         for key, vals in settings.get('upper_body', {}).items():
@@ -511,6 +575,11 @@ class WalkCycleTool:
         cmds.floatField(self.root_rock_field, e=True, value=self.root_rock)
         cmds.floatField(self.root_rock_offset_field, e=True, value=self.root_rock_offset)
         cmds.floatField(self.foot_raise_field, e=True, value=self.foot_raise)
+        cmds.floatField(self.root_bounce_offset_field, e=True, value=self.root_bounce_offset)
+        cmds.floatField(self.root_twist_field, e=True, value=self.root_twist)
+        cmds.floatField(self.root_backforth_field, e=True, value=self.root_backforth)
+        cmds.floatField(self.root_leftright_field, e=True, value=self.root_leftright)
+
 
     
         for key in self.upper_body_params:
