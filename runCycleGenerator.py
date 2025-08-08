@@ -1,5 +1,6 @@
 import maya.cmds as cmds
 import json
+import re
 
 class RunCycleGenerator:
     def __init__(self):
@@ -10,6 +11,11 @@ class RunCycleGenerator:
         self.chest_ctrl = "FKChest_M"
         self.hip_ctrl = "HipSwinger_M"
         self.head_ctrl = "FKHead_M"
+            # alongside self.head_ctrl:
+        self.neck_ctrl = "FKNeck_M"
+
+        # at the top of __init__, alongside other motions:
+        self.foot_raise = 10.0   # degrees of toe-lift (rotateX) on each step
 
         
         self.arm_ctrls = {
@@ -28,6 +34,12 @@ class RunCycleGenerator:
         self.head_sway = 1.0
         self.head_swing = 2.0   # This is on 4ths
 
+        # Neck motion (FKNeck_M), start it off matching head
+        self.neck_bounce = self.head_bounce
+        self.neck_rock   = self.head_rock
+        self.neck_lean   = self.head_lean
+        self.neck_sway   = self.head_sway
+        self.neck_swing  = self.head_swing
 
         # Root movement
         self.root_bounce_up = 3.0
@@ -36,6 +48,8 @@ class RunCycleGenerator:
         self.root_sway = 5.0
         self.root_swing = 4.0
         self.corkscrew = False
+        self.root_back_forth = 0.0    # translateZ on fifths
+
 
         # Leg stride
         self.stride_length = 10.0
@@ -56,6 +70,9 @@ class RunCycleGenerator:
         self.scapula_down_y = -12.0  # default value matching your UI
         self.scapula_z = 10.0
         self.elbow_z = 15.0
+        self.shoulder_rotate_x    = 0.0   # rotateX offset on the shoulder
+        self.shoulder_swing_z     = 0.0   # rotateZ swing on the shoulder
+        self.shoulder_sway_out_y  = 0.0   # rotateY “sway out” on the shoulder
 
         self.frames_stride_halved = []
         
@@ -99,6 +116,14 @@ class RunCycleGenerator:
             "Sway (Y):", lambda: setattr(self, 'root_sway_field', cmds.floatField(value=self.root_sway)),
             "", lambda: None
         )
+        
+        two_column_row(
+            "Back/Forth (Z):",
+            lambda: setattr(self, 'root_back_forth_field', cmds.floatField(value=self.root_back_forth)),
+            "",
+            lambda: None
+        )
+
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(120, 200))
         cmds.text(label="Corkscrew Twist:")
         self.corkscrew_field = cmds.checkBox(value=self.corkscrew)
@@ -116,6 +141,15 @@ class RunCycleGenerator:
         self.stride_height_field = cmds.floatField(value=self.stride_height)
         cmds.setParent('..')
         cmds.setParent('..')
+        
+            # immediately after you create the stride-height floatField:
+        two_column_row(
+            "Foot Raise (rotateX):", 
+            lambda: setattr(self, 'foot_raise_field', cmds.floatField(value=self.foot_raise)),
+            "", 
+            lambda: None
+        )
+
     
         # === CHEST ===
         cmds.frameLayout(label="Chest / Shoulders (FKChest_M)", collapsable=True, marginWidth=10)
@@ -144,15 +178,47 @@ class RunCycleGenerator:
             "Scapula Down (Y):", lambda: setattr(self, 'scapula_down_y_field', cmds.floatField(value=self.scapula_down_y))
         )
         two_column_row(
-            "Shoulder Swing (X):", lambda: setattr(self, 'shoulder_x_field', cmds.floatField(value=0)),
-            "Scapula Swing (Z):", lambda: setattr(self, 'scapula_z_field', cmds.floatField(value=self.scapula_z))
+            "Scapula Swing (Z):", lambda: setattr(self, 'scapula_z_field', cmds.floatField(value=self.scapula_z)),
+            "", lambda: None
         )
+
+        
+        two_column_row(
+            "Shoulder Rotate (X):", lambda: setattr(self, 'shoulder_rotate_x_field', cmds.floatField(value=self.shoulder_rotate_x)),
+            "Shoulder Swing (Z):",  lambda: setattr(self, 'shoulder_swing_z_field', cmds.floatField(value=self.shoulder_swing_z))
+        )
+        two_column_row(
+            "Shoulder SwayOut (Y):", lambda: setattr(self, 'shoulder_sway_out_y_field', cmds.floatField(value=self.shoulder_sway_out_y)),
+            "",                     lambda: None
+        )
+
 
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(160, 80))
         cmds.text(label="Elbow Swing (Z, fwd only):")
         self.elbow_z_field = cmds.floatField(value=self.elbow_z)
         cmds.setParent('..')
         cmds.setParent('..')
+
+        # === NECK ===
+        cmds.frameLayout(label="Neck (FKNeck_M)", collapsable=True, marginWidth=10)
+        two_column_row(
+            "Bounce (translateY):", 
+            lambda: setattr(self, 'neck_bounce_field', cmds.floatField(value=self.neck_bounce)),
+            "Rock (rotateX):", 
+            lambda: setattr(self, 'neck_rock_field',   cmds.floatField(value=self.neck_rock))
+        )
+        two_column_row(
+            "Lean (rotateZ):",        
+            lambda: setattr(self, 'neck_lean_field',   cmds.floatField(value=self.neck_lean)),
+            "Swing (rotateY, 4ths):", 
+            lambda: setattr(self, 'neck_swing_field',  cmds.floatField(value=self.neck_swing))
+        )
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=(120, 80))
+        cmds.text(label="Sway (rotateY):")
+        self.neck_sway_field = cmds.floatField(value=self.neck_sway)
+        cmds.setParent('..')
+        cmds.setParent('..')
+
     
         # === HEAD ===
         cmds.frameLayout(label="Head (FKHead_M)", collapsable=True, marginWidth=10)
@@ -191,10 +257,15 @@ class RunCycleGenerator:
         self.root_sway = cmds.floatField(self.root_sway_field, q=True, value=True)
         self.root_swing = cmds.floatField(self.root_swing_field, q=True, value=True)
         self.corkscrew = cmds.checkBox(self.corkscrew_field, q=True, value=True)
+        self.root_back_forth = cmds.floatField(self.root_back_forth_field, q=True, value=True)
+
 
         self.stride_length = cmds.floatField(self.stride_length_field, q=True, value=True)
         self.stride_width = cmds.floatField(self.stride_width_field, q=True, value=True)
         self.stride_height = cmds.floatField(self.stride_height_field, q=True, value=True)
+            # after you pull in stride_height…
+        self.foot_raise   = cmds.floatField(self.foot_raise_field, q=True, value=True)
+
 
         self.chest_bounce = cmds.floatField(self.chest_bounce_field, q=True, value=True)
         self.chest_swing = cmds.floatField(self.chest_swing_field, q=True, value=True)
@@ -206,12 +277,20 @@ class RunCycleGenerator:
         self.head_sway = cmds.floatField(self.head_sway_field, q=True, value=True)
         self.head_swing = cmds.floatField(self.head_swing_field, q=True, value=True)
 
+        self.neck_bounce = cmds.floatField(self.neck_bounce_field, q=True, value=True)
+        self.neck_rock   = cmds.floatField(self.neck_rock_field,   q=True, value=True)
+        self.neck_lean   = cmds.floatField(self.neck_lean_field,   q=True, value=True)
+        self.neck_sway   = cmds.floatField(self.neck_sway_field,   q=True, value=True)
+        self.neck_swing  = cmds.floatField(self.neck_swing_field,  q=True, value=True)
 
         self.hip_swing = cmds.floatField(self.hip_swing_field, q=True, value=True)
         self.hip_side = cmds.floatField(self.hip_side_field, q=True, value=True)
         
         self.shoulder_down_y = cmds.floatField(self.shoulder_down_y_field, q=True, value=True)
         self.scapula_down_y = cmds.floatField(self.scapula_down_y_field, q=True, value=True)
+        self.shoulder_rotate_x   = cmds.floatField(self.shoulder_rotate_x_field,    q=True, value=True)
+        self.shoulder_swing_z    = cmds.floatField(self.shoulder_swing_z_field,     q=True, value=True)
+        self.shoulder_sway_out_y = cmds.floatField(self.shoulder_sway_out_y_field,  q=True, value=True)
 
         self.scapula_z = cmds.floatField(self.scapula_z_field, q=True, value=True)
         self.elbow_z = abs(cmds.floatField(self.elbow_z_field, q=True, value=True))  # ensure non-negative
@@ -243,11 +322,11 @@ class RunCycleGenerator:
         self.root_sway = settings.get('root_sway', self.root_sway)
         self.root_swing = settings.get('root_swing', self.root_swing)
         self.corkscrew = settings.get('corkscrew', self.corkscrew)
-
+    
         self.stride_length = settings.get('stride_length', self.stride_length)
         self.stride_width = settings.get('stride_width', self.stride_width)
         self.stride_height = settings.get('stride_height', self.stride_height)
-
+    
         self.chest_bounce = settings.get('chest_bounce', self.chest_bounce)
         self.chest_swing = settings.get('chest_swing', self.chest_swing)
         self.chest_tilt = settings.get('chest_tilt', self.chest_tilt)
@@ -257,44 +336,73 @@ class RunCycleGenerator:
         self.head_lean = settings.get('head_lean', self.head_lean)
         self.head_sway = settings.get('head_sway', self.head_sway)
         self.head_swing = settings.get('head_swing', self.head_swing)
-
-        self.scapula_down_y = arm.get('scapula_down_y', self.scapula_down_y)
-
+    
         self.hip_swing = settings.get('hip_swing', self.hip_swing)
         self.hip_side = settings.get('hip_side', self.hip_side)
-        
+    
         if 'arm' in settings:
             arm = settings['arm']
             self.shoulder_down_y = arm.get('shoulder_down_y', self.shoulder_down_y)
             self.scapula_z = arm.get('scapula_z', self.scapula_z)
             self.elbow_z = abs(arm.get('elbow_z', self.elbow_z))
+            self.scapula_down_y = arm.get('scapula_down_y', self.scapula_down_y)
+            self.shoulder_rotate_x   = arm.get('shoulder_rotate_x',   self.shoulder_rotate_x)
+            self.shoulder_swing_z    = arm.get('shoulder_swing_z',    self.shoulder_swing_z)
+            self.shoulder_sway_out_y = arm.get('shoulder_sway_out_y', self.shoulder_sway_out_y)
+
 
         
     def print_settings(self, *args):
         settings = {
-            'root_bounce_up': self.root_bounce_up,
-            'root_bounce_down': self.root_bounce_down,
-            'root_lean': self.root_lean,
-            'root_sway': self.root_sway,
-            'root_swing': self.root_swing,
-            'corkscrew': self.corkscrew,
-            'stride_length': self.stride_length,
-            'stride_width': self.stride_width,
-            'stride_height': self.stride_height,
-            'chest_bounce': self.chest_bounce,
-            'chest_swing': self.chest_swing,
-            'chest_tilt': self.chest_tilt,
-            'hip_swing': self.hip_swing,
-            'hip_side': self.hip_side,
+            'root_bounce_up':     self.root_bounce_up,
+            'root_bounce_down':   self.root_bounce_down,
+            'root_lean':          self.root_lean,
+            'root_sway':          self.root_sway,
+            'root_swing':         self.root_swing,
+            'root_back_forth':    self.root_back_forth,
+            'corkscrew':          self.corkscrew,
+    
+            'stride_length':      self.stride_length,
+            'stride_width':       self.stride_width,
+            'stride_height':      self.stride_height,
+            'foot_raise':         self.foot_raise,
+    
+            'chest_bounce':       self.chest_bounce,
+            'chest_swing':        self.chest_swing,
+            'chest_tilt':         self.chest_tilt,
+    
+            'hip_swing':          self.hip_swing,
+            'hip_side':           self.hip_side,
+    
             'arm': {
-                'shoulder_down_y': self.shoulder_down_y,
-                'scapula_z': self.scapula_z,
-                'elbow_z': self.elbow_z,
+                'shoulder_down_y':    self.shoulder_down_y,
+                'scapula_down_y':     self.scapula_down_y,
+                'scapula_z':          self.scapula_z,
+                'elbow_z':            self.elbow_z,
+                'shoulder_rotate_x':  self.shoulder_rotate_x,
+                'shoulder_swing_z':   self.shoulder_swing_z,
+                'shoulder_sway_out_y': self.shoulder_sway_out_y,
             },
-            'scapula_down_y': self.scapula_down_y
-
+    
+            'head': {
+                'bounce':            self.head_bounce,
+                'rock':              self.head_rock,
+                'lean':              self.head_lean,
+                'sway':              self.head_sway,
+                'swing':             self.head_swing,
+            },
+    
+            'neck': {
+                'bounce':            self.neck_bounce,
+                'rock':              self.neck_rock,
+                'lean':              self.neck_lean,
+                'sway':              self.neck_sway,
+                'swing':             self.neck_swing,
+            }
         }
         print("// RunCycleGenerator Settings:\n" + json.dumps(settings, indent=2))
+
+
         
 
     def generate(self):
@@ -310,6 +418,7 @@ class RunCycleGenerator:
         self.chest_ctrl = self.resolve(self.chest_ctrl)
         self.hip_ctrl = self.resolve(self.hip_ctrl)
         self.head_ctrl = self.resolve(self.head_ctrl)
+        self.neck_ctrl = self.resolve(self.neck_ctrl)    # ← new
         for k in self.arm_ctrls:
             self.arm_ctrls[k] = self.resolve(self.arm_ctrls[k])
     
@@ -320,7 +429,7 @@ class RunCycleGenerator:
         self.set_hip_keys()
         self.set_arm_keys()
         self.set_head_keys()
-
+        self.set_neck_keys()   # ← new
 
 
 
@@ -343,8 +452,10 @@ class RunCycleGenerator:
             self.leg_r, self.leg_l,
             self.chest_ctrl,
             self.hip_ctrl,
+            self.neck_ctrl,                # ← new
             getattr(self, 'head_ctrl', 'FKHead_M'),
         ]
+
         all_ctrls += list(self.arm_ctrls.values())
     
         for ctrl in all_ctrls:
@@ -376,6 +487,20 @@ class RunCycleGenerator:
         self.set_key(self.root_ctrl, 'translateY', mid, self.root_bounce_up)
         self.set_key(self.root_ctrl, 'translateY', three_quarter, self.root_bounce_down)
         self.set_key(self.root_ctrl, 'translateY', end, self.root_bounce_up)
+        
+        # back/forth on fifths
+        span = end - start
+        first_fifth  = start + span * (1/5.0)
+        fourth_fifth = start + span * (4/5.0)
+        
+        # zero out translateZ at start, mid, end
+        for t in (start, mid, end):
+            self.set_key(self.root_ctrl, 'translateZ', t, 0)
+        
+        # apply back/forth
+        self.set_key(self.root_ctrl, 'translateZ', first_fifth,  self.root_back_forth)
+        self.set_key(self.root_ctrl, 'translateZ', fourth_fifth, self.root_back_forth)
+
 
         if self.corkscrew:
             self.set_key(self.root_ctrl, 'rotateY', quarter, self.root_sway)
@@ -393,6 +518,22 @@ class RunCycleGenerator:
 
     def set_leg_keys(self):
         start, quarter, mid, three_quarter, end = self.frames_stride_halved
+        
+                # ---- foot-lift on fifths ----
+        span = end - start
+        first_fifth  = start + span * (1/5.0)
+        fourth_fifth = start + span * (4/5.0)
+    
+        # clear any existing foot rotation at ground
+        for t in (start, mid, end):
+            self.set_key(self.leg_l, 'rotateX', t, 0)
+            self.set_key(self.leg_r, 'rotateX', t, 0)
+    
+        # apply the toe-lift
+        self.set_key(self.leg_l, 'rotateX', first_fifth,  self.foot_raise)
+        self.set_key(self.leg_r, 'rotateX', fourth_fifth, self.foot_raise)
+        # ------------------------------
+        
         half_stride = self.stride_length / 2.0
 
         for leg, x in [(self.leg_r, self.stride_width), (self.leg_l, -self.stride_width)]:
@@ -430,6 +571,35 @@ class RunCycleGenerator:
             self.set_key(self.hip_ctrl, attr, start, val)
             self.set_key(self.hip_ctrl, attr, mid, -val)
             self.set_key(self.hip_ctrl, attr, end, val)
+
+    def set_neck_keys(self):
+        start, quarter, mid, three_quarter, end = self.frames_stride_halved
+        ctrl = self.neck_ctrl
+    
+        # Bounce (translateY) on fifths
+        self.set_key(ctrl, 'translateY', start, self.neck_bounce)
+        self.set_key(ctrl, 'translateY', quarter, -self.neck_bounce)
+        self.set_key(ctrl, 'translateY', mid, self.neck_bounce)
+        self.set_key(ctrl, 'translateY', three_quarter, -self.neck_bounce)
+        self.set_key(ctrl, 'translateY', end, self.neck_bounce)
+    
+        # Rock (rotateX) 3-key loop
+        self.set_key(ctrl, 'rotateX', start, -self.neck_rock)
+        self.set_key(ctrl, 'rotateX', mid, self.neck_rock)
+        self.set_key(ctrl, 'rotateX', end, -self.neck_rock)
+    
+        # Lean (rotateZ) static
+        self.set_key(ctrl, 'rotateZ', start, self.neck_lean)
+        self.set_key(ctrl, 'rotateZ', end, self.neck_lean)
+    
+        # Swing (rotateY) on fourths
+        self.set_key(ctrl, 'rotateY', start, self.neck_swing)
+        self.set_key(ctrl, 'rotateY', quarter, 0)
+        self.set_key(ctrl, 'rotateY', mid, -self.neck_swing)
+        self.set_key(ctrl, 'rotateY', three_quarter, 0)
+        self.set_key(ctrl, 'rotateY', end, self.neck_swing)
+
+
             
     def set_head_keys(self):
         start, quarter, mid, three_quarter, end = self.frames_stride_halved
@@ -461,23 +631,61 @@ class RunCycleGenerator:
 
 
     def set_arm_keys(self):
-        start, mid, end = self.frames_stride_halved[0], self.frames_stride_halved[2], self.frames_stride_halved[4]
+        start, quarter, mid, three_quarter, end = self.frames_stride_halved
 
         for side in ['l', 'r']:
             scapula = self.arm_ctrls[f'scapula_{side}']
             shoulder = self.arm_ctrls[f'shoulder_{side}']
             elbow = self.arm_ctrls[f'elbow_{side}']
             
-            # Scapula Down (translateY)
-            cmds.setAttr(f"{scapula}.translateY", self.scapula_down_y)
-            self.set_key(scapula, 'translateY', start, self.scapula_down_y)
-            self.set_key(scapula, 'translateY', end, self.scapula_down_y)
+            # Scapula Down (rotateY)
+            cmds.setAttr(f"{scapula}.rotateY", self.scapula_down_y)
+            self.set_key(scapula, 'rotateY', start, self.scapula_down_y)
+            self.set_key(scapula, 'rotateY', end, self.scapula_down_y)
+
 
 
             # Static arm down
             cmds.setAttr(f"{shoulder}.rotateY", self.shoulder_down_y)
             self.set_key(shoulder, 'rotateY', start, self.shoulder_down_y)
             self.set_key(shoulder, 'rotateY', end, self.shoulder_down_y)
+            
+            # Shoulder Rotate (X) on thirds, inverted on the right
+            if side == 'l':
+                rotX_vals = [self.shoulder_rotate_x, -self.shoulder_rotate_x, self.shoulder_rotate_x]
+            else:
+                rotX_vals = [-self.shoulder_rotate_x, self.shoulder_rotate_x, -self.shoulder_rotate_x]
+            for t, val in zip([start, mid, end], rotX_vals):
+                self.set_key(shoulder, 'rotateX', t, val)
+            
+            # Shoulder Swing (Z) on thirds, inverted on the right
+            if side == 'l':
+                swingZ_vals = [self.shoulder_swing_z, -self.shoulder_swing_z, self.shoulder_swing_z]
+            else:
+                swingZ_vals = [-self.shoulder_swing_z, self.shoulder_swing_z, -self.shoulder_swing_z]
+            for t, val in zip([start, mid, end], swingZ_vals):
+                self.set_key(shoulder, 'rotateZ', t, val)
+
+            
+            # Shoulder SwayOut (Y) on quarters
+            # inside set_arm_keys(), after your rotateX/rotateZ blocks:
+        
+            # Shoulder Down base (rotateY)
+            for t in (start, mid, end):
+                self.set_key(shoulder, 'rotateY', t, self.shoulder_down_y)
+        
+            # Shoulder SwayOut (Y) on quarters, added to base and mirrored per side
+            if side == 'l':
+                val_q  = self.shoulder_down_y + self.shoulder_sway_out_y
+                val_3q = self.shoulder_down_y - self.shoulder_sway_out_y
+            else:
+                val_q  = self.shoulder_down_y - self.shoulder_sway_out_y
+                val_3q = self.shoulder_down_y + self.shoulder_sway_out_y
+        
+            self.set_key(shoulder, 'rotateY', quarter,       val_q)
+            self.set_key(shoulder, 'rotateY', three_quarter, val_3q)
+
+
 
             # Opposing scapula swings
             scapula_vals = [self.scapula_z, -self.scapula_z, self.scapula_z] if side == 'l' else [-self.scapula_z, self.scapula_z, -self.scapula_z]
@@ -494,21 +702,37 @@ class RunCycleGenerator:
                 self.set_key(elbow, 'rotateZ', t, val)
 
     def resolve(self, name):
+        # list all transform nodes once
         all_nodes = cmds.ls(type='transform')
         name_lower = name.lower()
-
-        # First try exact case-insensitive match
+    
+        # 1) exact, case‐insensitive match
         for node in all_nodes:
             if node.lower() == name_lower:
                 return node
+    
+        # 2) explicit alias map fallback
+        alias = self.alias_map.get(name_lower)
+        if alias and cmds.objExists(alias):
+            return alias
+    
+        # 3) try both the “no-1” and “with-1” variants
+        #    splits off the trailing underscore+suffix (e.g. "_M", "_R", "_L")
+        m = re.match(r"^(.+?)(?:1)?(_[A-Za-z0-9]+)$", name)
+        if m:
+            base, suffix = m.group(1), m.group(2)
+            for variant in (base + suffix, base + "1" + suffix):
+                if cmds.objExists(variant):
+                    return variant
+    
+        # 4) last-ditch: strip any “1_” that might remain
+        stripped = name.replace("1_", "_")
+        if cmds.objExists(stripped):
+            return stripped
+    
+        # nothing found…
+        raise RuntimeError(f"Node not found: {name}")
 
-        # Then try alias fallback
-        if name_lower in self.alias_map:
-            alias_target = self.alias_map[name_lower]
-            if cmds.objExists(alias_target):
-                return alias_target
-
-        raise RuntimeError("Node not found: {}".format(name))
 
 
 # ?? To run:
