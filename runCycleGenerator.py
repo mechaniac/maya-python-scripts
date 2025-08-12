@@ -40,6 +40,19 @@ class RunCycleGenerator:
         self.neck_lean   = self.head_lean
         self.neck_sway   = self.head_sway
         self.neck_swing  = self.head_swing
+        
+        # Spine motion (FKSpine_M)
+        self.spine_ctrl       = "FKSpine_M"
+        self.spine_bounce     = 0.0
+        self.spine_swing      = 0.0
+        self.spine_tilt       = 0.0
+
+        # Rotate-Z offsets for chest, spine, neck, head
+        self.chest_z_offset   = 0.0
+        self.spine_z_offset   = 0.0
+        self.neck_z_offset    = 0.0
+        self.head_z_offset    = 0.0
+
 
         # Root movement
         self.root_bounce_up = 3.0
@@ -79,6 +92,7 @@ class RunCycleGenerator:
         self.alias_map = {
             'fkchest_m': 'FKChest1_M',
             'fkhead_m': 'FKHead1_M',
+            'fkspine_m': 'FKSpine1_M',      # ← add this
             'rootswinger_m': 'RootX_M',
             'hipswinger_m': 'HipSwinger1_M',
             'ikleg_r': 'IKLeg_R',
@@ -157,11 +171,34 @@ class RunCycleGenerator:
             "Chest Bounce (Z):", lambda: setattr(self, 'chest_bounce_field', cmds.floatField(value=self.chest_bounce)),
             "Chest Swing (X):", lambda: setattr(self, 'chest_swing_field', cmds.floatField(value=self.chest_swing))
         )
+        
+        two_column_row(
+            "Rotate Z Offset:", lambda: setattr(self, 'chest_z_offset_field', cmds.floatField(value=self.chest_z_offset)),
+            "", lambda: None
+        )
+
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(120, 80))
         cmds.text(label="Chest Tilt (Y):")
         self.chest_tilt_field = cmds.floatField(value=self.chest_tilt)
         cmds.setParent('..')
         cmds.setParent('..')
+
+        # === SPINE ===
+        cmds.frameLayout(label="Spine (FKSpine_M)", collapsable=True, marginWidth=10)
+        two_column_row(
+            "Spine Bounce (Z):", lambda: setattr(self, 'spine_bounce_field', cmds.floatField(value=self.spine_bounce)),
+            "Spine Swing (X):",  lambda: setattr(self, 'spine_swing_field',  cmds.floatField(value=self.spine_swing))
+        )
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=(120, 80))
+        cmds.text(label="Spine Tilt (Y):")
+        self.spine_tilt_field = cmds.floatField(value=self.spine_tilt)
+        cmds.setParent('..')
+        two_column_row(
+            "Rotate Z Offset:", lambda: setattr(self, 'spine_z_offset_field', cmds.floatField(value=self.spine_z_offset)),
+            "", lambda: None
+        )
+        cmds.setParent('..')
+
     
         # === HIPS ===
         cmds.frameLayout(label="HipSwinger (HipSwinger_M)", collapsable=True, marginWidth=10)
@@ -212,7 +249,12 @@ class RunCycleGenerator:
             lambda: setattr(self, 'neck_lean_field',   cmds.floatField(value=self.neck_lean)),
             "Swing (rotateY, 4ths):", 
             lambda: setattr(self, 'neck_swing_field',  cmds.floatField(value=self.neck_swing))
+        )        
+        two_column_row(
+            "Rotate Z Offset:", lambda: setattr(self, 'neck_z_offset_field', cmds.floatField(value=self.neck_z_offset)),
+            "", lambda: None
         )
+
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(120, 80))
         cmds.text(label="Sway (rotateY):")
         self.neck_sway_field = cmds.floatField(value=self.neck_sway)
@@ -230,6 +272,11 @@ class RunCycleGenerator:
             "Lean (rotateZ):", lambda: setattr(self, 'head_lean_field', cmds.floatField(value=self.head_lean)),
             "Swing (rotateY, 4ths):", lambda: setattr(self, 'head_swing_field', cmds.floatField(value=self.head_swing))
         )
+        two_column_row(
+            "Rotate Z Offset:", lambda: setattr(self, 'head_z_offset_field', cmds.floatField(value=self.head_z_offset)),
+            "", lambda: None
+        )
+
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(120, 80))
         cmds.text(label="Sway (rotateY):")
         self.head_sway_field = cmds.floatField(value=self.head_sway)
@@ -271,6 +318,21 @@ class RunCycleGenerator:
         self.chest_swing = cmds.floatField(self.chest_swing_field, q=True, value=True)
         self.chest_tilt = cmds.floatField(self.chest_tilt_field, q=True, value=True)
         
+        
+        # Spine
+        self.spine_bounce   = cmds.floatField(self.spine_bounce_field,   q=True, value=True)
+        self.spine_swing    = cmds.floatField(self.spine_swing_field,    q=True, value=True)
+        self.spine_tilt     = cmds.floatField(self.spine_tilt_field,     q=True, value=True)
+        self.spine_z_offset = cmds.floatField(self.spine_z_offset_field, q=True, value=True)
+
+        # Chest Z-offset
+        self.chest_z_offset = cmds.floatField(self.chest_z_offset_field, q=True, value=True)
+        # Neck Z-offset
+        self.neck_z_offset  = cmds.floatField(self.neck_z_offset_field,  q=True, value=True)
+        # Head Z-offset
+        self.head_z_offset  = cmds.floatField(self.head_z_offset_field,  q=True, value=True)
+
+        
         self.head_bounce = cmds.floatField(self.head_bounce_field, q=True, value=True)
         self.head_rock = cmds.floatField(self.head_rock_field, q=True, value=True)
         self.head_lean = cmds.floatField(self.head_lean_field, q=True, value=True)
@@ -299,56 +361,107 @@ class RunCycleGenerator:
         self.generate()
 
     def prompt_and_apply_settings(self, *args):
-        result = cmds.promptDialog(title="Apply Settings",
-                                   message="Paste JSON settings string here:",
-                                   button=['Apply', 'Cancel'],
-                                   defaultButton='Apply',
-                                   cancelButton='Cancel',
-                                   dismissString='Cancel')
+        result = cmds.promptDialog(
+            title="Apply Settings",
+            message="Paste JSON settings string here:",
+            button=['Apply', 'Cancel'],
+            defaultButton='Apply',
+            cancelButton='Cancel',
+            dismissString='Cancel'
+        )
         if result != 'Apply':
             return
+        raw = cmds.promptDialog(query=True, text=True)
         try:
-            text = cmds.promptDialog(query=True, text=True)
-            settings = json.loads(text)
-            self.apply_settings(settings)
-            self.show()
+            data = json.loads(raw)
         except Exception as e:
-            cmds.confirmDialog(title="Error", message=str(e))
+            cmds.confirmDialog(title="Error", message="Invalid JSON:\n%s" % e)
+            return
+    
+        self.apply_settings(data)
+        # rebuild UI with new defaults
+        self.show()
+
 
     def apply_settings(self, settings):
-        self.root_bounce_up = settings.get('root_bounce_up', self.root_bounce_up)
-        self.root_bounce_down = settings.get('root_bounce_down', self.root_bounce_down)
-        self.root_lean = settings.get('root_lean', self.root_lean)
-        self.root_sway = settings.get('root_sway', self.root_sway)
-        self.root_swing = settings.get('root_swing', self.root_swing)
-        self.corkscrew = settings.get('corkscrew', self.corkscrew)
+        # safe number coercion
+        def _num(v, default):
+            try:
+                return float(v)
+            except Exception:
+                return default
     
-        self.stride_length = settings.get('stride_length', self.stride_length)
-        self.stride_width = settings.get('stride_width', self.stride_width)
-        self.stride_height = settings.get('stride_height', self.stride_height)
+        # ---- root / global ----
+        self.root_bounce_up   = _num(settings.get('root_bounce_up',   self.root_bounce_up),   self.root_bounce_up)
+        self.root_bounce_down = _num(settings.get('root_bounce_down', self.root_bounce_down), self.root_bounce_down)
+        self.root_lean        = _num(settings.get('root_lean',        self.root_lean),        self.root_lean)
+        self.root_sway        = _num(settings.get('root_sway',        self.root_sway),        self.root_sway)
+        self.root_swing       = _num(settings.get('root_swing',       self.root_swing),       self.root_swing)
+        self.root_back_forth  = _num(settings.get('root_back_forth',  self.root_back_forth),  self.root_back_forth)
+        self.corkscrew        = bool(settings.get('corkscrew',        self.corkscrew))
     
-        self.chest_bounce = settings.get('chest_bounce', self.chest_bounce)
-        self.chest_swing = settings.get('chest_swing', self.chest_swing)
-        self.chest_tilt = settings.get('chest_tilt', self.chest_tilt)
-        
-        self.head_bounce = settings.get('head_bounce', self.head_bounce)
-        self.head_rock = settings.get('head_rock', self.head_rock)
-        self.head_lean = settings.get('head_lean', self.head_lean)
-        self.head_sway = settings.get('head_sway', self.head_sway)
-        self.head_swing = settings.get('head_swing', self.head_swing)
+        # ---- stride / legs ----
+        self.stride_length = _num(settings.get('stride_length', self.stride_length), self.stride_length)
+        self.stride_width  = _num(settings.get('stride_width',  self.stride_width),  self.stride_width)
+        self.stride_height = _num(settings.get('stride_height', self.stride_height), self.stride_height)
+        self.foot_raise    = _num(settings.get('foot_raise',    self.foot_raise),    self.foot_raise)
     
-        self.hip_swing = settings.get('hip_swing', self.hip_swing)
-        self.hip_side = settings.get('hip_side', self.hip_side)
+        # ---- chest ----
+        self.chest_bounce   = _num(settings.get('chest_bounce', self.chest_bounce), self.chest_bounce)
+        self.chest_swing    = _num(settings.get('chest_swing',  self.chest_swing),  self.chest_swing)
+        self.chest_tilt     = _num(settings.get('chest_tilt',   self.chest_tilt),   self.chest_tilt)
+        self.chest_z_offset = _num(settings.get('chest_z_offset', self.chest_z_offset), self.chest_z_offset)
     
-        if 'arm' in settings:
-            arm = settings['arm']
-            self.shoulder_down_y = arm.get('shoulder_down_y', self.shoulder_down_y)
-            self.scapula_z = arm.get('scapula_z', self.scapula_z)
-            self.elbow_z = abs(arm.get('elbow_z', self.elbow_z))
-            self.scapula_down_y = arm.get('scapula_down_y', self.scapula_down_y)
-            self.shoulder_rotate_x   = arm.get('shoulder_rotate_x',   self.shoulder_rotate_x)
-            self.shoulder_swing_z    = arm.get('shoulder_swing_z',    self.shoulder_swing_z)
-            self.shoulder_sway_out_y = arm.get('shoulder_sway_out_y', self.shoulder_sway_out_y)
+        # ---- spine ----
+        self.spine_bounce     = _num(settings.get('spine_bounce', self.spine_bounce), self.spine_bounce)
+        self.spine_swing      = _num(settings.get('spine_swing',  self.spine_swing),  self.spine_swing)
+        self.spine_tilt       = _num(settings.get('spine_tilt',   self.spine_tilt),   self.spine_tilt)
+        self.spine_z_offset   = _num(settings.get('spine_z_offset', self.spine_z_offset), self.spine_z_offset)
+    
+        # ---- hips ----
+        self.hip_swing = _num(settings.get('hip_swing', self.hip_swing), self.hip_swing)
+        self.hip_side  = _num(settings.get('hip_side',  self.hip_side),  self.hip_side)
+    
+        # ---- arms ----
+        arm = settings.get('arm', {})
+        self.shoulder_down_y    = _num(arm.get('shoulder_down_y', self.shoulder_down_y), self.shoulder_down_y)
+        self.scapula_down_y     = _num(arm.get('scapula_down_y',  self.scapula_down_y),  self.scapula_down_y)
+        self.scapula_z          = _num(arm.get('scapula_z',       self.scapula_z),       self.scapula_z)
+        self.elbow_z            = abs(_num(arm.get('elbow_z',     self.elbow_z),         self.elbow_z))
+        self.shoulder_rotate_x  = _num(arm.get('shoulder_rotate_x',  self.shoulder_rotate_x),  self.shoulder_rotate_x)
+        self.shoulder_swing_z   = _num(arm.get('shoulder_swing_z',   self.shoulder_swing_z),   self.shoulder_swing_z)
+        self.shoulder_sway_out_y= _num(arm.get('shoulder_sway_out_y',self.shoulder_sway_out_y),self.shoulder_sway_out_y)
+    
+        # ---- head (accept nested or flat) ----
+        head = settings.get('head', {})
+        if head:
+            self.head_bounce = _num(head.get('bounce', self.head_bounce), self.head_bounce)
+            self.head_rock   = _num(head.get('rock',   self.head_rock),   self.head_rock)
+            self.head_lean   = _num(head.get('lean',   self.head_lean),   self.head_lean)
+            self.head_sway   = _num(head.get('sway',   self.head_sway),   self.head_sway)
+            self.head_swing  = _num(head.get('swing',  self.head_swing),  self.head_swing)
+        else:
+            self.head_bounce = _num(settings.get('head_bounce', self.head_bounce), self.head_bounce)
+            self.head_rock   = _num(settings.get('head_rock',   self.head_rock),   self.head_rock)
+            self.head_lean   = _num(settings.get('head_lean',   self.head_lean),   self.head_lean)
+            self.head_sway   = _num(settings.get('head_sway',   self.head_sway),   self.head_sway)
+            self.head_swing  = _num(settings.get('head_swing',  self.head_swing),  self.head_swing)
+    
+        # ---- neck (accept nested or flat) ----
+        neck = settings.get('neck', {})
+        if neck:
+            self.neck_bounce = _num(neck.get('bounce', self.neck_bounce), self.neck_bounce)
+            self.neck_rock   = _num(neck.get('rock',   self.neck_rock),   self.neck_rock)
+            self.neck_lean   = _num(neck.get('lean',   self.neck_lean),   self.neck_lean)
+            self.neck_sway   = _num(neck.get('sway',   self.neck_sway),   self.neck_sway)
+            self.neck_swing  = _num(neck.get('swing',  self.neck_swing),  self.neck_swing)
+        else:
+            self.neck_bounce = _num(settings.get('neck_bounce', self.neck_bounce), self.neck_bounce)
+            self.neck_rock   = _num(settings.get('neck_rock',   self.neck_rock),   self.neck_rock)
+            self.neck_lean   = _num(settings.get('neck_lean',   self.neck_lean),   self.neck_lean)
+            self.neck_sway   = _num(settings.get('neck_sway',   self.neck_sway),   self.neck_sway)
+            self.neck_swing  = _num(settings.get('neck_swing',  self.neck_swing),  self.neck_swing)
+
 
 
         
@@ -419,6 +532,7 @@ class RunCycleGenerator:
         self.hip_ctrl = self.resolve(self.hip_ctrl)
         self.head_ctrl = self.resolve(self.head_ctrl)
         self.neck_ctrl = self.resolve(self.neck_ctrl)    # ← new
+        self.spine_ctrl = self.resolve(self.spine_ctrl)  # ← add this
         for k in self.arm_ctrls:
             self.arm_ctrls[k] = self.resolve(self.arm_ctrls[k])
     
@@ -426,6 +540,7 @@ class RunCycleGenerator:
         self.set_root_keys()
         self.set_leg_keys()
         self.set_chest_keys()
+        self.set_spine_keys()   # ← new
         self.set_hip_keys()
         self.set_arm_keys()
         self.set_head_keys()
@@ -452,7 +567,8 @@ class RunCycleGenerator:
             self.leg_r, self.leg_l,
             self.chest_ctrl,
             self.hip_ctrl,
-            self.neck_ctrl,                # ← new
+            self.neck_ctrl,
+            self.spine_ctrl,                # ← add this
             getattr(self, 'head_ctrl', 'FKHead_M'),
         ]
 
@@ -554,16 +670,33 @@ class RunCycleGenerator:
 
     def set_chest_keys(self):
         start, quarter, mid, three_quarter, end = self.frames_stride_halved
-        self.set_key(self.chest_ctrl, 'rotateZ', start, self.chest_bounce)
-        self.set_key(self.chest_ctrl, 'rotateZ', quarter, -self.chest_bounce)
-        self.set_key(self.chest_ctrl, 'rotateZ', mid, self.chest_bounce)
-        self.set_key(self.chest_ctrl, 'rotateZ', three_quarter, -self.chest_bounce)
-        self.set_key(self.chest_ctrl, 'rotateZ', end, self.chest_bounce)
+        self.set_key(self.chest_ctrl, 'rotateZ', start,      self.chest_bounce + self.chest_z_offset)
+        self.set_key(self.chest_ctrl, 'rotateZ', quarter,   -self.chest_bounce + self.chest_z_offset)
+        self.set_key(self.chest_ctrl, 'rotateZ', mid,        self.chest_bounce + self.chest_z_offset)
+        self.set_key(self.chest_ctrl, 'rotateZ', three_quarter, -self.chest_bounce + self.chest_z_offset)
+        self.set_key(self.chest_ctrl, 'rotateZ', end,        self.chest_bounce + self.chest_z_offset)
+
 
         for attr, val in [('rotateX', self.chest_swing), ('rotateY', self.chest_tilt)]:
             self.set_key(self.chest_ctrl, attr, start, val)
             self.set_key(self.chest_ctrl, attr, mid, -val)
             self.set_key(self.chest_ctrl, attr, end, val)
+
+    def set_spine_keys(self):
+        start, quarter, mid, three_quarter, end = self.frames_stride_halved
+        # RotateZ bounce on fifths, with offset
+        for t, val in zip(
+            [start, quarter, mid, three_quarter, end],
+            [self.spine_bounce, -self.spine_bounce, self.spine_bounce, -self.spine_bounce, self.spine_bounce]
+        ):
+            self.set_key(self.spine_ctrl, 'rotateZ', t, val + self.spine_z_offset)
+
+        # Swing (rotateX) & Tilt (rotateY) exactly like chest
+        for attr, base in [('rotateX', self.spine_swing), ('rotateY', self.spine_tilt)]:
+            self.set_key(self.spine_ctrl, attr, start,  base)
+            self.set_key(self.spine_ctrl, attr, mid,   -base)
+            self.set_key(self.spine_ctrl, attr, end,    base)
+
 
     def set_hip_keys(self):
         start, mid, end = self.frames_stride_halved[0], self.frames_stride_halved[2], self.frames_stride_halved[4]
@@ -589,8 +722,9 @@ class RunCycleGenerator:
         self.set_key(ctrl, 'rotateX', end, -self.neck_rock)
     
         # Lean (rotateZ) static
-        self.set_key(ctrl, 'rotateZ', start, self.neck_lean)
-        self.set_key(ctrl, 'rotateZ', end, self.neck_lean)
+        self.set_key(ctrl, 'rotateZ', start, self.neck_lean + self.neck_z_offset)
+        self.set_key(ctrl, 'rotateZ', end,   self.neck_lean + self.neck_z_offset)
+
     
         # Swing (rotateY) on fourths
         self.set_key(ctrl, 'rotateY', start, self.neck_swing)
@@ -618,8 +752,9 @@ class RunCycleGenerator:
         self.set_key(ctrl, 'rotateX', end, -self.head_rock)
     
         # Lean (rotateZ): static offset
-        self.set_key(ctrl, 'rotateZ', start, self.head_lean)
-        self.set_key(ctrl, 'rotateZ', end, self.head_lean)
+        self.set_key(ctrl, 'rotateZ', start, self.head_lean + self.head_z_offset)
+        self.set_key(ctrl, 'rotateZ', end,   self.head_lean + self.head_z_offset)
+
     
         # Swing (rotateY): animated on fourths
         self.set_key(ctrl, 'rotateY', start, self.head_swing)
