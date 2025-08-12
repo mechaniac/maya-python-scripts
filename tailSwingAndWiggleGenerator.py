@@ -52,22 +52,25 @@ class TailWiggleGenerator:
         cmds.separator(h=6, style="in")
 
         # headers
-        # Node | RotX RotY RotZ | X Halves? Y Halves? Z Halves? | X Sine? Y Sine? Z Sine? | Save | Load | Del
+        # Node | RotX RotY RotZ | OffX OffY OffZ | X Halves? Y Halves? Z Halves? | X IsSine Y IsSine Z IsSine | Save | Load | Del
         cmds.rowLayout(
-            nc=14,
+            nc=17,
             columnWidth=[(1,200),(2,60),(3,60),(4,60),
-                         (5,88),(6,88),(7,88),
-                         (8,80),(9,80),(10,80),
-                         (11,70),(12,70),(13,60),(14,1)]
+                         (5,60),(6,60),(7,60),
+                         (8,88),(9,88),(10,88),
+                         (11,80),(12,80),(13,80),
+                         (14,70),(15,70),(16,60),(17,1)]
         )
         cmds.text(l="Node")
         cmds.text(l="RotX"); cmds.text(l="RotY"); cmds.text(l="RotZ")
+        cmds.text(l="OffX"); cmds.text(l="OffY"); cmds.text(l="OffZ")
         cmds.text(l="X: Halves?"); cmds.text(l="Y: Halves?"); cmds.text(l="Z: Halves?")
         cmds.text(l="X: IsSine"); cmds.text(l="Y: IsSine"); cmds.text(l="Z: IsSine")
         cmds.button(l="Save", c=lambda *_: self.save_settings_ui())
         cmds.button(l="Load", c=lambda *_: self.load_settings_ui())
         cmds.text(l="Del"); cmds.text(l="")  # spacer
         cmds.setParent("..")
+
 
         # rows scroll host
         cmds.scrollLayout(h=320)
@@ -102,31 +105,55 @@ class TailWiggleGenerator:
             return
         # defaults: X=0, Y=25, Z=0; all Halves True; all IsSine False
         for node in chain:
-            self.add_row(node, 0.0, 25.0, 0.0, True, True, True, False, False, False)
+            self.add_row(node, 0.0, 25.0, 0.0, True, True, True, False, False, False, off_x=0.0, off_y=0.0, off_z=0.0)
 
     def add_row(self, node, x_amp, y_amp, z_amp,
                 x_halves=True, y_halves=True, z_halves=True,
-                x_sine=False, y_sine=False, z_sine=False):
+                x_sine=False, y_sine=False, z_sine=False,
+                off_x=0.0, off_y=0.0, off_z=0.0):
         r = cmds.rowLayout(
-            nc=14, adj=1, parent=self.rows_parent,
+            nc=17, adj=1, parent=self.rows_parent,
             columnWidth=[(1,200),(2,60),(3,60),(4,60),
-                         (5,88),(6,88),(7,88),
-                         (8,80),(9,80),(10,80),
-                         (11,70),(12,70),(13,60),(14,1)]
+                         (5,60),(6,60),(7,60),
+                         (8,88),(9,88),(10,88),
+                         (11,80),(12,80),(13,80),
+                         (14,70),(15,70),(16,60),(17,1)]
         )
         cmds.text(l=node, al="left")
-        x_amp_f = cmds.floatField(v=float(x_amp), pre=2); y_amp_f = cmds.floatField(v=float(y_amp), pre=2); z_amp_f = cmds.floatField(v=float(z_amp), pre=2)
-        x_halves_cb = cmds.checkBox(v=bool(x_halves), l=''); y_halves_cb = cmds.checkBox(v=bool(y_halves), l=''); z_halves_cb = cmds.checkBox(v=bool(z_halves), l='')
-        x_sine_cb = cmds.checkBox(v=bool(x_sine), l=''); y_sine_cb = cmds.checkBox(v=bool(y_sine), l=''); z_sine_cb = cmds.checkBox(v=bool(z_sine), l='')
-        del_btn = cmds.button(l="X", c=lambda *_: self.delete_row(r))
-        cmds.text(l="")  # spacer to satisfy col count
-
+    
+        # amplitudes
+        x_amp_f = cmds.floatField(v=float(x_amp), pre=2)
+        y_amp_f = cmds.floatField(v=float(y_amp), pre=2)
+        z_amp_f = cmds.floatField(v=float(z_amp), pre=2)
+    
+        # offsets (absolute baseline)
+        x_off_f = cmds.floatField(v=float(off_x), pre=2)
+        y_off_f = cmds.floatField(v=float(off_y), pre=2)
+        z_off_f = cmds.floatField(v=float(off_z), pre=2)
+    
+        # modes
+        x_halves_cb = cmds.checkBox(v=bool(x_halves), l='')
+        y_halves_cb = cmds.checkBox(v=bool(y_halves), l='')
+        z_halves_cb = cmds.checkBox(v=bool(z_halves), l='')
+        x_sine_cb   = cmds.checkBox(v=bool(x_sine), l='')
+        y_sine_cb   = cmds.checkBox(v=bool(y_sine), l='')
+        z_sine_cb   = cmds.checkBox(v=bool(z_sine), l='')
+    
+        # header’s Save/Load columns -> blank for rows
+        cmds.text(l=""); cmds.text(l="")
+    
+        # delete + spacer
+        cmds.button(l="X", c=lambda *_: self.delete_row(r))
+        cmds.text(l="")
+    
         self.node_rows.append({
             "layout": r, "name": node,
             "xAmp": x_amp_f, "yAmp": y_amp_f, "zAmp": z_amp_f,
+            "xOff": x_off_f, "yOff": y_off_f, "zOff": z_off_f,
             "xHalves": x_halves_cb, "yHalves": y_halves_cb, "zHalves": z_halves_cb,
             "xSine": x_sine_cb, "ySine": y_sine_cb, "zSine": z_sine_cb
         })
+
 
     def delete_row(self, row_layout):
         self.node_rows = [nr for nr in self.node_rows if nr["layout"] != row_layout]
@@ -139,13 +166,16 @@ class TailWiggleGenerator:
 
     # ---------- save/load (JSON string) ----------
     def serialize_settings(self):
-        data = {"base": cmds.textField(self.chain_input, q=True, tx=True).strip(),"nodes":[]}
+        data = {"base": cmds.textField(self.chain_input, q=True, tx=True).strip(), "nodes":[]}
         for nr in self.node_rows:
             data["nodes"].append({
                 "name": nr["name"],
                 "rotX": cmds.floatField(nr["xAmp"], q=True, v=True),
                 "rotY": cmds.floatField(nr["yAmp"], q=True, v=True),
                 "rotZ": cmds.floatField(nr["zAmp"], q=True, v=True),
+                "offX": cmds.floatField(nr["xOff"], q=True, v=True),
+                "offY": cmds.floatField(nr["yOff"], q=True, v=True),
+                "offZ": cmds.floatField(nr["zOff"], q=True, v=True),
                 "xHalves": cmds.checkBox(nr["xHalves"], q=True, v=True),
                 "yHalves": cmds.checkBox(nr["yHalves"], q=True, v=True),
                 "zHalves": cmds.checkBox(nr["zHalves"], q=True, v=True),
@@ -154,7 +184,7 @@ class TailWiggleGenerator:
                 "zSine": cmds.checkBox(nr["zSine"], q=True, v=True),
             })
         return json.dumps(data, indent=2)
-
+    
     def apply_settings(self, data):
         self.clear_rows()
         if "base" in data:
@@ -165,8 +195,10 @@ class TailWiggleGenerator:
                 item.get("name",""),
                 item.get("rotX",0.0), item.get("rotY",25.0), item.get("rotZ",0.0),
                 item.get("xHalves", True), item.get("yHalves", True), item.get("zHalves", True),
-                item.get("xSine", False), item.get("ySine", False), item.get("zSine", False)
+                item.get("xSine", False), item.get("ySine", False), item.get("zSine", False),
+                off_x=item.get("offX", 0.0), off_y=item.get("offY", 0.0), off_z=item.get("offZ", 0.0)
             )
+
 
     def save_settings_ui(self):
         txt = self.serialize_settings()
@@ -222,30 +254,35 @@ class TailWiggleGenerator:
         start, end = self.get_timeline()
         if (end - start) <= 0: cmds.warning("Invalid timeline length."); return
         self.clear_keys_range()
-
+    
         for row in self.node_rows:
             name = row["name"]
             x_amp = cmds.floatField(row["xAmp"], q=True, v=True)
             y_amp = cmds.floatField(row["yAmp"], q=True, v=True)
             z_amp = cmds.floatField(row["zAmp"], q=True, v=True)
+            x_off = cmds.floatField(row["xOff"], q=True, v=True)
+            y_off = cmds.floatField(row["yOff"], q=True, v=True)
+            z_off = cmds.floatField(row["zOff"], q=True, v=True)
             x_halves = cmds.checkBox(row["xHalves"], q=True, v=True)
             y_halves = cmds.checkBox(row["yHalves"], q=True, v=True)
             z_halves = cmds.checkBox(row["zHalves"], q=True, v=True)
             x_sine = cmds.checkBox(row["xSine"], q=True, v=True)
             y_sine = cmds.checkBox(row["ySine"], q=True, v=True)
             z_sine = cmds.checkBox(row["zSine"], q=True, v=True)
-
-            self.key_axis(name, "rotateX", x_amp, start, end, halves=x_halves, is_sine=x_sine)
-            self.key_axis(name, "rotateY", y_amp, start, end, halves=y_halves, is_sine=y_sine)
-            self.key_axis(name, "rotateZ", z_amp, start, end, halves=z_halves, is_sine=z_sine)
-
+    
+            self.key_axis(name, "rotateX", x_amp, start, end, halves=x_halves, is_sine=x_sine, offset=x_off)
+            self.key_axis(name, "rotateY", y_amp, start, end, halves=y_halves, is_sine=y_sine, offset=y_off)
+            self.key_axis(name, "rotateZ", z_amp, start, end, halves=z_halves, is_sine=z_sine, offset=z_off)
+    
         cmds.inViewMessage(amg="Tail/Hair keys set.", pos="midCenter", fade=True)
 
-    def key_axis(self, node, attr, amp, start, end, halves=True, is_sine=False):
+
+    def key_axis(self, node, attr, amp, start, end, halves=True, is_sine=False, offset=0.0):
         """Idempotent inside [start,end]; keeps external keys.
            Halves:  start=+A, 1/2=-A, end=+A
            Fifths:  start=0, 1/4=+A, 1/2=0, 3/4=-A, end=0
-           Fifths+IsSine (same timing as Fifths): start=-A, 1/4=+A, 1/2=-A, 3/4=+A, end=-A
+           Fifths+IsSine: start=-A, 1/4=+A, 1/2=-A, 3/4=+A, end=-A
+           Offset: adds +offset to every keyed value.
         """
         plug = f"{node}.{attr}"
         if not cmds.objExists(plug):
@@ -260,9 +297,10 @@ class TailWiggleGenerator:
         q3   = start + 0.75 * length
     
         def set_and_key(t, v):
+            val = v + offset
             cmds.currentTime(t, e=True)
-            cmds.setAttr(plug, v)            # force evaluated value
-            cmds.setKeyframe(plug, t=t, v=v) # key exactly that
+            cmds.setAttr(plug, val)
+            cmds.setKeyframe(plug, t=t, v=val)
     
         A = float(amp)
     
@@ -272,7 +310,6 @@ class TailWiggleGenerator:
             set_and_key(end,    A)
         else:
             if is_sine:
-                # same timestamps as Fifths; alternate signs
                 set_and_key(start, -A)
                 set_and_key(q1,     A)
                 set_and_key(half,  -A)
@@ -285,10 +322,11 @@ class TailWiggleGenerator:
                 set_and_key(q3,   -A)
                 set_and_key(end,   0.0)
     
-        # keep ends exact; allow smooth interiors
+        # tangents: keep ends exact
         cmds.keyTangent(plug, e=True, itt='auto', ott='auto', time=(start, end))
         cmds.keyTangent(plug, e=True, itt='flat', ott='flat', time=(start, start))
         cmds.keyTangent(plug, e=True, itt='flat', ott='flat', time=(end, end))
+
 
 
 # ---------- run ----------
