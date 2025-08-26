@@ -97,6 +97,22 @@ class HandWalkCycleTool:
             'sway_tz':          0.8    # thirds
         }
 
+        # Spine & Chest controls
+        self.spine_ctrl_candidates = ["FKSpine_M", "FKSpine1_M"]  # alias support
+        self.chest_ctrl = "FKChest_M"
+
+        # Per-joint params
+        # swing_rx: thirds, rock_rz: fifths, sway_ry: thirds
+        self.spine_params = {
+            'swing_rx': 5.0,
+            'rock_rz': 3.0,
+            'sway_ry': 3.0,
+        }
+        self.chest_params = {
+            'swing_rx': 6.0,
+            'rock_rz': 4.0,
+            'sway_ry': 4.0,
+        }
 
 
 
@@ -147,6 +163,34 @@ class HandWalkCycleTool:
         
         cmds.setParent('..')
         cmds.setParent('..')
+        
+        cmds.frameLayout(label="Spine & Chest", collapsable=True, marginWidth=10, marginHeight=5)
+
+        # Spine UI
+        cmds.text(label="SPINE (FKSpine_M / FKSpine1_M)", align='left')
+        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
+        cmds.text(label="Swing rotateX (thirds)")
+        self.spine_rx_field = cmds.floatField(value=self.spine_params['swing_rx'])
+        cmds.text(label="Rock rotateZ (fifths)")
+        self.spine_rz_field = cmds.floatField(value=self.spine_params['rock_rz'])
+        cmds.text(label="Sway rotateY (thirds)")
+        self.spine_ry_field = cmds.floatField(value=self.spine_params['sway_ry'])
+        cmds.setParent('..')
+
+        cmds.separator(height=8, style='in')
+
+        # Chest UI
+        cmds.text(label="CHEST (FKChest_M)", align='left')
+        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
+        cmds.text(label="Swing rotateX (thirds)")
+        self.chest_rx_field = cmds.floatField(value=self.chest_params['swing_rx'])
+        cmds.text(label="Rock rotateZ (fifths)")
+        self.chest_rz_field = cmds.floatField(value=self.chest_params['rock_rz'])
+        cmds.text(label="Sway rotateY (thirds)")
+        self.chest_ry_field = cmds.floatField(value=self.chest_params['sway_ry'])
+        cmds.setParent('..')
+        cmds.setParent('..')
+
         
         cmds.frameLayout(label="Scapula Movement", collapsable=True, marginWidth=10, marginHeight=5)
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
@@ -321,6 +365,16 @@ class HandWalkCycleTool:
         self.root_params['sway'] = cmds.floatField(self.root_sway_field, q=True, value=True)
         self.root_params['rock'] = cmds.floatField(self.root_rock_field, q=True, value=True)
         
+        # Spine/Chest UI reads
+        self.spine_params['swing_rx'] = cmds.floatField(self.spine_rx_field, q=True, value=True)
+        self.spine_params['rock_rz']  = cmds.floatField(self.spine_rz_field, q=True, value=True)
+        self.spine_params['sway_ry']  = cmds.floatField(self.spine_ry_field, q=True, value=True)
+
+        self.chest_params['swing_rx'] = cmds.floatField(self.chest_rx_field, q=True, value=True)
+        self.chest_params['rock_rz']  = cmds.floatField(self.chest_rz_field, q=True, value=True)
+        self.chest_params['sway_ry']  = cmds.floatField(self.chest_ry_field, q=True, value=True)
+
+        
         self.hip_params['swing'] = cmds.floatField(self.hip_swing_field, q=True, value=True)
         self.hip_params['sway'] = cmds.floatField(self.hip_sway_field, q=True, value=True)
         
@@ -356,6 +410,7 @@ class HandWalkCycleTool:
         self.compute_frame_data()
         self.set_stride_keys()
         self.set_root_keys()
+        self.set_spine_chest_keys()
         self.set_hip_keys()
         self.set_feet_follow_keys()
         self.set_scapula_keys()
@@ -449,6 +504,44 @@ class HandWalkCycleTool:
         # Offset Z (static)
         for t in [start, mid, end]:
             self.set_key(root, 'translateZ', t, offset_z)
+
+    def resolve_first_existing(self, names):
+        """Return the first existing node from a list of candidate names, else None."""
+        for n in names:
+            if n and cmds.objExists(n):
+                return n
+        return None
+
+    def set_spine_chest_keys(self):
+        """Animate FKSpine_M (alias FKSpine1_M) and FKChest_M: RX thirds, RZ fifths, RY thirds."""
+        start, mid, end = [f[0] for f in self.frames_stride_halved]
+        times_thirds = [start, mid, end]
+        times_fifths = [start, self.quarter, mid, self.three_quarter, end]
+
+        def apply_joint(ctrl, p):
+            if not ctrl:
+                return
+            # RX thirds (swing)
+            rx_vals = self.pattern_thirds(p['swing_rx'])
+            for t, v in zip(times_thirds, rx_vals):
+                self.set_key(ctrl, 'rotateX', t, v)
+
+            # RZ fifths (rock)
+            rz_vals = self.pattern_fifths(p['rock_rz'])
+            for t, v in zip(times_fifths, rz_vals):
+                self.set_key(ctrl, 'rotateZ', t, v)
+
+            # RY thirds (sway)
+            ry_vals = self.pattern_thirds(p['sway_ry'])
+            for t, v in zip(times_thirds, ry_vals):
+                self.set_key(ctrl, 'rotateY', t, v)
+
+        spine_ctrl = self.resolve_first_existing(self.spine_ctrl_candidates)
+        chest_ctrl = self.chest_ctrl if cmds.objExists(self.chest_ctrl) else None
+
+        apply_joint(spine_ctrl, self.spine_params)
+        apply_joint(chest_ctrl, self.chest_params)
+
     
     def set_hip_keys(self):
         hip = self.hip_ctrl
@@ -577,6 +670,8 @@ class HandWalkCycleTool:
             'neck': getattr(self, 'neck_params', {}).copy() if hasattr(self, 'neck_params') else {},
             'head': self.head_params.copy(),
             'groundHeight': self.groundHeight,   # ← add this
+            'spine': self.spine_params.copy(),
+            'chest': self.chest_params.copy(),
         }
 
         print("// HandWalkCycleTool Settings:\n" + json.dumps(settings, indent=2))
@@ -677,6 +772,8 @@ class HandWalkCycleTool:
             # mirror old single-head config into neck as a starting point
             self.neck_params.update({k: settings['head'].get(k, self.neck_params[k]) for k in self.neck_params})
         self.groundHeight = settings.get('groundHeight', self.groundHeight)
+        self.spine_params.update(settings.get('spine', self.spine_params))
+        self.chest_params.update(settings.get('chest', self.chest_params))
 
 
 
@@ -724,6 +821,16 @@ class HandWalkCycleTool:
 
         if hasattr(self, 'ground_height_field'):
             cmds.floatField(self.ground_height_field, e=True, value=self.groundHeight)
+        if hasattr(self, 'spine_rx_field'):
+            cmds.floatField(self.spine_rx_field, e=True, value=self.spine_params['swing_rx'])
+            cmds.floatField(self.spine_rz_field, e=True, value=self.spine_params['rock_rz'])
+            cmds.floatField(self.spine_ry_field, e=True, value=self.spine_params['sway_ry'])
+
+        if hasattr(self, 'chest_rx_field'):
+            cmds.floatField(self.chest_rx_field, e=True, value=self.chest_params['swing_rx'])
+            cmds.floatField(self.chest_rz_field, e=True, value=self.chest_params['rock_rz'])
+            cmds.floatField(self.chest_ry_field, e=True, value=self.chest_params['sway_ry'])
+
 
 
 HandWalkCycleTool().show()
