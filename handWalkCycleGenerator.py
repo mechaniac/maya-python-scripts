@@ -15,6 +15,8 @@ class HandWalkCycleTool:
             'rotation_y': 0.0
         }
 
+        # Ground clamp height (used to prevent hands from dipping below this)
+        self.groundHeight = -57.04
 
         self.stride_limbs = {
             'right': "IKArm_R",
@@ -40,7 +42,7 @@ class HandWalkCycleTool:
         }
         
         self.feet = {
-            'right': "IKLeg_R",  # ? CORRECTED
+            'right': "IKLeg_R",  # ✅ CORRECTED
             'left': "IKLeg_L"
         }
 
@@ -62,6 +64,7 @@ class HandWalkCycleTool:
             'rotateX': -10.0
         }
         
+        # --- REPLACE THIS BLOCK ---
         self.head_ctrls = {
             'neck': "FKNeck_M",
             'head': "FKHead_M"
@@ -70,6 +73,28 @@ class HandWalkCycleTool:
             'counter_rotateX': -5.0,
             'counter_rotateY': -5.0,
             'rock': 3.0  
+        }
+        # --- WITH THIS ---
+        self.head_ctrls = {'neck': "FKNeck_M", 'head': "FKHead_M"}
+
+        # per-joint params
+        # rotateX/rotateY: thirds pattern; rotateZ: fifths
+        # translateX (Bounce): fifths; translateY (Bob): fifths; translateZ (Sway): thirds
+        self.neck_params = {
+            'counter_rotateX': -3.0,   # thirds
+            'counter_rotateY': -3.0,   # thirds
+            'counter_rotateZ':  2.0,   # fifths
+            'bounce_tx':        0.0,   # fifths
+            'bob_ty':           0.5,   # fifths
+            'sway_tz':          0.5    # thirds
+        }
+        self.head_params = {
+            'counter_rotateX': -5.0,   # thirds
+            'counter_rotateY': -5.0,   # thirds
+            'counter_rotateZ':  3.0,   # fifths
+            'bounce_tx':        0.0,   # fifths
+            'bob_ty':           0.8,   # fifths
+            'sway_tz':          0.8    # thirds
         }
 
 
@@ -132,14 +157,45 @@ class HandWalkCycleTool:
         cmds.setParent('..')
         cmds.setParent('..')
         
-        cmds.frameLayout(label="Neck & Head Counter-Rotation", collapsable=True, marginWidth=10, marginHeight=5)
-        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
-        cmds.text(label="Counter Rotate X")
+        cmds.frameLayout(label="Neck & Head Motion", collapsable=True, marginWidth=10, marginHeight=5)
+
+        # Neck row/column
+        cmds.text(label="NECK", align='left')
+        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
+        cmds.text(label="Counter Rotate X (thirds)")
+        self.neck_rx_field = cmds.floatField(value=self.neck_params['counter_rotateX'])
+        cmds.text(label="Counter Rotate Y (thirds)")
+        self.neck_ry_field = cmds.floatField(value=self.neck_params['counter_rotateY'])
+        cmds.text(label="Counter Rotate Z (fifths)")
+        self.neck_rz_field = cmds.floatField(value=self.neck_params['counter_rotateZ'])
+        cmds.text(label="Bounce X tx (fifths)")
+        self.neck_tx_field = cmds.floatField(value=self.neck_params['bounce_tx'])
+        cmds.text(label="Bob Y ty (fifths)")
+        self.neck_ty_field = cmds.floatField(value=self.neck_params['bob_ty'])
+        cmds.text(label="Sway Z tz (thirds)")
+        self.neck_tz_field = cmds.floatField(value=self.neck_params['sway_tz'])
+        cmds.setParent('..')
+
+        cmds.separator(height=8, style='in')
+
+        # Head row/column
+        cmds.text(label="HEAD", align='left')
+        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
+        cmds.text(label="Counter Rotate X (thirds)")
         self.head_rx_field = cmds.floatField(value=self.head_params['counter_rotateX'])
-        cmds.text(label="Counter Rotate Y")
+        cmds.text(label="Counter Rotate Y (thirds)")
         self.head_ry_field = cmds.floatField(value=self.head_params['counter_rotateY'])
+        cmds.text(label="Counter Rotate Z (fifths)")
+        self.head_rz_field = cmds.floatField(value=self.head_params['counter_rotateZ'])
+        cmds.text(label="Bounce X tx (fifths)")
+        self.head_tx_field = cmds.floatField(value=self.head_params['bounce_tx'])
+        cmds.text(label="Bob Y ty (fifths)")
+        self.head_ty_field = cmds.floatField(value=self.head_params['bob_ty'])
+        cmds.text(label="Sway Z tz (thirds)")
+        self.head_tz_field = cmds.floatField(value=self.head_params['sway_tz'])
         cmds.setParent('..')
         cmds.setParent('..')
+
 
 
         cmds.frameLayout(label="Hip Controls (HipSwinger_M)", collapsable=True, marginWidth=10, marginHeight=5)
@@ -195,6 +251,12 @@ class HandWalkCycleTool:
         cmds.setParent('..')
         cmds.setParent('..')
 
+        cmds.frameLayout(label="Ground Clamp", collapsable=True, marginWidth=10, marginHeight=5)
+        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
+        cmds.text(label="groundHeight (Y threshold)")
+        self.ground_height_field = cmds.floatField(value=self.groundHeight)
+        cmds.setParent('..')
+        cmds.setParent('..')
 
 
         cmds.separator(height=10, style='in')
@@ -270,8 +332,24 @@ class HandWalkCycleTool:
 
         self.scapula_params['rotateZ'] = cmds.floatField(self.scapula_z_field, q=True, value=True)
         self.scapula_params['rotateX'] = cmds.floatField(self.scapula_x_field, q=True, value=True)
+        # Neck fields
+        self.neck_params['counter_rotateX'] = cmds.floatField(self.neck_rx_field, q=True, value=True)
+        self.neck_params['counter_rotateY'] = cmds.floatField(self.neck_ry_field, q=True, value=True)
+        self.neck_params['counter_rotateZ'] = cmds.floatField(self.neck_rz_field, q=True, value=True)
+        self.neck_params['bounce_tx']      = cmds.floatField(self.neck_tx_field, q=True, value=True)
+        self.neck_params['bob_ty']         = cmds.floatField(self.neck_ty_field, q=True, value=True)
+        self.neck_params['sway_tz']        = cmds.floatField(self.neck_tz_field, q=True, value=True)
+
+        # Head fields
         self.head_params['counter_rotateX'] = cmds.floatField(self.head_rx_field, q=True, value=True)
         self.head_params['counter_rotateY'] = cmds.floatField(self.head_ry_field, q=True, value=True)
+        self.head_params['counter_rotateZ'] = cmds.floatField(self.head_rz_field, q=True, value=True)
+        self.head_params['bounce_tx']       = cmds.floatField(self.head_tx_field, q=True, value=True)
+        self.head_params['bob_ty']          = cmds.floatField(self.head_ty_field, q=True, value=True)
+        self.head_params['sway_tz']         = cmds.floatField(self.head_tz_field, q=True, value=True)
+
+        self.groundHeight = cmds.floatField(self.ground_height_field, q=True, value=True)
+
 
         original_time = cmds.currentTime(query=True)
         self.clear_keys()
@@ -281,9 +359,21 @@ class HandWalkCycleTool:
         self.set_hip_keys()
         self.set_feet_follow_keys()
         self.set_scapula_keys()
-        self.set_head_counter_keys()
-
+        self.set_head_and_neck_keys()
+        
+        # finally: clamp hands so they never dip below ground
+        # Enforce ground clamp on hands using the configured groundHeight
+        self.clamp_hands_ty_two_stage_ground()
+        
         cmds.currentTime(original_time, edit=True)
+        
+    def pattern_thirds(self, amp):
+        # start, mid, end
+        return [ amp, -amp, amp ]
+
+    def pattern_fifths(self, amp):
+        # start, quarter, mid, three_quarter, end
+        return [ amp, -amp, amp, -amp, amp ]
 
     def compute_frame_data(self):
         start = cmds.playbackOptions(q=True, min=True)
@@ -421,6 +511,42 @@ class HandWalkCycleTool:
                 self.set_key(ctrl, 'rotateZ', t, z)
                 self.set_key(ctrl, 'rotateX', t, x)
 
+    def set_head_and_neck_keys(self):
+        start, mid, end = [f[0] for f in self.frames_stride_halved]
+        times_thirds = [start, mid, end]
+        times_fifths = [start, self.quarter, mid, self.three_quarter, end]
+
+        def apply_joint(ctrl, p):
+            # Rotations
+            rx_vals = self.pattern_thirds(p['counter_rotateX'])
+            ry_vals = self.pattern_thirds(p['counter_rotateY'])
+            rz_vals = self.pattern_fifths(p['counter_rotateZ'])
+
+            for t, v in zip(times_thirds, rx_vals):
+                self.set_key(ctrl, 'rotateX', t, v)
+            for t, v in zip(times_thirds, ry_vals):
+                self.set_key(ctrl, 'rotateY', t, v)
+            for t, v in zip(times_fifths, rz_vals):
+                self.set_key(ctrl, 'rotateZ', t, v)
+
+            # Translations
+            tx_vals = self.pattern_fifths(p['bounce_tx'])   # Bounce X
+            ty_vals = self.pattern_fifths(p['bob_ty'])      # Bob Y
+            tz_vals = self.pattern_thirds(p['sway_tz'])     # Sway Z
+
+            for t, v in zip(times_fifths, tx_vals):
+                self.set_key(ctrl, 'translateX', t, v)
+            for t, v in zip(times_fifths, ty_vals):
+                self.set_key(ctrl, 'translateY', t, v)
+            for t, v in zip(times_thirds, tz_vals):
+                self.set_key(ctrl, 'translateZ', t, v)
+
+        # Apply to neck and head separately
+        if cmds.objExists(self.head_ctrls['neck']):
+            apply_joint(self.head_ctrls['neck'], self.neck_params)
+        if cmds.objExists(self.head_ctrls['head']):
+            apply_joint(self.head_ctrls['head'], self.head_params)
+
 
     def set_head_counter_keys(self):
         times = [f[0] for f in self.frames_stride_halved]
@@ -448,9 +574,11 @@ class HandWalkCycleTool:
             'hip': self.hip_params.copy(),
             'feet_follow': self.feet_follow.copy(),
             'scapula': self.scapula_params.copy(),
-            'head': self.head_params.copy()
-
+            'neck': getattr(self, 'neck_params', {}).copy() if hasattr(self, 'neck_params') else {},
+            'head': self.head_params.copy(),
+            'groundHeight': self.groundHeight,   # ← add this
         }
+
         print("// HandWalkCycleTool Settings:\n" + json.dumps(settings, indent=2))
 
     def prompt_and_apply_settings(self, *args):
@@ -475,6 +603,66 @@ class HandWalkCycleTool:
         for (t, *_), v in zip(self.frames_stride_halved, values_per_frame):
             self.set_key(obj, attr, t, v)
 
+    def clamp_hands_ty_two_stage_ground(self):
+        """
+        Step 1: For every whole frame, if IKArm_[R/L].translateY < groundHeight,
+                set a key at that frame with the current (negative/below-threshold) value.
+        Step 2: Iterate all keys on IKArm_[R/L].translateY and clamp any value below groundHeight to groundHeight.
+        """
+        import math
+
+        start = cmds.playbackOptions(q=True, min=True)
+        end   = cmds.playbackOptions(q=True, max=True)
+        s = int(math.floor(start))
+        e = int(math.ceil(end))
+
+        gh = float(self.groundHeight)
+        attr = 'translateY'
+
+        controls = [self.stride_limbs.get('right'), self.stride_limbs.get('left')]
+        controls = [c for c in controls if c and cmds.objExists(c)]
+
+        for ctrl in controls:
+            if not cmds.attributeQuery(attr, node=ctrl, exists=True):
+                continue
+
+            # --- Step 1: sample every whole frame; key only where value is below groundHeight ---
+            for t in range(s, e + 1):
+                try:
+                    val = cmds.getAttr(f"{ctrl}.{attr}", time=t)
+                except Exception:
+                    continue
+                if val is not None and val < gh:
+                    try:
+                        cmds.setKeyframe(ctrl, attribute=attr, t=t, v=val)
+                    except Exception:
+                        pass
+
+            # --- Step 2: get all keys and clamp any below groundHeight to groundHeight ---
+            key_times = cmds.keyframe(ctrl, at=attr, q=True, timeChange=True)
+            if not key_times:
+                continue
+
+            # De-dup times while preserving float precision
+            seen = set()
+            ordered_times = []
+            for kt in key_times:
+                if kt not in seen:
+                    seen.add(kt)
+                    ordered_times.append(kt)
+
+            for kt in ordered_times:
+                try:
+                    v = cmds.getAttr(f"{ctrl}.{attr}", time=kt)
+                except Exception:
+                    continue
+                if v is not None and v < gh:
+                    try:
+                        cmds.setKeyframe(ctrl, attribute=attr, t=kt, v=gh)
+                    except Exception:
+                        pass
+
+
 
     def apply_settings(self, settings):
         self.stride = settings.get('stride', self.stride)
@@ -483,7 +671,12 @@ class HandWalkCycleTool:
         self.hand_offsets.update(settings.get('offsets', self.hand_offsets))
         self.feet_follow.update(settings.get('feet_follow', self.feet_follow))
         self.scapula_params.update(settings.get('scapula', self.scapula_params))
+        self.neck_params.update(settings.get('neck', self.neck_params))
         self.head_params.update(settings.get('head', self.head_params))
+        if 'head' in settings and 'neck' not in settings:
+            # mirror old single-head config into neck as a starting point
+            self.neck_params.update({k: settings['head'].get(k, self.neck_params[k]) for k in self.neck_params})
+        self.groundHeight = settings.get('groundHeight', self.groundHeight)
 
 
 
@@ -510,14 +703,27 @@ class HandWalkCycleTool:
         
         cmds.floatField(self.scapula_z_field, e=True, value=self.scapula_params['rotateZ'])
         cmds.floatField(self.scapula_x_field, e=True, value=self.scapula_params['rotateX'])
+        # Neck UI
+        cmds.floatField(self.neck_rx_field, e=True, value=self.neck_params['counter_rotateX'])
+        cmds.floatField(self.neck_ry_field, e=True, value=self.neck_params['counter_rotateY'])
+        cmds.floatField(self.neck_rz_field, e=True, value=self.neck_params['counter_rotateZ'])
+        cmds.floatField(self.neck_tx_field, e=True, value=self.neck_params['bounce_tx'])
+        cmds.floatField(self.neck_ty_field, e=True, value=self.neck_params['bob_ty'])
+        cmds.floatField(self.neck_tz_field, e=True, value=self.neck_params['sway_tz'])
+
+        # Head UI
         cmds.floatField(self.head_rx_field, e=True, value=self.head_params['counter_rotateX'])
         cmds.floatField(self.head_ry_field, e=True, value=self.head_params['counter_rotateY'])
-
-
+        cmds.floatField(self.head_rz_field, e=True, value=self.head_params['counter_rotateZ'])
+        cmds.floatField(self.head_tx_field, e=True, value=self.head_params['bounce_tx'])
+        cmds.floatField(self.head_ty_field, e=True, value=self.head_params['bob_ty'])
+        cmds.floatField(self.head_tz_field, e=True, value=self.head_params['sway_tz'])
         
         cmds.floatField(self.hip_swing_field, e=True, value=self.hip_params['swing'])
         cmds.floatField(self.hip_sway_field, e=True, value=self.hip_params['sway'])
 
+        if hasattr(self, 'ground_height_field'):
+            cmds.floatField(self.ground_height_field, e=True, value=self.groundHeight)
 
 
 HandWalkCycleTool().show()
