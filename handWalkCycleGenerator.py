@@ -121,201 +121,156 @@ class HandWalkCycleTool:
     def show(self):
         if cmds.window(self.window, exists=True):
             cmds.deleteUI(self.window)
-
-        self.window = cmds.window(self.window, title="Hand Walk Cycle Tool", widthHeight=(500, 300))
+    
+        # wider, resizable window
+        self.window = cmds.window(self.window, title="Hand Walk Cycle Tool", widthHeight=(1000, 650), sizeable=True)
+    
+        main = cmds.formLayout(numberOfDivisions=100)
+    
+        # =========================
+        # LEFT COLUMN (scrollable)
+        # =========================
+        leftScroll = cmds.scrollLayout(childResizable=True)
         cmds.columnLayout(adjustableColumn=True, rowSpacing=10)
-
+    
+        # --- Stride Settings ---
         cmds.frameLayout(label="Stride Settings", collapsable=True, marginWidth=10, marginHeight=5)
-        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
-
-        cmds.text(label="Stride Length")
-        self.stride_field = cmds.floatField(value=self.stride)
-
-        cmds.text(label="Stride Width (X)")
-        self.stride_width_field = cmds.floatField(value=self.stride_width)
-
-        cmds.text(label="Stride Height (Y)")
-        self.stride_height_field = cmds.floatField(value=self.stride_height)
-
-        cmds.setParent('..')
-        cmds.setParent('..')
-        
+        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
+        cmds.text(label="Stride Length");       self.stride_field       = cmds.floatField(value=self.stride)
+        cmds.text(label="Stride Width (X)");    self.stride_width_field = cmds.floatField(value=self.stride_width)
+        cmds.text(label="Stride Height (Y)");   self.stride_height_field= cmds.floatField(value=self.stride_height)
+        cmds.setParent('..'); cmds.setParent('..')
+    
+        # --- Root Controls ---
         cmds.frameLayout(label="Root Controls (RootX_M)", collapsable=True, marginWidth=10, marginHeight=5)
-        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
-        
-        cmds.text(label="Offset Y (translateY)")
-        self.root_offset_y_field = cmds.floatField(value=self.root_params['offset_y'])
-        
-        cmds.text(label="Offset Z (translateZ)")
-        self.root_offset_z_field = cmds.floatField(value=self.root_params['offset_z'])
-        
-        cmds.text(label="Offset Rock (rotateX)")
-        self.root_offset_rx_field = cmds.floatField(value=self.root_params['offset_rx'])
-        
-        cmds.text(label="Bounce (translateY)")
-        self.root_bounce_field = cmds.floatField(value=self.root_params['bounce'])
-        
-        cmds.text(label="Side Sway (rotateY)")
-        self.root_sway_field = cmds.floatField(value=self.root_params['sway'])
-        
-        cmds.text(label="Rock (rotateX)")
-        self.root_rock_field = cmds.floatField(value=self.root_params['rock'])
-        
-        cmds.setParent('..')
-        cmds.setParent('..')
-        
+        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
+        cmds.text(label="Offset Y (translateY)"); self.root_offset_y_field = cmds.floatField(value=self.root_params['offset_y'])
+        cmds.text(label="Offset Z (translateZ)"); self.root_offset_z_field = cmds.floatField(value=self.root_params['offset_z'])
+        cmds.text(label="Offset Rock (rotateX)"); self.root_offset_rx_field= cmds.floatField(value=self.root_params['offset_rx'])
+        cmds.text(label="Bounce (translateY)");   self.root_bounce_field   = cmds.floatField(value=self.root_params['bounce'])
+        cmds.text(label="Side Sway (rotateY)");   self.root_sway_field     = cmds.floatField(value=self.root_params['sway'])
+        cmds.text(label="Rock (rotateX)");        self.root_rock_field     = cmds.floatField(value=self.root_params['rock'])
+        cmds.setParent('..'); cmds.setParent('..')
+    
+        # --- Spine & Chest ---
         cmds.frameLayout(label="Spine & Chest", collapsable=True, marginWidth=10, marginHeight=5)
-
-        # Spine UI
+    
         cmds.text(label="SPINE (FKSpine_M / FKSpine1_M)", align='left')
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
-        cmds.text(label="Swing rotateX (thirds)")
-        self.spine_rx_field = cmds.floatField(value=self.spine_params['swing_rx'])
-        cmds.text(label="Rock rotateZ (fifths)")
-        self.spine_rz_field = cmds.floatField(value=self.spine_params['rock_rz'])
-        cmds.text(label="Sway rotateY (thirds)")
-        self.spine_ry_field = cmds.floatField(value=self.spine_params['sway_ry'])
+        cmds.text(label="Swing rotateX (thirds)"); self.spine_rx_field = cmds.floatField(value=self.spine_params['swing_rx'])
+        cmds.text(label="Rock rotateZ (fifths)");  self.spine_rz_field = cmds.floatField(value=self.spine_params['rock_rz'])
+        cmds.text(label="Sway rotateY (thirds)");  self.spine_ry_field = cmds.floatField(value=self.spine_params['sway_ry'])
         cmds.setParent('..')
-
+    
         cmds.separator(height=8, style='in')
-
-        # Chest UI
+    
         cmds.text(label="CHEST (FKChest_M)", align='left')
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
-        cmds.text(label="Swing rotateX (thirds)")
-        self.chest_rx_field = cmds.floatField(value=self.chest_params['swing_rx'])
-        cmds.text(label="Rock rotateZ (fifths)")
-        self.chest_rz_field = cmds.floatField(value=self.chest_params['rock_rz'])
-        cmds.text(label="Sway rotateY (thirds)")
-        self.chest_ry_field = cmds.floatField(value=self.chest_params['sway_ry'])
-        cmds.setParent('..')
-        cmds.setParent('..')
-
+        cmds.text(label="Swing rotateX (thirds)"); self.chest_rx_field = cmds.floatField(value=self.chest_params['swing_rx'])
+        cmds.text(label="Rock rotateZ (fifths)");  self.chest_rz_field = cmds.floatField(value=self.chest_params['rock_rz'])
+        cmds.text(label="Sway rotateY (thirds)");  self.chest_ry_field = cmds.floatField(value=self.chest_params['sway_ry'])
+        cmds.setParent('..'); cmds.setParent('..')
         
+                # --- Scapula Movement (LEFT) ---
         cmds.frameLayout(label="Scapula Movement", collapsable=True, marginWidth=10, marginHeight=5)
-        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
-        cmds.text(label="Rotate Z")
-        self.scapula_z_field = cmds.floatField(value=self.scapula_params['rotateZ'])
-        cmds.text(label="Rotate X")
-        self.scapula_x_field = cmds.floatField(value=self.scapula_params['rotateX'])
-        cmds.setParent('..')
-        cmds.setParent('..')
-        
-        cmds.frameLayout(label="Neck & Head Motion", collapsable=True, marginWidth=10, marginHeight=5)
+        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
+        cmds.text(label="Rotate Z"); self.scapula_z_field = cmds.floatField(value=self.scapula_params['rotateZ'])
+        cmds.text(label="Rotate X"); self.scapula_x_field = cmds.floatField(value=self.scapula_params['rotateX'])
+        cmds.setParent('..'); cmds.setParent('..')
 
-        # Neck row/column
+    
+        # finish LEFT column
+        cmds.setParent('..')      # columnLayout
+        cmds.setParent('..')      # scrollLayout
+    
+        # ==========================
+        # RIGHT COLUMN (scrollable)
+        # ==========================
+        rightScroll = cmds.scrollLayout(childResizable=True)
+        cmds.columnLayout(adjustableColumn=True, rowSpacing=10)
+    
+        # --- Neck & Head Motion ---
+        cmds.frameLayout(label="Neck & Head Motion", collapsable=True, marginWidth=10, marginHeight=5)
+    
         cmds.text(label="NECK", align='left')
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
-        cmds.text(label="Counter Rotate X (thirds)")
-        self.neck_rx_field = cmds.floatField(value=self.neck_params['counter_rotateX'])
-        cmds.text(label="Counter Rotate Y (thirds)")
-        self.neck_ry_field = cmds.floatField(value=self.neck_params['counter_rotateY'])
-        cmds.text(label="Counter Rotate Z (fifths)")
-        self.neck_rz_field = cmds.floatField(value=self.neck_params['counter_rotateZ'])
-        cmds.text(label="Bounce X tx (fifths)")
-        self.neck_tx_field = cmds.floatField(value=self.neck_params['bounce_tx'])
-        cmds.text(label="Bob Y ty (fifths)")
-        self.neck_ty_field = cmds.floatField(value=self.neck_params['bob_ty'])
-        cmds.text(label="Sway Z tz (thirds)")
-        self.neck_tz_field = cmds.floatField(value=self.neck_params['sway_tz'])
+        cmds.text(label="Counter Rotate X (thirds)"); self.neck_rx_field = cmds.floatField(value=self.neck_params['counter_rotateX'])
+        cmds.text(label="Counter Rotate Y (thirds)"); self.neck_ry_field = cmds.floatField(value=self.neck_params['counter_rotateY'])
+        cmds.text(label="Counter Rotate Z (fifths)"); self.neck_rz_field = cmds.floatField(value=self.neck_params['counter_rotateZ'])
+        cmds.text(label="Bounce X tx (fifths)");      self.neck_tx_field = cmds.floatField(value=self.neck_params['bounce_tx'])
+        cmds.text(label="Bob Y ty (fifths)");         self.neck_ty_field = cmds.floatField(value=self.neck_params['bob_ty'])
+        cmds.text(label="Sway Z tz (thirds)");        self.neck_tz_field = cmds.floatField(value=self.neck_params['sway_tz'])
         cmds.setParent('..')
-
+    
         cmds.separator(height=8, style='in')
-
-        # Head row/column
+    
         cmds.text(label="HEAD", align='left')
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
-        cmds.text(label="Counter Rotate X (thirds)")
-        self.head_rx_field = cmds.floatField(value=self.head_params['counter_rotateX'])
-        cmds.text(label="Counter Rotate Y (thirds)")
-        self.head_ry_field = cmds.floatField(value=self.head_params['counter_rotateY'])
-        cmds.text(label="Counter Rotate Z (fifths)")
-        self.head_rz_field = cmds.floatField(value=self.head_params['counter_rotateZ'])
-        cmds.text(label="Bounce X tx (fifths)")
-        self.head_tx_field = cmds.floatField(value=self.head_params['bounce_tx'])
-        cmds.text(label="Bob Y ty (fifths)")
-        self.head_ty_field = cmds.floatField(value=self.head_params['bob_ty'])
-        cmds.text(label="Sway Z tz (thirds)")
-        self.head_tz_field = cmds.floatField(value=self.head_params['sway_tz'])
+        cmds.text(label="Counter Rotate X (thirds)"); self.head_rx_field = cmds.floatField(value=self.head_params['counter_rotateX'])
+        cmds.text(label="Counter Rotate Y (thirds)"); self.head_ry_field = cmds.floatField(value=self.head_params['counter_rotateY'])
+        cmds.text(label="Counter Rotate Z (fifths)"); self.head_rz_field = cmds.floatField(value=self.head_params['counter_rotateZ'])
+        cmds.text(label="Bounce X tx (fifths)");      self.head_tx_field = cmds.floatField(value=self.head_params['bounce_tx'])
+        cmds.text(label="Bob Y ty (fifths)");         self.head_ty_field = cmds.floatField(value=self.head_params['bob_ty'])
+        cmds.text(label="Sway Z tz (thirds)");        self.head_tz_field = cmds.floatField(value=self.head_params['sway_tz'])
         cmds.setParent('..')
         cmds.setParent('..')
-
-
-
+    
+        # --- Hip Controls ---
         cmds.frameLayout(label="Hip Controls (HipSwinger_M)", collapsable=True, marginWidth=10, marginHeight=5)
-        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
-        
-        cmds.text(label="Hip Swing (rotateX)")
-        self.hip_swing_field = cmds.floatField(value=self.hip_params['swing'])
-        
-        cmds.text(label="Hip Sway (rotateY)")
-        self.hip_sway_field = cmds.floatField(value=self.hip_params['sway'])
-        
-        cmds.setParent('..')
-        cmds.setParent('..')
-        
+        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
+        cmds.text(label="Hip Swing (rotateX)"); self.hip_swing_field = cmds.floatField(value=self.hip_params['swing'])
+        cmds.text(label="Hip Sway (rotateY)");  self.hip_sway_field  = cmds.floatField(value=self.hip_params['sway'])
+        cmds.setParent('..'); cmds.setParent('..')
+    
+        # --- Feet Follow Settings ---
         cmds.frameLayout(label="Feet Follow Settings", collapsable=True, marginWidth=10, marginHeight=5)
-        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
-        
-        cmds.text(label="Move Feet With Root")
-        self.move_feet_slider = cmds.floatSlider(min=0, max=1, value=self.feet_follow['moveFeetWithRoot'], step=0.01)
-        
-        cmds.text(label="Offset X (mirrored)")
-        self.feet_offset_x_field = cmds.floatField(value=self.feet_follow['offset_x'])
-        
-        cmds.text(label="Offset Y")
-        self.feet_offset_y_field = cmds.floatField(value=self.feet_follow['offset_y'])
-        
-        cmds.text(label="Offset Z")
-        self.feet_offset_z_field = cmds.floatField(value=self.feet_follow['offset_z'])
-        
-        cmds.text(label="Rotate X")
-        self.feet_rotate_x_field = cmds.floatField(value=self.feet_follow['rotate_x'])
-        
-        cmds.setParent('..')
-        cmds.setParent('..')
-
-
-
+        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
+        cmds.text(label="Move Feet With Root"); self.move_feet_slider = cmds.floatSlider(min=0, max=1, value=self.feet_follow['moveFeetWithRoot'], step=0.01)
+        cmds.text(label="Offset X (mirrored)"); self.feet_offset_x_field = cmds.floatField(value=self.feet_follow['offset_x'])
+        cmds.text(label="Offset Y");            self.feet_offset_y_field = cmds.floatField(value=self.feet_follow['offset_y'])
+        cmds.text(label="Offset Z");            self.feet_offset_z_field = cmds.floatField(value=self.feet_follow['offset_z'])
+        cmds.text(label="Rotate X");            self.feet_rotate_x_field = cmds.floatField(value=self.feet_follow['rotate_x'])
+        cmds.setParent('..'); cmds.setParent('..')
+    
+        # --- Hand Position Offsets ---
         cmds.frameLayout(label="Hand Position Offsets", collapsable=True, marginWidth=10, marginHeight=5)
-        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
-        
-        cmds.text(label="Offset X (side)")
-        self.offset_x_field = cmds.floatField(value=self.hand_offsets['offset_x'])
-        
-        cmds.text(label="Offset Y (height)")
-        self.offset_y_field = cmds.floatField(value=self.hand_offsets['offset_y'])
-        
-        cmds.text(label="Offset Z (forward)")
-        self.offset_z_field = cmds.floatField(value=self.hand_offsets['offset_z'])
-        
-        cmds.text(label="Rotate Y")
-        self.rotate_y_field = cmds.floatField(value=self.hand_offsets['rotation_y'])
-        
-        cmds.setParent('..')
-        cmds.setParent('..')
-
+        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
+        cmds.text(label="Offset X (side)");     self.offset_x_field = cmds.floatField(value=self.hand_offsets['offset_x'])
+        cmds.text(label="Offset Y (height)");   self.offset_y_field = cmds.floatField(value=self.hand_offsets['offset_y'])
+        cmds.text(label="Offset Z (forward)");  self.offset_z_field = cmds.floatField(value=self.hand_offsets['offset_z'])
+        cmds.text(label="Rotate Y");            self.rotate_y_field = cmds.floatField(value=self.hand_offsets['rotation_y'])
+        cmds.setParent('..'); cmds.setParent('..')
+    
+        # --- Ground Clamp ---
         cmds.frameLayout(label="Ground Clamp", collapsable=True, marginWidth=10, marginHeight=5)
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
-        cmds.text(label="groundHeight (Y threshold)")
-        self.ground_height_field = cmds.floatField(value=self.groundHeight)
-        cmds.setParent('..')
-        cmds.setParent('..')
-
-
-        cmds.separator(height=10, style='in')
-        cmds.button(label="Create Hand Walk Cycle", height=40, command=self.create_walk_cycle)
-        cmds.separator(height=10, style='in')
-
-        cmds.frameLayout(label="Presets", collapsable=True, marginWidth=10, marginHeight=5)
-        cmds.rowLayout(numberOfColumns=2, adjustableColumn=2, columnWidth2=(250, 250), columnAlign=(1, 'left'))
-
+        cmds.text(label="groundHeight (Y threshold)"); self.ground_height_field = cmds.floatField(value=self.groundHeight)
+        cmds.setParent('..'); cmds.setParent('..')
+    
+        # --- Actions / Presets ---
+        cmds.frameLayout(label="Actions & Presets", collapsable=True, marginWidth=10, marginHeight=5)
+        cmds.columnLayout(adjustableColumn=True, rowSpacing=6)
+        cmds.button(label="Create Hand Walk Cycle", height=36, command=self.create_walk_cycle)
+        cmds.separator(height=8, style='in')
+        cmds.rowLayout(numberOfColumns=2, adjustableColumn=2, columnWidth2=(250,250), columnAlign=(1,'left'))
         cmds.button(label="Print Current Settings", command=self.print_settings)
         cmds.button(label="Apply Settings From String", command=self.prompt_and_apply_settings)
-
-        cmds.setParent('..')
-        cmds.setParent('..')
+        cmds.setParent('..'); cmds.setParent('..')
+    
+        # finish RIGHT column
+        cmds.setParent('..')      # columnLayout
+        cmds.setParent('..')      # scrollLayout
+    
+        # ===== Attach the two scroll columns side-by-side =====
+        cmds.formLayout(
+            main, e=True,
+            attachForm=[(leftScroll,'top',8),(leftScroll,'left',8),(leftScroll,'bottom',8),
+                        (rightScroll,'top',8),(rightScroll,'right',8),(rightScroll,'bottom',8)],
+            attachPosition=[(leftScroll,'right',6,50),(rightScroll,'left',6,50)]
+        )
+    
         cmds.showWindow(self.window)
+
 
     def clear_keys(self):
         start = cmds.playbackOptions(q=True, min=True)
@@ -821,15 +776,6 @@ class HandWalkCycleTool:
 
         if hasattr(self, 'ground_height_field'):
             cmds.floatField(self.ground_height_field, e=True, value=self.groundHeight)
-        if hasattr(self, 'spine_rx_field'):
-            cmds.floatField(self.spine_rx_field, e=True, value=self.spine_params['swing_rx'])
-            cmds.floatField(self.spine_rz_field, e=True, value=self.spine_params['rock_rz'])
-            cmds.floatField(self.spine_ry_field, e=True, value=self.spine_params['sway_ry'])
-
-        if hasattr(self, 'chest_rx_field'):
-            cmds.floatField(self.chest_rx_field, e=True, value=self.chest_params['swing_rx'])
-            cmds.floatField(self.chest_rz_field, e=True, value=self.chest_params['rock_rz'])
-            cmds.floatField(self.chest_ry_field, e=True, value=self.chest_params['sway_ry'])
 
 
 
