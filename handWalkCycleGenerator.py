@@ -114,6 +114,22 @@ class HandWalkCycleTool:
             'rock_rz': 4.0,
             'sway_ry': 4.0,
         }
+        
+        # Legs FK controls + FK/IK blend
+        self.legs_fk_params = {
+            'fkik_blend': 0.0,   # 0..10
+            'hip_rz':   0.0,
+            'knee_rz':  0.0,
+            'foot_rz':  0.0,
+            'toe_rz':   0.0,
+        }
+
+        # Nodes for the FK/IK blend (as requested)
+        self.fkik_nodes = {
+            'right': 'FKIKLeg_R',
+            'left':  'FKIKLeg_L',
+        }
+
 
 
 
@@ -178,18 +194,7 @@ class HandWalkCycleTool:
         cmds.text(label="Rotate Z"); self.scapula_z_field = cmds.floatField(value=self.scapula_params['rotateZ'])
         cmds.text(label="Rotate X"); self.scapula_x_field = cmds.floatField(value=self.scapula_params['rotateX'])
         cmds.setParent('..'); cmds.setParent('..')
-
-    
-        # finish LEFT column
-        cmds.setParent('..')      # columnLayout
-        cmds.setParent('..')      # scrollLayout
-    
-        # ==========================
-        # RIGHT COLUMN (scrollable)
-        # ==========================
-        rightScroll = cmds.scrollLayout(childResizable=True)
-        cmds.columnLayout(adjustableColumn=True, rowSpacing=10)
-    
+        
         # --- Neck & Head Motion ---
         cmds.frameLayout(label="Neck & Head Motion", collapsable=True, marginWidth=10, marginHeight=5)
     
@@ -215,6 +220,19 @@ class HandWalkCycleTool:
         cmds.text(label="Sway Z tz (thirds)");        self.head_tz_field = cmds.floatField(value=self.head_params['sway_tz'])
         cmds.setParent('..')
         cmds.setParent('..')
+
+    
+        # finish LEFT column
+        cmds.setParent('..')      # columnLayout
+        cmds.setParent('..')      # scrollLayout
+    
+        # ==========================
+        # RIGHT COLUMN (scrollable)
+        # ==========================
+        rightScroll = cmds.scrollLayout(childResizable=True)
+        cmds.columnLayout(adjustableColumn=True, rowSpacing=10)
+    
+
     
         # --- Hip Controls ---
         cmds.frameLayout(label="Hip Controls (HipSwinger_M)", collapsable=True, marginWidth=10, marginHeight=5)
@@ -232,6 +250,28 @@ class HandWalkCycleTool:
         cmds.text(label="Offset Z");            self.feet_offset_z_field = cmds.floatField(value=self.feet_follow['offset_z'])
         cmds.text(label="Rotate X");            self.feet_rotate_x_field = cmds.floatField(value=self.feet_follow['rotate_x'])
         cmds.setParent('..'); cmds.setParent('..')
+        
+        # --- Legs Forward Kinematics ---
+        cmds.frameLayout(label="Legs Forward Kinematics", collapsable=True, marginWidth=10, marginHeight=5)
+        # FK/IK blend slider 0..10
+        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,170),(2,180)])
+        cmds.text(label="Legs Forward Inverse Kinematics")
+        self.fkik_slider = cmds.floatSlider(min=0, max=10, value=self.legs_fk_params['fkik_blend'], step=0.1)
+        cmds.setParent('..')
+    
+        # FK Z-rot fields
+        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,170),(2,180)])
+        cmds.text(label="Hip rotate Z")
+        self.fk_hip_rz_field  = cmds.floatField(value=self.legs_fk_params['hip_rz'])
+        cmds.text(label="Knee rotate Z")
+        self.fk_knee_rz_field = cmds.floatField(value=self.legs_fk_params['knee_rz'])
+        cmds.text(label="Foot rotate Z")
+        self.fk_foot_rz_field = cmds.floatField(value=self.legs_fk_params['foot_rz'])
+        cmds.text(label="Toe rotate Z")
+        self.fk_toe_rz_field  = cmds.floatField(value=self.legs_fk_params['toe_rz'])
+        cmds.setParent('..')
+        cmds.setParent('..')
+
     
         # --- Hand Position Offsets ---
         cmds.frameLayout(label="Hand Position Offsets", collapsable=True, marginWidth=10, marginHeight=5)
@@ -346,6 +386,14 @@ class HandWalkCycleTool:
 
         self.scapula_params['rotateZ'] = cmds.floatField(self.scapula_z_field, q=True, value=True)
         self.scapula_params['rotateX'] = cmds.floatField(self.scapula_x_field, q=True, value=True)
+
+        # Legs FK / FKIK blend
+        self.legs_fk_params['fkik_blend'] = cmds.floatSlider(self.fkik_slider, q=True, value=True)
+        self.legs_fk_params['hip_rz']  = cmds.floatField(self.fk_hip_rz_field,  q=True, value=True)
+        self.legs_fk_params['knee_rz'] = cmds.floatField(self.fk_knee_rz_field, q=True, value=True)
+        self.legs_fk_params['foot_rz'] = cmds.floatField(self.fk_foot_rz_field, q=True, value=True)
+        self.legs_fk_params['toe_rz']  = cmds.floatField(self.fk_toe_rz_field,  q=True, value=True)
+
         # Neck fields
         self.neck_params['counter_rotateX'] = cmds.floatField(self.neck_rx_field, q=True, value=True)
         self.neck_params['counter_rotateY'] = cmds.floatField(self.neck_ry_field, q=True, value=True)
@@ -377,7 +425,8 @@ class HandWalkCycleTool:
         self.set_feet_follow_keys()
         self.set_scapula_keys()
         self.set_head_and_neck_keys()
-        
+        self.set_legs_fk_keys_and_blend()
+
         # finally: clamp hands so they never dip below ground
         # Enforce ground clamp on hands using the configured groundHeight
         self.clamp_hands_ty_two_stage_ground()
@@ -561,6 +610,42 @@ class HandWalkCycleTool:
             self.set_key(right, 'rotateX', t, r)
             self.set_key(left,  'rotateX', t, r)
 
+    def set_legs_fk_keys_and_blend(self):
+        """Set constant FK Z rotations on Start/End and apply FKIK blend (0..10) to both legs."""
+        start = cmds.playbackOptions(q=True, min=True)
+        end   = cmds.playbackOptions(q=True, max=True)
+
+        # clamp blend to 0..10
+        blend = max(0.0, min(10.0, float(self.legs_fk_params['fkik_blend'])))
+
+        # Apply FKIK blend as constant keys on start/end
+        for side in ['right', 'left']:
+            node = self.fkik_nodes.get(side)
+            if node and cmds.objExists(node) and cmds.attributeQuery('FKIKBlend', node=node, exists=True):
+                for t in (start, end):
+                    try:
+                        self.set_key(node, 'FKIKBlend', t, blend)
+                    except Exception:
+                        pass
+
+        # FK Z rotations (same input used for L/R as requested)
+        pairs = [
+            ('FKHip_R',  'FKHip_L',  self.legs_fk_params['hip_rz']),
+            ('FKKnee_R', 'FKKnee_L', self.legs_fk_params['knee_rz']),
+            ('FKFoot_R', 'FKFoot_L', self.legs_fk_params['foot_rz']),
+            ('FKToe_R',  'FKToe_L',  self.legs_fk_params['toe_rz']),  # note: L toe channel is FKToe_L
+        ]
+
+        for r_node, l_node, val in pairs:
+            for node in (r_node, l_node):
+                if cmds.objExists(node) and cmds.attributeQuery('rotateZ', node=node, exists=True):
+                    for t in (start, end):
+                        try:
+                            self.set_key(node, 'rotateZ', t, float(val))
+                        except Exception:
+                            pass
+
+
     def set_scapula_keys(self):
         times = [f[0] for f in self.frames_stride_halved]
         for side in ['left', 'right']:
@@ -648,6 +733,8 @@ class HandWalkCycleTool:
             'clampHandsToGround': self.clamp_hands_to_ground,
             'spine': self.spine_params.copy(),
             'chest': self.chest_params.copy(),
+            'legs_fk': self.legs_fk_params.copy(),
+
         }
 
         print("// HandWalkCycleTool Settings:\n" + json.dumps(settings, indent=2))
@@ -752,6 +839,7 @@ class HandWalkCycleTool:
         self.clamp_hands_to_ground = settings.get('clampHandsToGround', self.clamp_hands_to_ground)
         self.spine_params.update(settings.get('spine', self.spine_params))
         self.chest_params.update(settings.get('chest', self.chest_params))
+        self.legs_fk_params.update(settings.get('legs_fk', self.legs_fk_params))
 
 
 
@@ -802,6 +890,16 @@ class HandWalkCycleTool:
         if hasattr(self, 'clamp_checkbox'):
             cmds.checkBox(self.clamp_checkbox, e=True, value=self.clamp_hands_to_ground)
 
+        if hasattr(self, 'fkik_slider'):
+            cmds.floatSlider(self.fkik_slider, e=True, value=self.legs_fk_params['fkik_blend'])
+        for fld, key in [
+            (getattr(self, 'fk_hip_rz_field',  None), 'hip_rz'),
+            (getattr(self, 'fk_knee_rz_field', None), 'knee_rz'),
+            (getattr(self, 'fk_foot_rz_field', None), 'foot_rz'),
+            (getattr(self, 'fk_toe_rz_field',  None), 'toe_rz'),
+        ]:
+            if fld:
+                cmds.floatField(fld, e=True, value=self.legs_fk_params[key])
 
 
 
