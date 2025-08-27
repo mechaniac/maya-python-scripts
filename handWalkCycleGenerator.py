@@ -17,6 +17,7 @@ class HandWalkCycleTool:
 
         # Ground clamp height (used to prevent hands from dipping below this)
         self.groundHeight = -57.04
+        self.clamp_hands_to_ground = True  # new toggle
 
         self.stride_limbs = {
             'right': "IKArm_R",
@@ -244,7 +245,11 @@ class HandWalkCycleTool:
         # --- Ground Clamp ---
         cmds.frameLayout(label="Ground Clamp", collapsable=True, marginWidth=10, marginHeight=5)
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
-        cmds.text(label="groundHeight (Y threshold)"); self.ground_height_field = cmds.floatField(value=self.groundHeight)
+        cmds.text(label="groundHeight (Y threshold)")
+        self.ground_height_field = cmds.floatField(value=self.groundHeight)
+        
+        cmds.text(label="Clamp Hands To Ground")
+        self.clamp_checkbox = cmds.checkBox(value=self.clamp_hands_to_ground)
         cmds.setParent('..'); cmds.setParent('..')
     
         # --- Actions / Presets ---
@@ -358,6 +363,8 @@ class HandWalkCycleTool:
         self.head_params['sway_tz']         = cmds.floatField(self.head_tz_field, q=True, value=True)
 
         self.groundHeight = cmds.floatField(self.ground_height_field, q=True, value=True)
+        if self.clamp_hands_to_ground:
+            self.clamp_hands_ty_two_stage_ground()
 
 
         original_time = cmds.currentTime(query=True)
@@ -422,12 +429,25 @@ class HandWalkCycleTool:
             self.set_key(r, 'translateX', t, self.stride_width + self.hand_offsets['offset_x'])
             self.set_key(l, 'translateX', t, -self.stride_width - self.hand_offsets['offset_x'])
     
-        # Y stride and lift
-        self.set_key(l, 'translateY', self.quarter, self.stride_height + self.hand_offsets['offset_y'])
-        self.set_key(r, 'translateY', self.three_quarter, self.stride_height + self.hand_offsets['offset_y'])
-        for t in [f[0] for f in self.frames_stride_halved]:
-            self.set_key(l, 'translateY', t, self.hand_offsets['offset_y'])
-            self.set_key(r, 'translateY', t, self.hand_offsets['offset_y'])
+        # ----- Y (hands) — NEW pattern using groundHeight and offset_y -----
+        start, mid, end = [f[0] for f in self.frames_stride_halved]
+        gh = float(self.groundHeight)
+        oy = float(self.hand_offsets['offset_y'])
+        
+        # Right hand
+        self.set_key(r, 'translateY', start,           gh)
+        self.set_key(r, 'translateY', self.quarter,    oy)  # lift at quarter
+        self.set_key(r, 'translateY', mid,             gh)
+        self.set_key(r, 'translateY', self.three_quarter, gh)
+        self.set_key(r, 'translateY', end,             gh)
+        
+        # Left hand
+        self.set_key(l, 'translateY', start,           gh)
+        self.set_key(l, 'translateY', self.quarter,    gh)
+        self.set_key(l, 'translateY', mid,             gh)
+        self.set_key(l, 'translateY', self.three_quarter, oy)  # lift at three-quarter
+        self.set_key(l, 'translateY', end,             gh)
+
     
         # Y rotation
         for t in [f[0] for f in self.frames_stride_halved]:
@@ -625,6 +645,7 @@ class HandWalkCycleTool:
             'neck': getattr(self, 'neck_params', {}).copy() if hasattr(self, 'neck_params') else {},
             'head': self.head_params.copy(),
             'groundHeight': self.groundHeight,   # ← add this
+            'clampHandsToGround': self.clamp_hands_to_ground,
             'spine': self.spine_params.copy(),
             'chest': self.chest_params.copy(),
         }
@@ -727,6 +748,8 @@ class HandWalkCycleTool:
             # mirror old single-head config into neck as a starting point
             self.neck_params.update({k: settings['head'].get(k, self.neck_params[k]) for k in self.neck_params})
         self.groundHeight = settings.get('groundHeight', self.groundHeight)
+        self.clamp_hands_to_ground = settings.get('clampHandsToGround', self.clamp_hands_to_ground)
+        self.clamp_hands_to_ground = settings.get('clampHandsToGround', self.clamp_hands_to_ground)
         self.spine_params.update(settings.get('spine', self.spine_params))
         self.chest_params.update(settings.get('chest', self.chest_params))
 
@@ -776,6 +799,9 @@ class HandWalkCycleTool:
 
         if hasattr(self, 'ground_height_field'):
             cmds.floatField(self.ground_height_field, e=True, value=self.groundHeight)
+        if hasattr(self, 'clamp_checkbox'):
+            cmds.checkBox(self.clamp_checkbox, e=True, value=self.clamp_hands_to_ground)
+
 
 
 
