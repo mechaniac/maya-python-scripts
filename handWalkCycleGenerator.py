@@ -114,12 +114,15 @@ class HandWalkCycleTool:
             'swing_rx': 5.0,
             'rock_rz': 3.0,
             'sway_ry': 3.0,
+            'offsetZ': 0.0,   # NEW: additive offset applied to all spine rotateZ keys
         }
         self.chest_params = {
             'swing_rx': 6.0,
             'rock_rz': 4.0,
             'sway_ry': 4.0,
+            'offsetZ': 0.0,   # NEW: additive offset applied to all chest rotateZ keys
         }
+
         
         # Legs FK controls + FK/IK blend
         self.legs_fk_params = {
@@ -181,6 +184,7 @@ class HandWalkCycleTool:
         cmds.text(label="SPINE (FKSpine_M / FKSpine1_M)", align='left')
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
         cmds.text(label="Swing rotateX (thirds)"); self.spine_rx_field = cmds.floatField(value=self.spine_params['swing_rx'])
+        cmds.text(label="Offset Z (add)"); self.spine_rz_offset_field = cmds.floatField(value=self.spine_params['offsetZ'])
         cmds.text(label="Rock rotateZ (fifths)");  self.spine_rz_field = cmds.floatField(value=self.spine_params['rock_rz'])
         cmds.text(label="Sway rotateY (thirds)");  self.spine_ry_field = cmds.floatField(value=self.spine_params['sway_ry'])
         cmds.setParent('..')
@@ -190,6 +194,7 @@ class HandWalkCycleTool:
         cmds.text(label="CHEST (FKChest_M)", align='left')
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
         cmds.text(label="Swing rotateX (thirds)"); self.chest_rx_field = cmds.floatField(value=self.chest_params['swing_rx'])
+        cmds.text(label="Offset Z (add)"); self.chest_rz_offset_field = cmds.floatField(value=self.chest_params['offsetZ'])
         cmds.text(label="Rock rotateZ (fifths)");  self.chest_rz_field = cmds.floatField(value=self.chest_params['rock_rz'])
         cmds.text(label="Sway rotateY (thirds)");  self.chest_ry_field = cmds.floatField(value=self.chest_params['sway_ry'])
         cmds.setParent('..'); cmds.setParent('..')
@@ -405,7 +410,9 @@ class HandWalkCycleTool:
         self.spine_params['swing_rx'] = cmds.floatField(self.spine_rx_field, q=True, value=True)
         self.spine_params['rock_rz']  = cmds.floatField(self.spine_rz_field, q=True, value=True)
         self.spine_params['sway_ry']  = cmds.floatField(self.spine_ry_field, q=True, value=True)
-
+        self.spine_params['offsetZ'] = cmds.floatField(self.spine_rz_offset_field, q=True, value=True)
+        
+        self.chest_params['offsetZ'] = cmds.floatField(self.chest_rz_offset_field, q=True, value=True)
         self.chest_params['swing_rx'] = cmds.floatField(self.chest_rx_field, q=True, value=True)
         self.chest_params['rock_rz']  = cmds.floatField(self.chest_rz_field, q=True, value=True)
         self.chest_params['sway_ry']  = cmds.floatField(self.chest_ry_field, q=True, value=True)
@@ -578,11 +585,10 @@ class HandWalkCycleTool:
         return None
 
     def set_spine_chest_keys(self):
-        """Animate FKSpine_M (alias FKSpine1_M) and FKChest_M: RX thirds, RZ fifths, RY thirds."""
         start, mid, end = [f[0] for f in self.frames_stride_halved]
         times_thirds = [start, mid, end]
         times_fifths = [start, self.quarter, mid, self.three_quarter, end]
-
+    
         def apply_joint(ctrl, p):
             if not ctrl:
                 return
@@ -590,22 +596,24 @@ class HandWalkCycleTool:
             rx_vals = self.pattern_thirds(p['swing_rx'])
             for t, v in zip(times_thirds, rx_vals):
                 self.set_key(ctrl, 'rotateX', t, v)
-
-            # RZ fifths (rock)
+    
+            # RZ fifths (rock) + additive offsetZ
             rz_vals = self.pattern_fifths(p['rock_rz'])
+            offZ = float(p.get('offsetZ', 0.0))  # NEW
             for t, v in zip(times_fifths, rz_vals):
-                self.set_key(ctrl, 'rotateZ', t, v)
-
+                self.set_key(ctrl, 'rotateZ', t, v + offZ)  # NEW
+    
             # RY thirds (sway)
             ry_vals = self.pattern_thirds(p['sway_ry'])
             for t, v in zip(times_thirds, ry_vals):
                 self.set_key(ctrl, 'rotateY', t, v)
-
+    
         spine_ctrl = self.resolve_first_existing(self.spine_ctrl_candidates)
         chest_ctrl = self.chest_ctrl if cmds.objExists(self.chest_ctrl) else None
-
+    
         apply_joint(spine_ctrl, self.spine_params)
         apply_joint(chest_ctrl, self.chest_params)
+
 
     
     def set_hip_keys(self):
@@ -866,27 +874,49 @@ class HandWalkCycleTool:
                         cmds.setKeyframe(ctrl, attribute=attr, t=kt, v=gh)
                     except Exception:
                         pass
-
+    def _coerce_section_floats(self, sect, keys):
+        for k in keys:
+            if k in sect:
+                try:
+                    sect[k] = float(sect[k])
+                except Exception:
+                    pass
+        return sect
 
 
     def apply_settings(self, settings):
         self.stride = settings.get('stride', self.stride)
         self.stride_width = settings.get('stride_width', self.stride_width)
         self.stride_height = settings.get('stride_height', self.stride_height)
+    
         self.hand_offsets.update(settings.get('offsets', self.hand_offsets))
         self.feet_follow.update(settings.get('feet_follow', self.feet_follow))
         self.scapula_params.update(settings.get('scapula', self.scapula_params))
         self.neck_params.update(settings.get('neck', self.neck_params))
         self.head_params.update(settings.get('head', self.head_params))
+    
+        # If only 'head' existed in old presets, mirror to neck once
         if 'head' in settings and 'neck' not in settings:
-            # mirror old single-head config into neck as a starting point
             self.neck_params.update({k: settings['head'].get(k, self.neck_params[k]) for k in self.neck_params})
+    
         self.groundHeight = settings.get('groundHeight', self.groundHeight)
-        self.clamp_hands_to_ground = settings.get('clampHandsToGround', self.clamp_hands_to_ground)
-        self.clamp_hands_to_ground = settings.get('clampHandsToGround', self.clamp_hands_to_ground)
+        self.clamp_hands_to_ground = settings.get('clampHandsToGround', self.clamp_hands_to_ground)  # keep only once
+    
+        # Spine / Chest — update then coerce numeric fields to floats
         self.spine_params.update(settings.get('spine', self.spine_params))
         self.chest_params.update(settings.get('chest', self.chest_params))
+    
+        self._coerce_section_floats(self.spine_params, ['swing_rx','rock_rz','sway_ry','offsetZ'])
+        self._coerce_section_floats(self.chest_params, ['swing_rx','rock_rz','sway_ry','offsetZ'])
+    
+        # Legs FK
         self.legs_fk_params.update(settings.get('legs_fk', self.legs_fk_params))
+    
+        # Optional: also coerce legs if you expect string numbers
+        self._coerce_section_floats(self.legs_fk_params, ['fkik_blend','hip_rz','knee_rz','foot_rz','toe_rz'])
+    
+        # After applying, push values to UI
+        self.update_ui_fields()
 
 
 
@@ -956,6 +986,25 @@ class HandWalkCycleTool:
         ]:
             if fld:
                 cmds.floatField(fld, e=True, value=self.legs_fk_params[key])
+        # --- Spine (push all four fields) ---
+        if hasattr(self, 'spine_rx_field'):
+            cmds.floatField(self.spine_rx_field, e=True, value=self.spine_params['swing_rx'])
+        if hasattr(self, 'spine_rz_field'):
+            cmds.floatField(self.spine_rz_field, e=True, value=self.spine_params['rock_rz'])
+        if hasattr(self, 'spine_ry_field'):
+            cmds.floatField(self.spine_ry_field, e=True, value=self.spine_params['sway_ry'])
+        if hasattr(self, 'spine_rz_offset_field'):
+            cmds.floatField(self.spine_rz_offset_field, e=True, value=self.spine_params['offsetZ'])
+    
+        # --- Chest (push all four fields) ---
+        if hasattr(self, 'chest_rx_field'):
+            cmds.floatField(self.chest_rx_field, e=True, value=self.chest_params['swing_rx'])
+        if hasattr(self, 'chest_rz_field'):
+            cmds.floatField(self.chest_rz_field, e=True, value=self.chest_params['rock_rz'])
+        if hasattr(self, 'chest_ry_field'):
+            cmds.floatField(self.chest_ry_field, e=True, value=self.chest_params['sway_ry'])
+        if hasattr(self, 'chest_rz_offset_field'):
+            cmds.floatField(self.chest_rz_offset_field, e=True, value=self.chest_params['offsetZ'])
 
 
 
