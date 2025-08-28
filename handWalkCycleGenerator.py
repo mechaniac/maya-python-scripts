@@ -62,8 +62,14 @@ class HandWalkCycleTool:
         }
         self.scapula_params = {
             'rotateZ': 5.0,
-            'rotateX': -10.0
+            'rotateX': -10.0,
+            'rotateY': 0.0,    # NEW
+            'offsetZ': 0.0,    # additive
+            'offsetX': 0.0,    # additive
+            'offsetY': 0.0,    # NEW additive
         }
+
+
         
         # --- REPLACE THIS BLOCK ---
         self.head_ctrls = {
@@ -192,7 +198,16 @@ class HandWalkCycleTool:
         cmds.frameLayout(label="Scapula Movement", collapsable=True, marginWidth=10, marginHeight=5)
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
         cmds.text(label="Rotate Z"); self.scapula_z_field = cmds.floatField(value=self.scapula_params['rotateZ'])
+        cmds.text(label="Offset Z (add)")
+        self.scapula_offset_z_field = cmds.floatField(value=self.scapula_params.get('offsetZ', 0.0))
         cmds.text(label="Rotate X"); self.scapula_x_field = cmds.floatField(value=self.scapula_params['rotateX'])
+        cmds.text(label="Offset X (add)")
+        self.scapula_offset_x_field = cmds.floatField(value=self.scapula_params.get('offsetX', 0.0))
+        cmds.text(label="Rotate Y")
+        self.scapula_y_field = cmds.floatField(value=self.scapula_params['rotateY'])
+        cmds.text(label="Offset Y (add)")
+        self.scapula_offset_y_field = cmds.floatField(value=self.scapula_params.get('offsetY', 0.0))
+
         cmds.setParent('..'); cmds.setParent('..')
         
         # --- Neck & Head Motion ---
@@ -407,6 +422,12 @@ class HandWalkCycleTool:
 
         self.scapula_params['rotateZ'] = cmds.floatField(self.scapula_z_field, q=True, value=True)
         self.scapula_params['rotateX'] = cmds.floatField(self.scapula_x_field, q=True, value=True)
+        self.scapula_params['offsetZ'] = cmds.floatField(self.scapula_offset_z_field, q=True, value=True)
+        self.scapula_params['offsetX'] = cmds.floatField(self.scapula_offset_x_field, q=True, value=True)
+        self.scapula_params['rotateY'] = cmds.floatField(self.scapula_y_field, q=True, value=True)          # NEW
+        self.scapula_params['offsetY'] = cmds.floatField(self.scapula_offset_y_field, q=True, value=True)   # NEW
+
+
 
         # Legs FK / FKIK blend
         self.legs_fk_params['fkik_blend'] = cmds.floatSlider(self.fkik_slider, q=True, value=True)
@@ -668,21 +689,27 @@ class HandWalkCycleTool:
 
     def set_scapula_keys(self):
         times = [f[0] for f in self.frames_stride_halved]
+        offZ = float(self.scapula_params.get('offsetZ', 0.0))
+        offX = float(self.scapula_params.get('offsetX', 0.0))
+        offY = float(self.scapula_params.get('offsetY', 0.0))  # NEW
+    
         for side in ['left', 'right']:
             ctrl = self.scapula_ctrls[side]
-            sign = 1 if side == 'left' else -1  # mirror values for right
+            sign = 1 if side == 'left' else -1  # mirror Z/Y across sides
     
-            z_vals = [ sign * self.scapula_params['rotateZ'],
-                      -sign * self.scapula_params['rotateZ'],
-                       sign * self.scapula_params['rotateZ'] ]
+            z_base = self.scapula_params['rotateZ']
+            x_base = self.scapula_params['rotateX']
+            y_base = self.scapula_params['rotateY']  # NEW
     
-            x_vals = [ self.scapula_params['rotateX'],
-                      -self.scapula_params['rotateX'],
-                       self.scapula_params['rotateX'] ]
+            z_vals = [ sign * z_base, -sign * z_base,  sign * z_base ]
+            x_vals = [        x_base,        -x_base,         x_base ]
+            y_vals = [ sign * y_base, -sign * y_base,  sign * y_base ]  # NEW
     
-            for t, z, x in zip(times, z_vals, x_vals):
-                self.set_key(ctrl, 'rotateZ', t, z)
-                self.set_key(ctrl, 'rotateX', t, x)
+            for t, z, x, y in zip(times, z_vals, x_vals, y_vals):
+                self.set_key(ctrl, 'rotateZ', t, z + offZ)
+                self.set_key(ctrl, 'rotateX', t, x + offX)
+                self.set_key(ctrl, 'rotateY', t, y + offY)  # NEW
+
 
     def set_head_and_neck_keys(self):
         start, mid, end = [f[0] for f in self.frames_stride_halved]
@@ -886,6 +913,15 @@ class HandWalkCycleTool:
         
         cmds.floatField(self.scapula_z_field, e=True, value=self.scapula_params['rotateZ'])
         cmds.floatField(self.scapula_x_field, e=True, value=self.scapula_params['rotateX'])
+        cmds.floatField(self.scapula_y_field, e=True, value=self.scapula_params['rotateY'])              # NEW
+        if hasattr(self, 'scapula_offset_y_field'):
+            cmds.floatField(self.scapula_offset_y_field, e=True, value=self.scapula_params.get('offsetY', 0.0))  # NEW
+        if hasattr(self, 'scapula_offset_z_field'):
+            cmds.floatField(self.scapula_offset_z_field, e=True, value=self.scapula_params.get('offsetZ', 0.0))
+        if hasattr(self, 'scapula_offset_x_field'):
+            cmds.floatField(self.scapula_offset_x_field, e=True, value=self.scapula_params.get('offsetX', 0.0))
+
+
         # Neck UI
         cmds.floatField(self.neck_rx_field, e=True, value=self.neck_params['counter_rotateX'])
         cmds.floatField(self.neck_ry_field, e=True, value=self.neck_params['counter_rotateY'])
