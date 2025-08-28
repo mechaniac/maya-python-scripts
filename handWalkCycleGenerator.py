@@ -319,32 +319,53 @@ class HandWalkCycleTool:
 
     def clear_keys(self):
         start = cmds.playbackOptions(q=True, min=True)
-        end = cmds.playbackOptions(q=True, max=True)
-        attrs = ['translateX', 'translateY', 'translateZ', 'rotateX', 'rotateY', 'rotateZ']
-        
-        all_controls = (
-            list(self.stride_limbs.values()) +
-            list(self.feet.values()) +
-            [self.root_ctrl, self.hip_ctrl] +
-            list(self.scapula_ctrls.values()) +
-            list(self.head_ctrls.values())
-        )
-
-        
-        for ctrl in all_controls:
-            if not cmds.objExists(ctrl):
-                continue
-            for attr in attrs:
+        end   = cmds.playbackOptions(q=True, max=True)
+    
+        # common TRS attrs you key elsewhere
+        trs_attrs = ['translateX', 'translateY', 'translateZ', 'rotateX', 'rotateY', 'rotateZ']
+    
+        # base set you already had
+        controls = []
+        controls += [n for n in self.stride_limbs.values() if cmds.objExists(n)]
+        controls += [n for n in self.feet.values() if cmds.objExists(n)]
+        controls += [n for n in [self.root_ctrl, self.hip_ctrl] if cmds.objExists(n)]
+        controls += [n for n in self.scapula_ctrls.values() if cmds.objExists(n)]
+        controls += [n for n in self.head_ctrls.values() if cmds.objExists(n)]
+    
+        # NEW: spine / chest
+        spine = self.resolve_first_existing(getattr(self, 'spine_ctrl_candidates', [])) if hasattr(self, 'spine_ctrl_candidates') else None
+        if spine: controls.append(spine)
+        if cmds.objExists(self.chest_ctrl):
+            controls.append(self.chest_ctrl)
+    
+        # NEW: FK leg joints you key rotateZ on
+        fk_leg_nodes = [
+            'FKHip_R','FKHip_L',
+            'FKKnee_R','FKKnee_L',
+            'FKFoot_R','FKFoot_L',
+            'FKToe_R','FKToe_L',
+        ]
+        controls += [n for n in fk_leg_nodes if cmds.objExists(n)]
+    
+        # Clear TRS keys (and zero if not locked)
+        for ctrl in controls:
+            for attr in trs_attrs:
                 if cmds.attributeQuery(attr, node=ctrl, exists=True):
                     try:
-                        # Zero out value first
                         if not cmds.getAttr(f"{ctrl}.{attr}", lock=True):
                             cmds.setAttr(f"{ctrl}.{attr}", 0)
-    
-                        # Then clear animation keys
                         cmds.cutKey(ctrl, at=attr, time=(start, end))
-                    except:
-                        pass  # ignore locked/connected
+                    except Exception:
+                        pass  # ignore locked/connected/etc.
+    
+        # Explicitly clear FKIKBlend on FKIKLeg_[R/L]
+        for node in getattr(self, 'fkik_nodes', {}).values():
+            if node and cmds.objExists(node) and cmds.attributeQuery('FKIKBlend', node=node, exists=True):
+                try:
+                    # do NOT force the value to 0 here; just strip keys
+                    cmds.cutKey(node, at='FKIKBlend', time=(start, end))
+                except Exception:
+                    pass
 
 
 
@@ -411,9 +432,6 @@ class HandWalkCycleTool:
         self.head_params['sway_tz']         = cmds.floatField(self.head_tz_field, q=True, value=True)
 
         self.groundHeight = cmds.floatField(self.ground_height_field, q=True, value=True)
-        if self.clamp_hands_to_ground:
-            self.clamp_hands_ty_two_stage_ground()
-
 
         original_time = cmds.currentTime(query=True)
         self.clear_keys()
@@ -428,8 +446,10 @@ class HandWalkCycleTool:
         self.set_legs_fk_keys_and_blend()
 
         # finally: clamp hands so they never dip below ground
-        # Enforce ground clamp on hands using the configured groundHeight
-        self.clamp_hands_ty_two_stage_ground()
+
+        if self.clamp_hands_to_ground:
+            self.clamp_hands_ty_two_stage_ground()
+
         
         cmds.currentTime(original_time, edit=True)
         
