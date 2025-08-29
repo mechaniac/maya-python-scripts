@@ -47,7 +47,9 @@ class HandWalkCycleTool:
             'offset_rx': 0.0,
             'bounce': 1.5,
             'sway': 2.0,
-            'rock': 1.0
+            'rock': 1.0,
+            'shift_x': 0.0,   # NEW: translateX amplitude (thirds)
+            'swing_z': 0.0,   # NEW: rotateZ thirds
         }
         
         self.hip_params = {
@@ -189,6 +191,9 @@ class HandWalkCycleTool:
         cmds.text(label="Bounce (translateY)");   self.root_bounce_field   = cmds.floatField(value=self.root_params['bounce'])
         cmds.text(label="Side Sway (rotateY)");   self.root_sway_field     = cmds.floatField(value=self.root_params['sway'])
         cmds.text(label="Rock (rotateX)");        self.root_rock_field     = cmds.floatField(value=self.root_params['rock'])
+        cmds.text(label="Shift (translateX)");  self.root_shift_x_field = cmds.floatField(value=self.root_params['shift_x'])
+        cmds.text(label="Swing (rotateZ)");    self.root_swing_z_field = cmds.floatField(value=self.root_params['swing_z'])  # NEW
+
         cmds.setParent('..'); cmds.setParent('..')
     
         # --- Spine & Chest ---
@@ -436,6 +441,8 @@ class HandWalkCycleTool:
         self.root_params['bounce'] = cmds.floatField(self.root_bounce_field, q=True, value=True)
         self.root_params['sway'] = cmds.floatField(self.root_sway_field, q=True, value=True)
         self.root_params['rock'] = cmds.floatField(self.root_rock_field, q=True, value=True)
+        self.root_params['shift_x'] = cmds.floatField(self.root_shift_x_field, q=True, value=True)
+        self.root_params['swing_z'] = cmds.floatField(self.root_swing_z_field, q=True, value=True)  # NEW
         
         # Spine/Chest UI reads
         self.spine_params['swing_rx'] = cmds.floatField(self.spine_rx_field, q=True, value=True)
@@ -620,6 +627,18 @@ class HandWalkCycleTool:
         # Offset Z (static)
         for t in [start, mid, end]:
             self.set_key(root, 'translateZ', t, offset_z)
+        # Translate X (thirds)
+        sx = float(self.root_params['shift_x'])
+        self.set_key(root, 'translateX', start,  sx)
+        self.set_key(root, 'translateX', mid,   -sx)
+        self.set_key(root, 'translateX', end,    sx)
+        
+        # Swing Z (rotateZ) on thirds  ← NEW
+        sz = float(self.root_params.get('swing_z', 0.0))
+        self.set_key(root, 'rotateZ', start,  sz)
+        self.set_key(root, 'rotateZ', mid,   -sz)
+        self.set_key(root, 'rotateZ', end,    sz)
+
 
     def resolve_first_existing(self, names):
         """Return the first existing node from a list of candidate names, else None."""
@@ -1025,6 +1044,9 @@ class HandWalkCycleTool:
                 self.elbow_params['offset']['y'] = float(ep['offset_r'].get('y', self.elbow_params['offset']['y']))
                 self.elbow_params['offset']['z'] = float(ep['offset_r'].get('z', self.elbow_params['offset']['z']))
 
+        self.root_params.update(settings.get('root', self.root_params))
+        self._coerce_section_floats(self.root_params, ['offset_y','offset_z','offset_rx','bounce','sway','rock','shift_x','swing_z'])
+
 
         # After applying, push values to UI
         self.update_ui_fields()
@@ -1045,7 +1067,11 @@ class HandWalkCycleTool:
         cmds.floatField(self.root_bounce_field, e=True, value=self.root_params['bounce'])
         cmds.floatField(self.root_sway_field, e=True, value=self.root_params['sway'])
         cmds.floatField(self.root_rock_field, e=True, value=self.root_params['rock'])
-        
+        if hasattr(self, 'root_shift_x_field'):
+            cmds.floatField(self.root_shift_x_field, e=True, value=self.root_params['shift_x'])
+        if hasattr(self, 'root_swing_z_field'):
+            cmds.floatField(self.root_swing_z_field, e=True, value=self.root_params['swing_z'])
+
         cmds.floatSlider(self.move_feet_slider, e=True, value=self.feet_follow['moveFeetWithRoot'])
         cmds.floatField(self.feet_offset_x_field, e=True, value=self.feet_follow['offset_x'])
         cmds.floatField(self.feet_offset_y_field, e=True, value=self.feet_follow['offset_y'])
