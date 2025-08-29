@@ -15,6 +15,19 @@ class HandWalkCycleTool:
             'rotation_y': 0.0
         }
 
+        # Controllers
+        self.elbow_ctrls = {'right': 'PoleArm_R', 'left': 'PoleArm_L'}
+        
+        # Fifths driver + ONE offsets block (left mirrors X)
+        self.elbow_params = {
+            'out': 0.0,        # translateX amount at the keyed pose
+            'up': 0.0,         # translateY
+            'forward': 0.0,    # translateZ
+            'offset': {'x': 0.0, 'y': 0.0, 'z': 0.0},   # applied to BOTH, left uses -x
+        }
+
+
+
         # Ground clamp height (used to prevent hands from dipping below this)
         self.groundHeight = -57.04
         self.clamp_hands_to_ground = True  # new toggle
@@ -252,6 +265,23 @@ class HandWalkCycleTool:
         rightScroll = cmds.scrollLayout(childResizable=True)
         cmds.columnLayout(adjustableColumn=True, rowSpacing=10)
     
+        # --- Elbow Poles (PoleArm_L / PoleArm_R) ---
+        cmds.frameLayout(label="Elbow Poles (PoleArm_L / PoleArm_R)", collapsable=True, marginWidth=10, marginHeight=5)
+        
+        cmds.text(label="Offsets (applied to both; X mirrored on LEFT)", align='left')
+        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
+        cmds.text(label="Offset X"); self.elbow_off_x = cmds.floatField(value=self.elbow_params['offset']['x'])
+        cmds.text(label="Offset Y"); self.elbow_off_y = cmds.floatField(value=self.elbow_params['offset']['y'])
+        cmds.text(label="Offset Z"); self.elbow_off_z = cmds.floatField(value=self.elbow_params['offset']['z'])
+        cmds.setParent('..')
+        
+        cmds.separator(height=6, style='in')
+        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
+        cmds.text(label="Out (translate X)");      self.elbow_out_field     = cmds.floatField(value=self.elbow_params['out'])
+        cmds.text(label="Up (translate Y)");       self.elbow_up_field      = cmds.floatField(value=self.elbow_params['up'])
+        cmds.text(label="Forward (translate Z)");  self.elbow_forward_field = cmds.floatField(value=self.elbow_params['forward'])
+        cmds.setParent('..'); cmds.setParent('..')
+
 
     
         # --- Hip Controls ---
@@ -351,7 +381,8 @@ class HandWalkCycleTool:
         controls += [n for n in [self.root_ctrl, self.hip_ctrl] if cmds.objExists(n)]
         controls += [n for n in self.scapula_ctrls.values() if cmds.objExists(n)]
         controls += [n for n in self.head_ctrls.values() if cmds.objExists(n)]
-    
+        controls += [n for n in self.elbow_ctrls.values() if cmds.objExists(n)]
+
         # NEW: spine / chest
         spine = self.resolve_first_existing(getattr(self, 'spine_ctrl_candidates', [])) if hasattr(self, 'spine_ctrl_candidates') else None
         if spine: controls.append(spine)
@@ -460,7 +491,17 @@ class HandWalkCycleTool:
         self.head_params['sway_tz']         = cmds.floatField(self.head_tz_field, q=True, value=True)
 
         self.groundHeight = cmds.floatField(self.ground_height_field, q=True, value=True)
-
+        
+        # Elbow (pole) reads
+        self.elbow_params['offset']['x'] = cmds.floatField(self.elbow_off_x, q=True, value=True)
+        self.elbow_params['offset']['y'] = cmds.floatField(self.elbow_off_y, q=True, value=True)
+        self.elbow_params['offset']['z'] = cmds.floatField(self.elbow_off_z, q=True, value=True)
+        self.elbow_params['out']      = cmds.floatField(self.elbow_out_field, q=True, value=True)
+        self.elbow_params['up']       = cmds.floatField(self.elbow_up_field, q=True, value=True)
+        self.elbow_params['forward']  = cmds.floatField(self.elbow_forward_field, q=True, value=True)
+        
+        # (bonus) actually read the clamp checkbox
+        self.clamp_hands_to_ground = cmds.checkBox(self.clamp_checkbox, q=True, value=True)
         original_time = cmds.currentTime(query=True)
         self.clear_keys()
         self.compute_frame_data()
@@ -472,11 +513,14 @@ class HandWalkCycleTool:
         self.set_scapula_keys()
         self.set_head_and_neck_keys()
         self.set_legs_fk_keys_and_blend()
+        self.set_elbow_pole_keys()
 
         # finally: clamp hands so they never dip below ground
 
         if self.clamp_hands_to_ground:
             self.clamp_hands_ty_two_stage_ground()
+
+
 
         
         cmds.currentTime(original_time, edit=True)
@@ -694,6 +738,51 @@ class HandWalkCycleTool:
                         except Exception:
                             pass
 
+    def set_elbow_pole_keys(self):
+        """Animate PoleArm_R/L with one shared offset (left mirrors X). Fifths timing."""
+        if not self.frames_stride_halved:
+            return
+    
+        start, mid, end = [f[0] for f in self.frames_stride_halved]
+        q  = self.quarter
+        tq = self.three_quarter
+        times = [start, q, mid, tq, end]
+    
+        r_ctrl = self.elbow_ctrls.get('right')
+        l_ctrl = self.elbow_ctrls.get('left')
+    
+        out = float(self.elbow_params.get('out', 0.0))
+        up  = float(self.elbow_params.get('up', 0.0))
+        fwd = float(self.elbow_params.get('forward', 0.0))
+    
+        off = self.elbow_params.get('offset', {'x':0.0,'y':0.0,'z':0.0})
+        # Right uses offsets as-is; Left mirrors X
+        r_off = {'x': off['x'],  'y': off['y'], 'z': off['z']}
+        l_off = {'x': -off['x'], 'y': off['y'], 'z': off['z']}
+    
+        # RIGHT pattern
+        rx = [r_off['x'], r_off['x'] + out, r_off['x'], r_off['x'], r_off['x']]
+        ry = [r_off['y'], r_off['y'] + up,  r_off['y'], r_off['y'], r_off['y']]
+        rz = [r_off['z'], r_off['z'] + fwd, r_off['z'], r_off['z'], r_off['z']]
+    
+        # LEFT pattern
+        lx = [l_off['x'], l_off['x'], l_off['x'], l_off['x'] - out, l_off['x']]
+        ly = [l_off['y'], l_off['y'], l_off['y'], l_off['y'] + up,  l_off['y']]
+        lz = [l_off['z'], l_off['z'], l_off['z'], l_off['z'] + fwd, l_off['z']]
+    
+        if r_ctrl and cmds.objExists(r_ctrl):
+            for t, vx, vy, vz in zip(times, rx, ry, rz):
+                self.set_key(r_ctrl, 'translateX', t, vx)
+                self.set_key(r_ctrl, 'translateY', t, vy)
+                self.set_key(r_ctrl, 'translateZ', t, vz)
+    
+        if l_ctrl and cmds.objExists(l_ctrl):
+            for t, vx, vy, vz in zip(times, lx, ly, lz):
+                self.set_key(l_ctrl, 'translateX', t, vx)
+                self.set_key(l_ctrl, 'translateY', t, vy)
+                self.set_key(l_ctrl, 'translateZ', t, vz)
+
+
 
     def set_scapula_keys(self):
         times = [f[0] for f in self.frames_stride_halved]
@@ -789,7 +878,12 @@ class HandWalkCycleTool:
             'spine': self.spine_params.copy(),
             'chest': self.chest_params.copy(),
             'legs_fk': self.legs_fk_params.copy(),
-
+            'elbow': {
+              'out': self.elbow_params['out'],
+              'up': self.elbow_params['up'],
+              'forward': self.elbow_params['forward'],
+              'offset': self.elbow_params['offset'].copy()
+            },
         }
 
         print("// HandWalkCycleTool Settings:\n" + json.dumps(settings, indent=2))
@@ -914,7 +1008,24 @@ class HandWalkCycleTool:
     
         # Optional: also coerce legs if you expect string numbers
         self._coerce_section_floats(self.legs_fk_params, ['fkik_blend','hip_rz','knee_rz','foot_rz','toe_rz'])
-    
+
+        ep = settings.get('elbow')
+        if ep:
+            for k in ('out','up','forward'):
+                if k in ep:
+                    try: self.elbow_params[k] = float(ep[k])
+                    except: pass
+            if 'offset' in ep:
+                self.elbow_params['offset'].update(ep['offset'])
+        
+            # Backward compatibility with older presets that had offset_r/offset_l:
+            # Prefer right, mirror X for left automatically.
+            if 'offset_r' in ep and isinstance(ep['offset_r'], dict):
+                self.elbow_params['offset']['x'] = float(ep['offset_r'].get('x', self.elbow_params['offset']['x']))
+                self.elbow_params['offset']['y'] = float(ep['offset_r'].get('y', self.elbow_params['offset']['y']))
+                self.elbow_params['offset']['z'] = float(ep['offset_r'].get('z', self.elbow_params['offset']['z']))
+
+
         # After applying, push values to UI
         self.update_ui_fields()
 
@@ -1005,6 +1116,19 @@ class HandWalkCycleTool:
             cmds.floatField(self.chest_ry_field, e=True, value=self.chest_params['sway_ry'])
         if hasattr(self, 'chest_rz_offset_field'):
             cmds.floatField(self.chest_rz_offset_field, e=True, value=self.chest_params['offsetZ'])
+
+        # Elbow fields
+        if hasattr(self, 'elbow_out_field'):
+            cmds.floatField(self.elbow_out_field, e=True, value=self.elbow_params['out'])
+            cmds.floatField(self.elbow_up_field, e=True, value=self.elbow_params['up'])
+            cmds.floatField(self.elbow_forward_field, e=True, value=self.elbow_params['forward'])
+        for f, v in (
+            (getattr(self, 'elbow_off_x', None), self.elbow_params['offset']['x']),
+            (getattr(self, 'elbow_off_y', None), self.elbow_params['offset']['y']),
+            (getattr(self, 'elbow_off_z', None), self.elbow_params['offset']['z']),
+        ):
+            if f:
+                cmds.floatField(f, e=True, value=v)
 
 
 
