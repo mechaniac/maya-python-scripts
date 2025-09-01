@@ -9,10 +9,10 @@ class HandSideStepGenerator:
         self.mirror = False  # ON => step right, OFF => step left
 
         # Controls
-        self.stretch_arms = False  # NEW: if True, key IKArm_*.stretchy=10 at start/end
+        self.stretch_arms = False  # if True, key IKArm_*.stretchy=10 at start/end
 
         self.root = "RootX_M"
-        self.hand_r = "IKArm_R"   # <- stepping limbs
+        self.hand_r = "IKArm_R"   # stepping limbs
         self.hand_l = "IKArm_L"
 
         self.hip   = "HipSwinger_M"
@@ -21,31 +21,42 @@ class HandSideStepGenerator:
         self.neck  = "FKNeck_M"
         self.head  = "FKHead_M"
 
-        # Arm chains (for additive relaxers; affect BOTH arms, not mirrored)
+        # FK scapulas (kept)
         self.scapula_l = "FKScapula_L"
         self.scapula_r = "FKScapula_R"
-        self.shoulder_l = "FKShoulder_L"
-        self.shoulder_r = "FKShoulder_R"
-        self.elbow_l = "FKElbow_L"
-        self.elbow_r = "FKElbow_R"
-        self.wrist_l = "FKWrist_L"
-        self.wrist_r = "FKWrist_R"
+        
+        # FK/IK blend controllers for legs
+        self.fkik_leg_r = "FKIKLeg_R"
+        self.fkik_leg_l = "FKIKLeg_L"
+        
+        # FK leg joints (pose)
+        self.fk_hip_r  = "FKHip_R";  self.fk_hip_l  = "FKHip_L"
+        self.fk_knee_r = "FKKnee_R"; self.fk_knee_l = "FKKnee_L"
+        self.fk_foot_r = "FKFoot_R"; self.fk_foot_l = "FKFoot_L"
+        self.fk_toe_r  = "FKToe_R";  self.fk_toe_l  = "FKToe_L"
+        
+        # FK/IK blend value (0..10)
+        self.leg_fkik_blend = 10.0
+                
+        # FK pose (rotateZ) for both legs (static at start/end)
+        self.fk_hip_rz  = 0.0
+        self.fk_knee_rz = 0.0
+        self.fk_foot_rz = 0.0
+        self.fk_toe_rz  = 0.0
 
         # Step settings (for hands)
         self.step_width  = 5.0
         self.step_height = 2.0
-        self.ground_height = 0.0   # NEW: baseline for hand contacts (signed)
-        self.step_narrowness = 0.0  # NEW: +|n| on R, -|n| on L for all hand translateX keys
+        self.ground_height = 0.0
+        self.step_narrowness = 0.0  # +|n| on R, -|n| on L (all hand X keys)
 
         # Root motion (fifths + signed offset)
-        self.root_tilt    = 5.0       # rotateZ
-        self.root_bounce  = 1.0       # translateY (amplitude)
-        self.root_offset_y = 0.0      # translateY baseline (signed)
+        self.root_tilt     = 5.0       # rotateZ
+        self.root_bounce   = 1.0       # translateY (amplitude)
+        self.root_offset_y = 0.0       # translateY baseline (signed)
 
-        # Base arm motion (default 0 for hand-walking)
-        self.scapula_swing  = 0.0   # rotateY (L/R oppose)
-        self.shoulder_swing = 0.0   # rotateZ (L/R oppose)
-        self.elbow_swing    = 0.0   # rotateZ (L/R oppose)
+        # Base scapula motion only (shoulder/elbow/wrist are IK-handled)
+        self.scapula_swing = 0.0       # rotateY (L/R oppose)
 
         # SideWhip (torso) — keyed on fifths
         self.hip_sway   = 3.0
@@ -54,22 +65,10 @@ class HandSideStepGenerator:
         self.neck_sway  = 1.0
         self.head_sway  = 0.5
 
-        # ABSOLUTE additions (both arms, non-mirrored)
-        # Down (rotateY)
-        self.down_scapula_y  = 0.0
-        self.down_shoulder_y = 0.0
-        self.down_elbow_y    = 0.0
-        self.down_wrist_y    = 0.0
-        # Bent (rotateZ)
-        self.bent_scapula_z  = 0.0
-        self.bent_shoulder_z = 0.0
-        self.bent_elbow_z    = 0.0
-        self.bent_wrist_z    = 0.0
-        # Twist (rotateX)
-        self.twist_scapula_x  = 0.0
-        self.twist_shoulder_x = 0.0
-        self.twist_elbow_x    = 0.0
-        self.twist_wrist_x    = 0.0
+        # ABSOLUTE (kept only for scapulas)
+        self.down_scapula_y  = 0.0     # add |v| to rotateY
+        self.bent_scapula_z  = 0.0     # add |v| to rotateZ
+        self.twist_scapula_x = 0.0     # add |v| to rotateX
 
         self.frames = []
 
@@ -107,15 +106,22 @@ class HandSideStepGenerator:
 
     def clear_keys(self):
         """Idempotence: wipe keys we touch and zero the attrs."""
-        attrs = ['translateX', 'translateY', 'rotateX', 'rotateY', 'rotateZ', 'stretchy']  # ← added        
+        attrs = ['translateX', 'translateY', 'rotateX', 'rotateY', 'rotateZ', 'stretchy', 'FKIKBlend']
         start = cmds.playbackOptions(q=True, min=True)
         end   = cmds.playbackOptions(q=True, max=True)
+
+        # DO NOT include shoulder/elbow/wrist; IK handles them.
         controls = [
             self.root, self.hand_r, self.hand_l,
             self.hip, self.spine, self.chest, self.neck, self.head,
-            self.scapula_l, self.scapula_r, self.shoulder_l, self.shoulder_r,
-            self.elbow_l, self.elbow_r, self.wrist_l, self.wrist_r
+            self.scapula_l, self.scapula_r,
+            self.fkik_leg_r, self.fkik_leg_l,
+            self.fk_hip_r, self.fk_hip_l,
+            self.fk_knee_r, self.fk_knee_l,
+            self.fk_foot_r, self.fk_foot_l,
+            self.fk_toe_r, self.fk_toe_l,
         ]
+
         for ctrl in controls:
             resolved = self.resolve_node_case_insensitive(ctrl)
             if not resolved:
@@ -155,7 +161,29 @@ class HandSideStepGenerator:
         cmds.setKeyframe(obj, at=attr, t=time)
 
     # ---------- keying ----------
+
+    def set_leg_fkik_blend_keys(self):
+        """Key FKIKBlend (0..10) on FKIKLeg_{L,R} at start & end."""
+        start, end = self.frames[0], self.frames[4]
+        for ctrl in (self.fkik_leg_l, self.fkik_leg_r):
+            self.set_key(ctrl, 'FKIKBlend', start, self.leg_fkik_blend)
+            self.set_key(ctrl, 'FKIKBlend', end,   self.leg_fkik_blend)
     
+    def set_leg_fk_pose_keys(self):
+        """Static FK pose on rotateZ for both legs — keys only at start and end."""
+        start, end = self.frames[0], self.frames[4]
+        pairs = [
+            (self.fk_hip_l,  self.fk_hip_r,  self.fk_hip_rz),
+            (self.fk_knee_l, self.fk_knee_r, self.fk_knee_rz),
+            (self.fk_foot_l, self.fk_foot_r, self.fk_foot_rz),
+            (self.fk_toe_l,  self.fk_toe_r,  self.fk_toe_rz),
+        ]
+        for L, R, v in pairs:
+            self.set_key(L, 'rotateZ', start, v); self.set_key(R, 'rotateZ', start, v)
+            self.set_key(L, 'rotateZ', end,   v); self.set_key(R, 'rotateZ', end,   v)
+
+
+
     def set_stretch_keys(self):
         """When enabled, set IKArm_{L,R}.stretchy to 10 at start and end (two keys only)."""
         if not self.stretch_arms:
@@ -165,8 +193,6 @@ class HandSideStepGenerator:
             self.set_key(arm, 'stretchy', start, 10)
             self.set_key(arm, 'stretchy', end,   10)
 
-
-
     def set_hand_keys(self):
         """Step using IKArm_*; apply step_narrowness absolute offsets on all hand X keys."""
         start, quarter, mid, three_quarter, end = self.frames
@@ -174,20 +200,20 @@ class HandSideStepGenerator:
         step_x = d * self.step_width
         base_y = self.ground_height
         lift_y = self.ground_height + self.step_height
-    
+
         first  = self.hand_r if self.mirror else self.hand_l
         second = self.hand_l if self.mirror else self.hand_r
-    
+
         # resolve actual case once; compute offsets (+|n| for R, -|n| for L)
         hr = (self.resolve_node_case_insensitive(self.hand_r) or self.hand_r).lower()
         hl = (self.resolve_node_case_insensitive(self.hand_l) or self.hand_l).lower()
         offR = abs(self.step_narrowness)
         offL = -abs(self.step_narrowness)
-    
+
         def x_with_narrow(node, base):
             ln = (self.resolve_node_case_insensitive(node) or node).lower()
             return base + (offR if ln == hr else offL if ln == hl else 0.0)
-    
+
         # first hand moves early
         self.set_key(first,  'translateX', start, x_with_narrow(first, 0))
         self.set_key(first,  'translateY', start, base_y)
@@ -196,7 +222,7 @@ class HandSideStepGenerator:
         self.set_key(first,  'translateY', mid,   base_y)
         self.set_key(first,  'translateX', end,   x_with_narrow(first, 0))
         self.set_key(first,  'translateY', end,   base_y)
-    
+
         # second hand catches up
         self.set_key(second, 'translateX', start, x_with_narrow(second, 0))
         self.set_key(second, 'translateY', start, base_y)
@@ -206,7 +232,6 @@ class HandSideStepGenerator:
         self.set_key(second, 'translateX', three_quarter, x_with_narrow(second, step_x * 0.5))
         self.set_key(second, 'translateX', end,   x_with_narrow(second, 0))
         self.set_key(second, 'translateY', end,   base_y)
-
 
     def clamp_hands_to_ground(self):
         for hand in (self.hand_l, self.hand_r):
@@ -219,25 +244,24 @@ class HandSideStepGenerator:
                 if v < self.ground_height:
                     cmds.keyframe(node, at='translateY', e=True, t=(t, t), vc=self.ground_height)
 
-
     def set_root_keys(self):
-        """Root: translateX peak at mid; Tilt & Bounce on fifths; bounce has signed offset."""
+        """Root: translateX half-width at mid; Tilt & Bounce on fifths; bounce has signed offset."""
         start, quarter, mid, three_quarter, end = self.frames
         d = self._dir()
         off = self.root_offset_y  # signed
-
-        # translateX (same mid peak)
+    
+        # translateX: HALF step width at mid
         self.set_key(self.root, 'translateX', start, 0)
-        self.set_key(self.root, 'translateX', mid,   d * self.step_width)
+        self.set_key(self.root, 'translateX', mid,   d * (self.step_width * 0.5))
         self.set_key(self.root, 'translateX', end,   0)
-
+    
         # rotateZ (fifths, mirrored)
         self.set_key(self.root, 'rotateZ', start,         0)
         self.set_key(self.root, 'rotateZ', quarter,       d * self.root_tilt)
         self.set_key(self.root, 'rotateZ', mid,           0)
         self.set_key(self.root, 'rotateZ', three_quarter, -d * self.root_tilt)
         self.set_key(self.root, 'rotateZ', end,           0)
-
+    
         # translateY bounce (fifths, with signed offset baseline)
         self.set_key(self.root, 'translateY', start,         off)
         self.set_key(self.root, 'translateY', quarter,   off + self.root_bounce)
@@ -245,8 +269,9 @@ class HandSideStepGenerator:
         self.set_key(self.root, 'translateY', three_quarter, off + self.root_bounce)
         self.set_key(self.root, 'translateY', end,           off)
 
+
     def set_scapula_keys(self):
-        """Base scapula rotateY swing (optional) + absolute relaxers (Y/Z/X) for BOTH arms."""
+        """Base scapula rotateY swing + absolute relaxers (Y/Z/X) for BOTH scapulas."""
         start, mid, end = self.frames[0], self.frames[2], self.frames[4]
         d = self._dir()
         s = self.scapula_swing * d
@@ -255,79 +280,17 @@ class HandSideStepGenerator:
         addX = self._abs(self.twist_scapula_x)
 
         for node, sign in [(self.scapula_l, +1), (self.scapula_r, -1)]:
+            # rotateY swing ±s + absolute down
             self.set_key(node, 'rotateY', start,  sign*s + addY)
             self.set_key(node, 'rotateY', mid,   -sign*s + addY)
             self.set_key(node, 'rotateY', end,    sign*s + addY)
-
+            # absolute adds on Z/X
             self.set_key(node, 'rotateZ', start,  addZ)
             self.set_key(node, 'rotateZ', mid,    addZ)
             self.set_key(node, 'rotateZ', end,    addZ)
-
             self.set_key(node, 'rotateX', start,  addX)
             self.set_key(node, 'rotateX', mid,    addX)
             self.set_key(node, 'rotateX', end,    addX)
-
-    def set_shoulder_elbow_keys(self):
-        """Shoulder/elbow base swings + absolute relaxers; wrists get absolute relaxers."""
-        start, mid, end = self.frames[0], self.frames[2], self.frames[4]
-        d = self._dir()
-        shZ = self.shoulder_swing * d
-        elZ = self.elbow_swing * d
-
-        addY_sh = self._abs(self.down_shoulder_y)
-        addZ_sh = self._abs(self.bent_shoulder_z)
-        addX_sh = self._abs(self.twist_shoulder_x)
-
-        addY_el = self._abs(self.down_elbow_y)
-        addZ_el = self._abs(self.bent_elbow_z)
-        addX_el = self._abs(self.twist_elbow_x)
-
-        addY_wr = self._abs(self.down_wrist_y)
-        addZ_wr = self._abs(self.bent_wrist_z)
-        addX_wr = self._abs(self.twist_wrist_x)
-
-        for (shoulder, elbow, wrist, sign) in [
-            (self.shoulder_l, self.elbow_l, self.wrist_l, +1),
-            (self.shoulder_r, self.elbow_r, self.wrist_r, -1),
-        ]:
-            # Shoulder
-            self.set_key(shoulder, 'rotateZ', start,  sign*shZ + addZ_sh)
-            self.set_key(shoulder, 'rotateZ', mid,   -sign*shZ + addZ_sh)
-            self.set_key(shoulder, 'rotateZ', end,    sign*shZ + addZ_sh)
-
-            self.set_key(shoulder, 'rotateY', start,  addY_sh)
-            self.set_key(shoulder, 'rotateY', mid,    addY_sh)
-            self.set_key(shoulder, 'rotateY', end,    addY_sh)
-
-            self.set_key(shoulder, 'rotateX', start,  addX_sh)
-            self.set_key(shoulder, 'rotateX', mid,    addX_sh)
-            self.set_key(shoulder, 'rotateX', end,    addX_sh)
-
-            # Elbow
-            self.set_key(elbow, 'rotateZ', start,  sign*elZ + addZ_el)
-            self.set_key(elbow, 'rotateZ', mid,   -sign*elZ + addZ_el)
-            self.set_key(elbow, 'rotateZ', end,    sign*elZ + addZ_el)
-
-            self.set_key(elbow, 'rotateY', start,  addY_el)
-            self.set_key(elbow, 'rotateY', mid,    addY_el)
-            self.set_key(elbow, 'rotateY', end,    addY_el)
-
-            self.set_key(elbow, 'rotateX', start,  addX_el)
-            self.set_key(elbow, 'rotateX', mid,    addX_el)
-            self.set_key(elbow, 'rotateX', end,    addX_el)
-
-            # Wrist
-            self.set_key(wrist, 'rotateY', start,  addY_wr)
-            self.set_key(wrist, 'rotateY', mid,    addY_wr)
-            self.set_key(wrist, 'rotateY', end,    addY_wr)
-
-            self.set_key(wrist, 'rotateZ', start,  addZ_wr)
-            self.set_key(wrist, 'rotateZ', mid,    addZ_wr)
-            self.set_key(wrist, 'rotateZ', end,    addZ_wr)
-
-            self.set_key(wrist, 'rotateX', start,  addX_wr)
-            self.set_key(wrist, 'rotateX', mid,    addX_wr)
-            self.set_key(wrist, 'rotateX', end,    addX_wr)
 
     def set_sidewhip_keys(self):
         """All torso rotateY on fifths."""
@@ -350,13 +313,15 @@ class HandSideStepGenerator:
     def generate(self):
         self.clear_keys()
         self.compute_frames()
+        self.set_leg_fkik_blend_keys()
+        self.set_leg_fk_pose_keys()
         self.set_hand_keys()
         self.set_root_keys()
         self.set_scapula_keys()
-        self.set_shoulder_elbow_keys()
         self.set_sidewhip_keys()
-        self.clamp_hands_to_ground()  # NEW
-        self.set_stretch_keys()  # ← NEW
+        self.clamp_hands_to_ground()
+        self.set_stretch_keys()
+
     # ---------- settings I/O ----------
     def print_settings(self, *args):
         settings = {
@@ -369,31 +334,20 @@ class HandSideStepGenerator:
             'root_tilt': self.root_tilt,
             'root_bounce': self.root_bounce,
             'root_offset_y': self.root_offset_y,
-
             'scapula_swing': self.scapula_swing,
-            'shoulder_swing': self.shoulder_swing,
-            'elbow_swing': self.elbow_swing,
-
             'hip_sway': self.hip_sway,
             'spine_sway': self.spine_sway,
             'chest_sway': self.chest_sway,
             'neck_sway': self.neck_sway,
             'head_sway': self.head_sway,
-
             'down_scapula_y': self.down_scapula_y,
-            'down_shoulder_y': self.down_shoulder_y,
-            'down_elbow_y': self.down_elbow_y,
-            'down_wrist_y': self.down_wrist_y,
-
             'bent_scapula_z': self.bent_scapula_z,
-            'bent_shoulder_z': self.bent_shoulder_z,
-            'bent_elbow_z': self.bent_elbow_z,
-            'bent_wrist_z': self.bent_wrist_z,
-
             'twist_scapula_x': self.twist_scapula_x,
-            'twist_shoulder_x': self.twist_shoulder_x,
-            'twist_elbow_x': self.twist_elbow_x,
-            'twist_wrist_x': self.twist_wrist_x,
+            'leg_fkik_blend': self.leg_fkik_blend,
+            'fk_hip_rz':  self.fk_hip_rz,
+            'fk_knee_rz': self.fk_knee_rz,
+            'fk_foot_rz': self.fk_foot_rz,
+            'fk_toe_rz':  self.fk_toe_rz,
         }
         print("// HandSideStepGenerator Settings:\n" + json.dumps(settings, indent=2))
 
@@ -424,7 +378,6 @@ class HandSideStepGenerator:
     # ---------- UI ----------
     def on_generate(self, *args):
         self.mirror = cmds.checkBox(self.mirror_field, q=True, v=True)
-
         self.stretch_arms = cmds.checkBox(self.stretch_arms_field, q=True, v=True)
 
         self.step_width  = cmds.floatField(self.step_width_field,  q=True, v=True)
@@ -436,9 +389,7 @@ class HandSideStepGenerator:
         self.root_bounce   = cmds.floatField(self.root_bounce_field,   q=True, v=True)
         self.root_offset_y = cmds.floatField(self.root_offset_y_field, q=True, v=True)
 
-        self.scapula_swing  = cmds.floatField(self.scapula_swing_field,  q=True, v=True)
-        self.shoulder_swing = cmds.floatField(self.shoulder_swing_field, q=True, v=True)
-        self.elbow_swing    = cmds.floatField(self.elbow_swing_field,    q=True, v=True)
+        self.scapula_swing = cmds.floatField(self.scapula_swing_field, q=True, v=True)
 
         self.hip_sway   = cmds.floatField(self.hip_sway_field,   q=True, v=True)
         self.spine_sway = cmds.floatField(self.spine_sway_field, q=True, v=True)
@@ -447,19 +398,15 @@ class HandSideStepGenerator:
         self.head_sway  = cmds.floatField(self.head_sway_field,  q=True, v=True)
 
         self.down_scapula_y  = cmds.floatField(self.down_scapula_y_field,  q=True, v=True)
-        self.down_shoulder_y = cmds.floatField(self.down_shoulder_y_field, q=True, v=True)
-        self.down_elbow_y    = cmds.floatField(self.down_elbow_y_field,    q=True, v=True)
-        self.down_wrist_y    = cmds.floatField(self.down_wrist_y_field,    q=True, v=True)
-
         self.bent_scapula_z  = cmds.floatField(self.bent_scapula_z_field,  q=True, v=True)
-        self.bent_shoulder_z = cmds.floatField(self.bent_shoulder_z_field, q=True, v=True)
-        self.bent_elbow_z    = cmds.floatField(self.bent_elbow_z_field,    q=True, v=True)
-        self.bent_wrist_z    = cmds.floatField(self.bent_wrist_z_field,    q=True, v=True)
+        self.twist_scapula_x = cmds.floatField(self.twist_scapula_x_field, q=True, v=True)
+        
+        self.leg_fkik_blend = cmds.floatSlider(self.leg_fkik_blend_slider, q=True, value=True)
+        self.fk_hip_rz  = cmds.floatField(self.fk_hip_rz_field,  q=True, v=True)
+        self.fk_knee_rz = cmds.floatField(self.fk_knee_rz_field, q=True, v=True)
+        self.fk_foot_rz = cmds.floatField(self.fk_foot_rz_field, q=True, v=True)
+        self.fk_toe_rz  = cmds.floatField(self.fk_toe_rz_field,  q=True, v=True)
 
-        self.twist_scapula_x  = cmds.floatField(self.twist_scapula_x_field,  q=True, v=True)
-        self.twist_shoulder_x = cmds.floatField(self.twist_shoulder_x_field, q=True, v=True)
-        self.twist_elbow_x    = cmds.floatField(self.twist_elbow_x_field,    q=True, v=True)
-        self.twist_wrist_x    = cmds.floatField(self.twist_wrist_x_field,    q=True, v=True)
 
         self.generate()
 
@@ -467,7 +414,7 @@ class HandSideStepGenerator:
         if cmds.window(self.window, exists=True):
             cmds.deleteUI(self.window)
 
-        self.window = cmds.window(self.window, title="Hand Side Step Generator", widthHeight=(640, 1020))
+        self.window = cmds.window(self.window, title="Hand Side Step Generator", widthHeight=(640, 920))
         cmds.scrollLayout()
         cmds.columnLayout(adjustableColumn=True, rowSpacing=10)
 
@@ -484,13 +431,13 @@ class HandSideStepGenerator:
         self.mirror_field = cmds.checkBox(value=self.mirror)
         cmds.setParent('..'); cmds.setParent('..')
 
-        # Step Settings
-        # e.g., in Step Settings (Hands), after Step Narrowness row:
+        # Quick toggle
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(220, 100))
         cmds.text(label="Stretch Arms (keys .stretchy=10):")
         self.stretch_arms_field = cmds.checkBox(value=self.stretch_arms)
         cmds.setParent('..')
 
+        # Step Settings (Hands)
         cmds.frameLayout(label="Step Settings (Hands)", collapsable=True, marginWidth=10)
         two_col_row(
             "Step Width (X):",  lambda: setattr(self, 'step_width_field',  cmds.floatField(value=self.step_width)),
@@ -499,37 +446,41 @@ class HandSideStepGenerator:
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(180, 100))
         cmds.text(label="Ground Height (Y):")
         self.ground_height_field = cmds.floatField(value=self.ground_height)
-
         cmds.setParent('..')
-        # NEW
+
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(180, 100))
         cmds.text(label="Step Narrowness (X):")
         self.step_narrowness_field = cmds.floatField(value=self.step_narrowness)
         cmds.setParent('..')
-        
-        
+        cmds.setParent('..')
+
         # Root Settings
         cmds.frameLayout(label="Root Settings", collapsable=True, marginWidth=10)
         two_col_row(
             "Root Tilt (rotateZ):",      lambda: setattr(self, 'root_tilt_field',   cmds.floatField(value=self.root_tilt)),
             "Root Bounce (translateY):", lambda: setattr(self, 'root_bounce_field', cmds.floatField(value=self.root_bounce))
         )
-        cmds.rowLayout(numberOfColumns=2, columnWidth2=(180, 100))
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=(200, 100))
         cmds.text(label="Root Offset (translateY, signed):")
         self.root_offset_y_field = cmds.floatField(value=self.root_offset_y)
         cmds.setParent('..')
         cmds.setParent('..')
 
-        # Arm / Scapula base anim
-        cmds.frameLayout(label="Arm / Scapula Animation (base)", collapsable=True, marginWidth=10)
+        # Scapula Animation (base + added)
+        cmds.frameLayout(label="Scapula Animation", collapsable=True, marginWidth=10)
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=(180, 100))
+        cmds.text(label="Scapula Swing (rotateY):")
+        self.scapula_swing_field = cmds.floatField(value=self.scapula_swing)
+        cmds.setParent('..')
+
         two_col_row(
-            "Scapula Swing (rotateY):",  lambda: setattr(self, 'scapula_swing_field',  cmds.floatField(value=self.scapula_swing)),
-            "Shoulder Swing (rotateZ):", lambda: setattr(self, 'shoulder_swing_field', cmds.floatField(value=self.shoulder_swing))
+            "Scapula Down (Y, add |v|):", lambda: setattr(self, 'down_scapula_y_field',  cmds.floatField(value=self.down_scapula_y)),
+            "Scapula Bent (Z, add |v|):", lambda: setattr(self, 'bent_scapula_z_field',  cmds.floatField(value=self.bent_scapula_z))
         )
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(180, 100))
-        cmds.text(label="Elbow Bend (rotateZ):")
-        self.elbow_swing_field = cmds.floatField(value=self.elbow_swing)
-        cmds.setParent('..'); cmds.setParent('..')
+        cmds.text(label="Scapula Twist (X, add |v|):")
+        self.twist_scapula_x_field = cmds.floatField(value=self.twist_scapula_x)
+        cmds.setParent('..')
 
         # SideWhip (Torso)
         cmds.frameLayout(label="SideWhip (Torso)", collapsable=True, marginWidth=10)
@@ -546,41 +497,32 @@ class HandSideStepGenerator:
         self.head_sway_field = cmds.floatField(value=self.head_sway)
         cmds.setParent('..'); cmds.setParent('..')
 
-        # Arms Down (Added)
-        cmds.frameLayout(label="Arms Down (Added) — add |value| to rotateY (Both arms)", collapsable=True, marginWidth=10)
-        two_col_row(
-            "Scapula Down (Y):",  lambda: setattr(self, 'down_scapula_y_field',  cmds.floatField(value=self.down_scapula_y)),
-            "Shoulder Down (Y):", lambda: setattr(self, 'down_shoulder_y_field', cmds.floatField(value=self.down_shoulder_y))
-        )
-        two_col_row(
-            "Elbow Down (Y):",    lambda: setattr(self, 'down_elbow_y_field',    cmds.floatField(value=self.down_elbow_y)),
-            "Wrist Down (Y):",    lambda: setattr(self, 'down_wrist_y_field',    cmds.floatField(value=self.down_wrist_y))
-        )
+        # Legs Forward Kinematics
+        cmds.frameLayout(label="Legs Forward Kinematics", collapsable=True, marginWidth=10)
+        
+        # FK/IK Blend slider 0..10
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=(230, 320))
+        cmds.text(label="Leg Forward Inverse Kinematics (FK↔IK Blend):")
+        self.leg_fkik_blend_slider = cmds.floatSlider(min=0, max=10, step=0.1, value=self.leg_fkik_blend)
         cmds.setParent('..')
+        
+        # FK pose fields (rotateX), applied to BOTH legs
+        def two_col_row(label1, field_fn1, label2, field_fn2):
+            cmds.rowLayout(numberOfColumns=4, columnWidth4=(180, 100, 180, 100), adjustableColumn=4)
+            cmds.text(label=label1); field_fn1()
+            cmds.text(label=label2); field_fn2()
+            cmds.setParent('..')
+        
+        two_col_row(
+            "Hip FK (rotateZ):",  lambda: setattr(self, 'fk_hip_rz_field',  cmds.floatField(value=self.fk_hip_rz)),
+            "Knee FK (rotateZ):", lambda: setattr(self, 'fk_knee_rz_field', cmds.floatField(value=self.fk_knee_rz)),
+        )
+        two_col_row(
+            "Foot FK (rotateZ):", lambda: setattr(self, 'fk_foot_rz_field', cmds.floatField(value=self.fk_foot_rz)),
+            "Toe FK (rotateZ):",  lambda: setattr(self, 'fk_toe_rz_field',  cmds.floatField(value=self.fk_toe_rz)),
+        )
+        cmds.setParent('..')  # end frame
 
-        # Arms Bent (Added)
-        cmds.frameLayout(label="Arms Bent (Added) — add |value| to rotateZ (Both arms)", collapsable=True, marginWidth=10)
-        two_col_row(
-            "Scapula Bent (Z):",  lambda: setattr(self, 'bent_scapula_z_field',  cmds.floatField(value=self.bent_scapula_z)),
-            "Shoulder Bent (Z):", lambda: setattr(self, 'bent_shoulder_z_field', cmds.floatField(value=self.bent_shoulder_z))
-        )
-        two_col_row(
-            "Elbow Bent (Z):",    lambda: setattr(self, 'bent_elbow_z_field',    cmds.floatField(value=self.bent_elbow_z)),
-            "Wrist Bent (Z):",    lambda: setattr(self, 'bent_wrist_z_field',    cmds.floatField(value=self.bent_wrist_z))
-        )
-        cmds.setParent('..')
-
-        # Arms Twist (Added)
-        cmds.frameLayout(label="Arms Twist (Added) — add |value| to rotateX (Both arms)", collapsable=True, marginWidth=10)
-        two_col_row(
-            "Scapula Twist (X):",  lambda: setattr(self, 'twist_scapula_x_field',  cmds.floatField(value=self.twist_scapula_x)),
-            "Shoulder Twist (X):", lambda: setattr(self, 'twist_shoulder_x_field', cmds.floatField(value=self.twist_shoulder_x))
-        )
-        two_col_row(
-            "Elbow Twist (X):",    lambda: setattr(self, 'twist_elbow_x_field',    cmds.floatField(value=self.twist_elbow_x)),
-            "Wrist Twist (X):",    lambda: setattr(self, 'twist_wrist_x_field',    cmds.floatField(value=self.twist_wrist_x))
-        )
-        cmds.setParent('..')
 
         # Actions
         cmds.separator(height=10, style='in')
