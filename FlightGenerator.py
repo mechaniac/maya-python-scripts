@@ -7,27 +7,47 @@ class FlightGenerator:
         self.window = "FlightGeneratorWindow"
 
         # Controls (resolved case-insensitively when keying)
+        self.root     = "RootX_M"
         self.ik_arm_l = "IKArm_L"
         self.ik_arm_r = "IKArm_R"
         self.fkik_l   = "FKIKArm_L"
         self.fkik_r   = "FKIKArm_R"
+        self.scap_l   = "FKScapula_L"
+        self.scap_r   = "FKScapula_R"
 
-        # Params
-        # IKArm_*.translateZ pattern:
-        # start: 0, quarter: down, three_quarters: up, end: 0
+        # IKArm_*.translateZ pattern (start:0, quarter:down, three_quarter:up, end:0)
         self.ik_arms_down = 5.0
         self.ik_arms_up   = 2.5
 
         # IKArm_*.rotateX constant (start=end=input)
         self.arm_rotateX_value = 10.0
 
-        # Hand Flap on IKArm_*.rotateY:
-        # start: 0, half: down, three_quarters: up, end: 0
+        # Hand Flap on IKArm_*.rotateY (start:0, mid:down, three_quarter:up, end:0), L opposes R
         self.hand_flap_down = 8.0
         self.hand_flap_up   = -4.0
 
+        # Hand positioning (translates)
+        # Hands Apart (translateX): L=+value, R=-value  | Pattern: start=Base, quarter=Mid, threeQuarter=Base, end=Base
+        self.hands_apart_base = 0.0
+        self.hands_apart_mid  = 0.0
+        # Hands Back/Forth (translateY): same both sides | Pattern: start=Base, mid=Mid, end=Base
+        self.hands_bf_base = 0.0
+        self.hands_bf_mid  = 0.0
+
         # FK/IK blend (0..10) on FKIKArm_*.FKIKBlend (constant, keyed start & end)
         self.fkik_blend_value = 10.0
+
+        # ROOT movement
+        # Up/Down (translateZ) — start=Base, quarter=Mid, threeQuarters=-Mid, end=Base
+        self.root_updown_base = 0.0
+        self.root_updown_mid  = 0.0
+        # Back/Forth (rotateX) — same pattern
+        self.root_backforth_base = 0.0
+        self.root_backforth_mid  = 0.0
+
+        # SCAPULA flap (rotateZ) — same pattern
+        self.scap_flap_base = 0.0
+        self.scap_flap_mid  = 0.0
 
         self.frames = []  # [start, quarter, mid, three_quarter, end]
 
@@ -62,7 +82,7 @@ class FlightGenerator:
     def compute_frames(self):
         s, e = self._timeline_start_end()
         if e <= s:
-            raise RuntimeError("Playback range invalid (start >= end). Set a valid timeline range.")
+            raise RuntimeError("Playback range invalid (start >= end).")
         quarter = s + (e - s) / 4.0
         mid = (s + e) / 2.0
         three_quarter = s + 3 * (e - s) / 4.0
@@ -101,10 +121,17 @@ class FlightGenerator:
     def clear_keys(self):
         s, e = self._timeline_start_end()
         for node, attrs in [
-            (self.ik_arm_l, ["translateZ", "rotateX", "rotateY"]),
-            (self.ik_arm_r, ["translateZ", "rotateX", "rotateY"]),
+            # arms
+            (self.ik_arm_l, ["translateZ", "rotateX", "rotateY", "translateX", "translateY"]),
+            (self.ik_arm_r, ["translateZ", "rotateX", "rotateY", "translateX", "translateY"]),
+            # FK/IK
             (self.fkik_l,   ["FKIKBlend"]),
             (self.fkik_r,   ["FKIKBlend"]),
+            # root
+            (self.root,     ["translateZ", "rotateX"]),
+            # scapulas
+            (self.scap_l,   ["rotateZ"]),
+            (self.scap_r,   ["rotateZ"]),
         ]:
             resolved = self.resolve_node_case_insensitive(node) or node
             for a in attrs:
@@ -113,7 +140,7 @@ class FlightGenerator:
     def key_arms(self):
         start, quarter, mid, three_quarter, end = self.frames
 
-        # IKArm_*.translateZ: 0 -> down -> up -> 0   (at start, 1/4, 3/4, end)
+        # IKArm_*.translateZ: 0 -> down -> up -> 0
         for node in [self.ik_arm_l, self.ik_arm_r]:
             self.set_key(node, "translateZ", start,         0.0)
             self.set_key(node, "translateZ", quarter,       float(self.ik_arms_down))
@@ -128,18 +155,66 @@ class FlightGenerator:
 
     def key_hand_flap(self):
         start, quarter, mid, three_quarter, end = self.frames
-    
-        # Hand flap (IKArm_*.rotateY):
-        # start: 0, half: ±down, three_quarters: ±up, end: 0
-        # Left = +, Right = -
+        # IKArm_*.rotateY: 0 -> ±down (mid) -> ±up (3/4) -> 0
         pairs = [(self.ik_arm_l, +1.0), (self.ik_arm_r, -1.0)]
         for node, sgn in pairs:
-            self.set_key(node, "rotateY", start, 0.0)
-            self.set_key(node, "rotateY", mid,   sgn * float(self.hand_flap_down))
+            self.set_key(node, "rotateY", start,         0.0)
+            self.set_key(node, "rotateY", mid,           sgn * float(self.hand_flap_down))
             self.set_key(node, "rotateY", three_quarter, sgn * float(self.hand_flap_up))
-            self.set_key(node, "rotateY", end,   0.0)
+            self.set_key(node, "rotateY", end,           0.0)
 
+    def key_hand_positioning(self):
+        # Hands Apart (translateX): L=+value, R=-value
+        # Pattern: start=Base, quarter=Mid, threeQuarter=Base, end=Base
+        start, quarter, mid, three_quarter, end = self.frames
 
+        baseX = float(self.hands_apart_base)
+        midX  = float(self.hands_apart_mid)
+        for node, sgn in [(self.ik_arm_l, +1.0), (self.ik_arm_r, -1.0)]:
+            self.set_key(node, "translateX", start,          sgn * baseX)
+            self.set_key(node, "translateX", quarter,        sgn * midX)
+            self.set_key(node, "translateX", three_quarter,  sgn * baseX)
+            self.set_key(node, "translateX", end,            sgn * baseX)
+
+        # Hands Back/Forth (translateY): same both sides
+        # Pattern: start=Base, mid=Mid, end=Base
+        baseY = float(self.hands_bf_base)
+        midY  = float(self.hands_bf_mid)
+        for node in [self.ik_arm_l, self.ik_arm_r]:
+            self.set_key(node, "translateY", start, baseY)
+            self.set_key(node, "translateY", mid,   midY)
+            self.set_key(node, "translateY", end,   baseY)
+
+    def key_root_movement(self):
+        # Root Up/Down (translateZ) and Back/Forth (rotateX)
+        start, quarter, mid, three_quarter, end = self.frames
+
+        # Up/Down (translateZ): start=Base, quarter=Mid, threeQuarters=-Mid, end=Base
+        baseZ = float(self.root_updown_base)
+        midZ  = float(self.root_updown_mid)
+        self.set_key(self.root, "translateZ", start,         baseZ)
+        self.set_key(self.root, "translateZ", quarter,       midZ)
+        self.set_key(self.root, "translateZ", three_quarter, -midZ)
+        self.set_key(self.root, "translateZ", end,           baseZ)
+
+        # Back/Forth (rotateX): same pattern
+        baseRX = float(self.root_backforth_base)
+        midRX  = float(self.root_backforth_mid)
+        self.set_key(self.root, "rotateX", start,         baseRX)
+        self.set_key(self.root, "rotateX", quarter,       midRX)
+        self.set_key(self.root, "rotateX", three_quarter, -midRX)
+        self.set_key(self.root, "rotateX", end,           baseRX)
+
+    def key_scapula_flap(self):
+        # Scapula flap (rotateZ): same pattern
+        start, quarter, mid, three_quarter, end = self.frames
+        base = float(self.scap_flap_base)
+        midv = float(self.scap_flap_mid)
+        for node in [self.scap_l, self.scap_r]:
+            self.set_key(node, "rotateZ", start,         base)
+            self.set_key(node, "rotateZ", quarter,       midv)
+            self.set_key(node, "rotateZ", three_quarter, -midv)
+            self.set_key(node, "rotateZ", end,           base)
 
     def key_fkik_blend(self):
         start, _, _, _, end = self.frames
@@ -153,22 +228,38 @@ class FlightGenerator:
         self.compute_frames()
         self.key_arms()
         self.key_hand_flap()
+        self.key_hand_positioning()
+        self.key_root_movement()   # <-- new
+        self.key_scapula_flap()    # <-- new
         self.key_fkik_blend()
         self.print_settings()
         try:
-            cmds.inViewMessage(amg='[FlightGenerator] Keys generated (arms Z, hand flap Y, FK/IK).', pos='midCenter', fade=True)
+            cmds.inViewMessage(
+                amg='[FlightGenerator] Keys: arms Z, flap Y, apart X, back/forth Y, ROOT Z/X, Scapula Z, FK/IK.',
+                pos='midCenter', fade=True
+            )
         except Exception:
             pass
 
     # ---------- settings I/O & UI ----------
     def print_settings(self, *args):
         settings = {
-            'ik_arms_down':      self.ik_arms_down,
-            'ik_arms_up':        self.ik_arms_up,
-            'arm_rotateX_value': self.arm_rotateX_value,
-            'hand_flap_down':    self.hand_flap_down,
-            'hand_flap_up':      self.hand_flap_up,
-            'fkik_blend_value':  self.fkik_blend_value,
+            'ik_arms_down':        self.ik_arms_down,
+            'ik_arms_up':          self.ik_arms_up,
+            'arm_rotateX_value':   self.arm_rotateX_value,
+            'hand_flap_down':      self.hand_flap_down,
+            'hand_flap_up':        self.hand_flap_up,
+            'hands_apart_base':    self.hands_apart_base,
+            'hands_apart_mid':     self.hands_apart_mid,
+            'hands_bf_base':       self.hands_bf_base,
+            'hands_bf_mid':        self.hands_bf_mid,
+            'root_updown_base':    self.root_updown_base,
+            'root_updown_mid':     self.root_updown_mid,
+            'root_backforth_base': self.root_backforth_base,
+            'root_backforth_mid':  self.root_backforth_mid,
+            'scap_flap_base':      self.scap_flap_base,
+            'scap_flap_mid':       self.scap_flap_mid,
+            'fkik_blend_value':    self.fkik_blend_value,
         }
         print("// FlightGenerator Settings:\n" + json.dumps(settings, indent=2))
 
@@ -197,26 +288,41 @@ class FlightGenerator:
             cmds.confirmDialog(title="Error", message=str(e))
 
     def on_generate(self, *args):
+        # Arms
         self.ik_arms_down      = cmds.floatField(self.ik_arms_down_field, q=True, v=True)
         self.ik_arms_up        = cmds.floatField(self.ik_arms_up_field,   q=True, v=True)
         self.arm_rotateX_value = cmds.floatField(self.arm_rotateX_field,  q=True, v=True)
-
+        # Hand flap
         self.hand_flap_down    = cmds.floatField(self.hand_flap_down_field, q=True, v=True)
         self.hand_flap_up      = cmds.floatField(self.hand_flap_up_field,   q=True, v=True)
-
+        # Hand positioning
+        self.hands_apart_base  = cmds.floatField(self.hands_apart_base_field, q=True, v=True)
+        self.hands_apart_mid   = cmds.floatField(self.hands_apart_mid_field,  q=True, v=True)
+        self.hands_bf_base     = cmds.floatField(self.hands_bf_base_field,    q=True, v=True)
+        self.hands_bf_mid      = cmds.floatField(self.hands_bf_mid_field,     q=True, v=True)
+        # Root
+        self.root_updown_base     = cmds.floatField(self.root_updown_base_field,     q=True, v=True)
+        self.root_updown_mid      = cmds.floatField(self.root_updown_mid_field,      q=True, v=True)
+        self.root_backforth_base  = cmds.floatField(self.root_backforth_base_field,  q=True, v=True)
+        self.root_backforth_mid   = cmds.floatField(self.root_backforth_mid_field,   q=True, v=True)
+        # Scapula
+        self.scap_flap_base    = cmds.floatField(self.scap_flap_base_field, q=True, v=True)
+        self.scap_flap_mid     = cmds.floatField(self.scap_flap_mid_field,  q=True, v=True)
+        # FK/IK
         self.fkik_blend_value  = cmds.floatSlider(self.fkik_blend_slider, q=True, v=True)
+
         self.generate()
 
     def show(self):
         if cmds.window(self.window, exists=True):
             cmds.deleteUI(self.window)
 
-        self.window = cmds.window(self.window, title="Flight Generator", widthHeight=(480, 360), sizeable=True)
+        self.window = cmds.window(self.window, title="Flight Generator", widthHeight=(620, 640), sizeable=True)
         cmds.scrollLayout()
         cmds.columnLayout(adjustableColumn=True, rowSpacing=10)
 
         def two_col_row(label1, field_fn1, label2, field_fn2):
-            cmds.rowLayout(numberOfColumns=4, columnWidth4=(200, 100, 200, 100), adjustableColumn=4)
+            cmds.rowLayout(numberOfColumns=4, columnWidth4=(260, 100, 260, 100), adjustableColumn=4)
             cmds.text(label=label1); field_fn1()
             cmds.text(label=label2); field_fn2()
             cmds.setParent('..')
@@ -224,20 +330,52 @@ class FlightGenerator:
         # IK Arms (translateZ) + rotateX constant
         cmds.frameLayout(label="IK Arms", collapsable=True, marginWidth=10)
         two_col_row(
-            "IK Arms down (translateZ @ 1/4):", lambda: setattr(self, 'ik_arms_down_field', cmds.floatField(value=self.ik_arms_down)),
-            "IK Arms up (translateZ @ 3/4):",   lambda: setattr(self, 'ik_arms_up_field',   cmds.floatField(value=self.ik_arms_up))
+            "IK Arms down (Z @ 1/4):", lambda: setattr(self, 'ik_arms_down_field', cmds.floatField(value=self.ik_arms_down)),
+            "IK Arms up (Z @ 3/4):",  lambda: setattr(self, 'ik_arms_up_field',   cmds.floatField(value=self.ik_arms_up))
         )
-        cmds.rowLayout(numberOfColumns=2, columnWidth2=(200, 100))
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=(260, 100))
         cmds.text(label="IK Arms rotateX (start=end):")
         self.arm_rotateX_field = cmds.floatField(value=self.arm_rotateX_value)
         cmds.setParent('..')
         cmds.setParent('..')
 
-        # Hand Flap (rotateY)
-        cmds.frameLayout(label="Hand Flap (IK rotateY)", collapsable=True, marginWidth=10)
+        # Hand Flap (rotateY, L/R oppose)
+        cmds.frameLayout(label="Hand Flap (IK rotateY, L/R oppose)", collapsable=True, marginWidth=10)
         two_col_row(
-            "Hand Flap down (mid):",   lambda: setattr(self, 'hand_flap_down_field', cmds.floatField(value=self.hand_flap_down)),
-            "Hand Flap up (3/4):",     lambda: setattr(self, 'hand_flap_up_field',   cmds.floatField(value=self.hand_flap_up))
+            "Hand Flap down (mid):", lambda: setattr(self, 'hand_flap_down_field', cmds.floatField(value=self.hand_flap_down)),
+            "Hand Flap up (3/4):",   lambda: setattr(self, 'hand_flap_up_field',   cmds.floatField(value=self.hand_flap_up))
+        )
+        cmds.setParent('..')
+
+        # Hand Positioning (translates)
+        cmds.frameLayout(label="Hand Positioning (IK translates)", collapsable=True, marginWidth=10)
+        two_col_row(
+            "Hands Apart Base (X)  L=+,R=-:", lambda: setattr(self, 'hands_apart_base_field', cmds.floatField(value=self.hands_apart_base)),
+            "Hands Apart Mid (X)   L=+,R=-:", lambda: setattr(self, 'hands_apart_mid_field',  cmds.floatField(value=self.hands_apart_mid))
+        )
+        two_col_row(
+            "Hands Back/Forth Base (Y):",     lambda: setattr(self, 'hands_bf_base_field', cmds.floatField(value=self.hands_bf_base)),
+            "Hands Back/Forth Mid (Y):",      lambda: setattr(self, 'hands_bf_mid_field',  cmds.floatField(value=self.hands_bf_mid))
+        )
+        cmds.setParent('..')
+
+        # Root Movement
+        cmds.frameLayout(label="Root Movement (RootX_M)", collapsable=True, marginWidth=10)
+        two_col_row(
+            "Up/Down Base (translateZ):", lambda: setattr(self, 'root_updown_base_field', cmds.floatField(value=self.root_updown_base)),
+            "Up/Down Mid (translateZ):",  lambda: setattr(self, 'root_updown_mid_field',  cmds.floatField(value=self.root_updown_mid))
+        )
+        two_col_row(
+            "Back/Forth Base (rotateX):", lambda: setattr(self, 'root_backforth_base_field', cmds.floatField(value=self.root_backforth_base)),
+            "Back/Forth Mid (rotateX):",  lambda: setattr(self, 'root_backforth_mid_field',  cmds.floatField(value=self.root_backforth_mid))
+        )
+        cmds.setParent('..')
+
+        # Scapula Flap
+        cmds.frameLayout(label="Scapula Flap (FKScapula_* rotateZ)", collapsable=True, marginWidth=10)
+        two_col_row(
+            "Flap Base (rotateZ):", lambda: setattr(self, 'scap_flap_base_field', cmds.floatField(value=self.scap_flap_base)),
+            "Flap Mid (rotateZ):",  lambda: setattr(self, 'scap_flap_mid_field',  cmds.floatField(value=self.scap_flap_mid))
         )
         cmds.setParent('..')
 
@@ -248,7 +386,7 @@ class FlightGenerator:
 
         # Actions
         cmds.separator(height=10, style='in')
-        cmds.rowLayout(numberOfColumns=3, columnWidth3=(200, 200, 200), adjustableColumn=3)
+        cmds.rowLayout(numberOfColumns=3, columnWidth3=(260, 260, 260), adjustableColumn=3)
         cmds.button(label="Generate Flight", command=self.on_generate)
         cmds.button(label="Print Settings", command=self.print_settings)
         cmds.button(label="Apply Settings", command=self.prompt_and_apply_settings)
