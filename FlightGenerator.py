@@ -14,6 +14,8 @@ class FlightGenerator:
         self.fkik_r   = "FKIKArm_R"
         self.scap_l   = "FKScapula_L"
         self.scap_r   = "FKScapula_R"
+        self.pole_l   = "PoleArm_L"
+        self.pole_r   = "PoleArm_R"
 
         # IKArm_*.translateZ pattern (start:0, quarter:down, three_quarter:up, end:0)
         self.ik_arms_down = 5.0
@@ -22,17 +24,20 @@ class FlightGenerator:
         # IKArm_*.rotateX constant (start=end=input)
         self.arm_rotateX_value = 10.0
 
-        # Hand Flap on IKArm_*.rotateY (start:0, mid:down, three_quarter:up, end:0), L opposes R
+        # Hand Flap on IKArm_*.rotateY (start:0, quarter:down, three_quarter:up, end:0), L opposes R
         self.hand_flap_down = 8.0
         self.hand_flap_up   = -4.0
 
-        # Hand positioning (translates)
-        # Hands Apart (translateX): L=+value, R=-value  | Pattern: start=Base, quarter=Mid, threeQuarter=Base, end=Base
-        self.hands_apart_base = 0.0
-        self.hands_apart_mid  = 0.0
-        # Hands Back/Forth (translateY): same both sides | Pattern: start=Base, mid=Mid, end=Base
-        self.hands_bf_base = 0.0
-        self.hands_bf_mid  = 0.0
+        # Hand Positioning (translates) — Base + two deltas
+        # X (Apart) uses opposing signs; Y (Flap) same both sides
+        # Hand Positioning X (mirrored L=+, R=-)
+        self.hands_base_x = 0.0
+        self.hands_x_q    = 0.0   # at 1/4
+        self.hands_x_mid  = 0.0   # at 1/2
+        self.hands_x_3q   = 0.0   # at 3/4
+        self.hands_base_y = 0.0
+        self.hands_flap   = 0.0   # Y delta applied at 1/4
+
 
         # FK/IK blend (0..10) on FKIKArm_*.FKIKBlend (constant, keyed start & end)
         self.fkik_blend_value = 10.0
@@ -45,9 +50,16 @@ class FlightGenerator:
         self.root_backforth_base = 0.0
         self.root_backforth_mid  = 0.0
 
-        # SCAPULA flap (rotateZ) — same pattern
+        # SCAPULA flap (rotateZ) — NEW pattern: start=0, quarter=Base, threeQuarters=Mid, end=0
         self.scap_flap_base = 0.0
         self.scap_flap_mid  = 0.0
+
+        # ELBOW POLES (PoleArm_* translates)
+        # Pattern per axis: start=offset, quarter=offset+base, threeQuarters=offset+mid, end=offset
+        # X is mirrored L(+)/R(-); Y and Z same both sides
+        self.pole_off_x = 0.0; self.pole_base_x = 0.0; self.pole_mid_x = 0.0
+        self.pole_off_y = 0.0; self.pole_base_y = 0.0; self.pole_mid_y = 0.0
+        self.pole_off_z = 0.0; self.pole_base_z = 0.0; self.pole_mid_z = 0.0
 
         self.frames = []  # [start, quarter, mid, three_quarter, end]
 
@@ -132,13 +144,16 @@ class FlightGenerator:
             # scapulas
             (self.scap_l,   ["rotateZ"]),
             (self.scap_r,   ["rotateZ"]),
+            # elbow poles
+            (self.pole_l,   ["translateX", "translateY", "translateZ"]),
+            (self.pole_r,   ["translateX", "translateY", "translateZ"]),
         ]:
             resolved = self.resolve_node_case_insensitive(node) or node
             for a in attrs:
                 self.cut_attr_keys_in_range(resolved, a, s, e, reset_to_zero=True)
 
     def key_arms(self):
-        start, quarter, mid, three_quarter, end = self.frames
+        start, quarter, _, three_quarter, end = self.frames
 
         # IKArm_*.translateZ: 0 -> down -> up -> 0
         for node in [self.ik_arm_l, self.ik_arm_r]:
@@ -154,36 +169,44 @@ class FlightGenerator:
             self.set_key(node, "rotateX", end,   val)
 
     def key_hand_flap(self):
+        # Hand flap (IKArm_*.rotateY):
+        # start: 0, quarter: ±down, mid: (no key), three_quarters: ±up, end: 0
         start, quarter, mid, three_quarter, end = self.frames
-        # IKArm_*.rotateY: 0 -> ±down (mid) -> ±up (3/4) -> 0
         pairs = [(self.ik_arm_l, +1.0), (self.ik_arm_r, -1.0)]
         for node, sgn in pairs:
-            self.set_key(node, "rotateY", start,         0.0)
-            self.set_key(node, "rotateY", mid,           sgn * float(self.hand_flap_down))
+            self.set_key(node, "rotateY", start,        0.0)
+            self.set_key(node, "rotateY", quarter,      sgn * float(self.hand_flap_down))
+            # (intentionally no key at mid)
             self.set_key(node, "rotateY", three_quarter, sgn * float(self.hand_flap_up))
-            self.set_key(node, "rotateY", end,           0.0)
+            self.set_key(node, "rotateY", end,          0.0)
+
 
     def key_hand_positioning(self):
-        # Hands Apart (translateX): L=+value, R=-value
-        # Pattern: start=Base, quarter=Mid, threeQuarter=Base, end=Base
         start, quarter, mid, three_quarter, end = self.frames
-
-        baseX = float(self.hands_apart_base)
-        midX  = float(self.hands_apart_mid)
+    
+        # --- X (mirrored) ---
+        baseX = float(self.hands_base_x)
+        qX    = float(self.hands_x_q)
+        mX    = float(self.hands_x_mid)
+        q3X   = float(self.hands_x_3q)
         for node, sgn in [(self.ik_arm_l, +1.0), (self.ik_arm_r, -1.0)]:
-            self.set_key(node, "translateX", start,          sgn * baseX)
-            self.set_key(node, "translateX", quarter,        sgn * midX)
-            self.set_key(node, "translateX", three_quarter,  sgn * baseX)
-            self.set_key(node, "translateX", end,            sgn * baseX)
-
-        # Hands Back/Forth (translateY): same both sides
-        # Pattern: start=Base, mid=Mid, end=Base
-        baseY = float(self.hands_bf_base)
-        midY  = float(self.hands_bf_mid)
+            self.set_key(node, "translateX", start,         sgn * baseX)
+            self.set_key(node, "translateX", quarter,       sgn * (baseX + qX))
+            self.set_key(node, "translateX", mid,           sgn * (baseX + mX))
+            self.set_key(node, "translateX", three_quarter, sgn * (baseX + q3X))
+            self.set_key(node, "translateX", end,           sgn * baseX)
+    
+        # --- Y (unchanged) ---
+        baseY = float(self.hands_base_y)
+        flapY = float(self.hands_flap)
         for node in [self.ik_arm_l, self.ik_arm_r]:
-            self.set_key(node, "translateY", start, baseY)
-            self.set_key(node, "translateY", mid,   midY)
-            self.set_key(node, "translateY", end,   baseY)
+            self.set_key(node, "translateY", start,         baseY)
+            self.set_key(node, "translateY", quarter,       baseY + flapY)
+            # (no key at mid)
+            self.set_key(node, "translateY", three_quarter, baseY)
+            self.set_key(node, "translateY", end,           baseY)
+
+
 
     def key_root_movement(self):
         # Root Up/Down (translateZ) and Back/Forth (rotateX)
@@ -206,15 +229,41 @@ class FlightGenerator:
         self.set_key(self.root, "rotateX", end,           baseRX)
 
     def key_scapula_flap(self):
-        # Scapula flap (rotateZ): same pattern
+        # NEW pattern for scapula rotateZ:
+        # start: 0, quarter: Base, three_quarters: Mid, end: 0
         start, quarter, mid, three_quarter, end = self.frames
         base = float(self.scap_flap_base)
         midv = float(self.scap_flap_mid)
         for node in [self.scap_l, self.scap_r]:
-            self.set_key(node, "rotateZ", start,         base)
-            self.set_key(node, "rotateZ", quarter,       midv)
-            self.set_key(node, "rotateZ", three_quarter, -midv)
-            self.set_key(node, "rotateZ", end,           base)
+            self.set_key(node, "rotateZ", start,         0.0)
+            self.set_key(node, "rotateZ", quarter,       base)
+            self.set_key(node, "rotateZ", three_quarter, midv)
+            self.set_key(node, "rotateZ", end,           0.0)
+
+    def key_elbow_poles(self):
+        # PoleArm_* translates with offset + base/mid; X mirrored
+        start, quarter, mid, three_quarter, end = self.frames
+
+        offX = float(self.pole_off_x); baseX = float(self.pole_base_x); midX = float(self.pole_mid_x)
+        offY = float(self.pole_off_y); baseY = float(self.pole_base_y); midY = float(self.pole_mid_y)
+        offZ = float(self.pole_off_z); baseZ = float(self.pole_base_z); midZ = float(self.pole_mid_z)
+
+        for node, sgn in [(self.pole_l, +1.0), (self.pole_r, -1.0)]:
+            # X (mirrored)
+            self.set_key(node, "translateX", start,         sgn * (offX))
+            self.set_key(node, "translateX", quarter,       sgn * (offX + baseX))
+            self.set_key(node, "translateX", three_quarter, sgn * (offX + midX))
+            self.set_key(node, "translateX", end,           sgn * (offX))
+            # Y (same both sides)
+            self.set_key(node, "translateY", start,         offY)
+            self.set_key(node, "translateY", quarter,       offY + baseY)
+            self.set_key(node, "translateY", three_quarter, offY + midY)
+            self.set_key(node, "translateY", end,           offY)
+            # Z (same both sides)
+            self.set_key(node, "translateZ", start,         offZ)
+            self.set_key(node, "translateZ", quarter,       offZ + baseZ)
+            self.set_key(node, "translateZ", three_quarter, offZ + midZ)
+            self.set_key(node, "translateZ", end,           offZ)
 
     def key_fkik_blend(self):
         start, _, _, _, end = self.frames
@@ -229,17 +278,72 @@ class FlightGenerator:
         self.key_arms()
         self.key_hand_flap()
         self.key_hand_positioning()
-        self.key_root_movement()   # <-- new
-        self.key_scapula_flap()    # <-- new
+        self.key_root_movement()
+        self.key_scapula_flap()
+        self.key_elbow_poles()
         self.key_fkik_blend()
         self.print_settings()
         try:
             cmds.inViewMessage(
-                amg='[FlightGenerator] Keys: arms Z, flap Y, apart X, back/forth Y, ROOT Z/X, Scapula Z, FK/IK.',
+                amg='[FlightGenerator] Keys: arms Z, hand flap Y (1/4 & 3/4), hand pos X (1/4 flap / 3/4 apart), root Z/X, scap Z, poles XYZ, FK/IK.',
                 pos='midCenter', fade=True
             )
         except Exception:
             pass
+
+    def _try_set_float(self, ctrl, val):
+        if not ctrl or not cmds.control(ctrl, exists=True):
+            return
+        try:
+            cmds.floatField(ctrl, e=True, v=float(val)); return
+        except Exception:
+            pass
+        try:
+            cmds.floatSlider(ctrl, e=True, v=float(val)); return
+        except Exception:
+            pass
+    
+    def refresh_ui_fields(self):
+        # IK Arms
+        self._try_set_float(getattr(self, 'ik_arms_down_field', None), self.ik_arms_down)
+        self._try_set_float(getattr(self, 'ik_arms_up_field',   None), self.ik_arms_up)
+        self._try_set_float(getattr(self, 'arm_rotateX_field',  None), self.arm_rotateX_value)
+    
+        # Hand flap
+        self._try_set_float(getattr(self, 'hand_flap_down_field', None), self.hand_flap_down)
+        self._try_set_float(getattr(self, 'hand_flap_up_field',   None), self.hand_flap_up)
+    
+        # Hand positioning X (new 1/4, 1/2, 3/4) + Y
+        self._try_set_float(getattr(self, 'hands_base_x_field', None), self.hands_base_x)
+        self._try_set_float(getattr(self, 'hands_x_q_field',    None), self.hands_x_q)
+        self._try_set_float(getattr(self, 'hands_x_mid_field',  None), self.hands_x_mid)
+        self._try_set_float(getattr(self, 'hands_x_3q_field',   None), self.hands_x_3q)
+        self._try_set_float(getattr(self, 'hands_base_y_field', None), self.hands_base_y)
+        self._try_set_float(getattr(self, 'hands_flap_field',   None), self.hands_flap)
+    
+        # Root
+        self._try_set_float(getattr(self, 'root_updown_base_field',    None), self.root_updown_base)
+        self._try_set_float(getattr(self, 'root_updown_mid_field',     None), self.root_updown_mid)
+        self._try_set_float(getattr(self, 'root_backforth_base_field', None), self.root_backforth_base)
+        self._try_set_float(getattr(self, 'root_backforth_mid_field',  None), self.root_backforth_mid)
+    
+        # Scapula
+        self._try_set_float(getattr(self, 'scap_flap_base_field', None), self.scap_flap_base)
+        self._try_set_float(getattr(self, 'scap_flap_mid_field',  None), self.scap_flap_mid)
+    
+        # Poles
+        self._try_set_float(getattr(self, 'pole_off_x_field', None),  self.pole_off_x)
+        self._try_set_float(getattr(self, 'pole_base_x_field', None), self.pole_base_x)
+        self._try_set_float(getattr(self, 'pole_mid_x_field', None),  self.pole_mid_x)
+        self._try_set_float(getattr(self, 'pole_off_y_field', None),  self.pole_off_y)
+        self._try_set_float(getattr(self, 'pole_base_y_field', None), self.pole_base_y)
+        self._try_set_float(getattr(self, 'pole_mid_y_field', None),  self.pole_mid_y)
+        self._try_set_float(getattr(self, 'pole_off_z_field', None),  self.pole_off_z)
+        self._try_set_float(getattr(self, 'pole_base_z_field', None), self.pole_base_z)
+        self._try_set_float(getattr(self, 'pole_mid_z_field', None),  self.pole_mid_z)
+    
+        # FK/IK blend slider
+        self._try_set_float(getattr(self, 'fkik_blend_slider', None), self.fkik_blend_value)
 
     # ---------- settings I/O & UI ----------
     def print_settings(self, *args):
@@ -249,16 +353,21 @@ class FlightGenerator:
             'arm_rotateX_value':   self.arm_rotateX_value,
             'hand_flap_down':      self.hand_flap_down,
             'hand_flap_up':        self.hand_flap_up,
-            'hands_apart_base':    self.hands_apart_base,
-            'hands_apart_mid':     self.hands_apart_mid,
-            'hands_bf_base':       self.hands_bf_base,
-            'hands_bf_mid':        self.hands_bf_mid,
+            "hands_base_x": self.hands_base_x,
+            "hands_x_q":    self.hands_x_q,
+            "hands_x_mid":  self.hands_x_mid,
+            "hands_x_3q":   self.hands_x_3q,
+            'hands_base_y': self.hands_base_y,
+            'hands_flap':   self.hands_flap,
             'root_updown_base':    self.root_updown_base,
             'root_updown_mid':     self.root_updown_mid,
             'root_backforth_base': self.root_backforth_base,
             'root_backforth_mid':  self.root_backforth_mid,
             'scap_flap_base':      self.scap_flap_base,
             'scap_flap_mid':       self.scap_flap_mid,
+            'pole_off_x': self.pole_off_x, 'pole_base_x': self.pole_base_x, 'pole_mid_x': self.pole_mid_x,
+            'pole_off_y': self.pole_off_y, 'pole_base_y': self.pole_base_y, 'pole_mid_y': self.pole_mid_y,
+            'pole_off_z': self.pole_off_z, 'pole_base_z': self.pole_base_z, 'pole_mid_z': self.pole_mid_z,
             'fkik_blend_value':    self.fkik_blend_value,
         }
         print("// FlightGenerator Settings:\n" + json.dumps(settings, indent=2))
@@ -267,6 +376,13 @@ class FlightGenerator:
         for k, v in settings.items():
             if hasattr(self, k):
                 setattr(self, k, v)
+    
+        # back-compat: accept older keys
+        if 'hands_x_q' not in settings and 'hands_x_flap' in settings:
+            self.hands_x_q = settings['hands_x_flap']
+        if 'hands_x_3q' not in settings and 'hands_apart' in settings:
+            self.hands_x_3q = settings['hands_apart']
+
 
     def prompt_and_apply_settings(self, *args):
         result = cmds.promptDialog(
@@ -283,9 +399,13 @@ class FlightGenerator:
             text = cmds.promptDialog(query=True, text=True)
             settings = json.loads(text)
             self.apply_settings(settings)
-            self.show()
+    
+            # Refresh widgets in-place (don’t rebuild/delete the window here)
+            cmds.evalDeferred(lambda *a: self.refresh_ui_fields())
+    
         except Exception as e:
             cmds.confirmDialog(title="Error", message=str(e))
+
 
     def on_generate(self, *args):
         # Arms
@@ -296,10 +416,15 @@ class FlightGenerator:
         self.hand_flap_down    = cmds.floatField(self.hand_flap_down_field, q=True, v=True)
         self.hand_flap_up      = cmds.floatField(self.hand_flap_up_field,   q=True, v=True)
         # Hand positioning
-        self.hands_apart_base  = cmds.floatField(self.hands_apart_base_field, q=True, v=True)
-        self.hands_apart_mid   = cmds.floatField(self.hands_apart_mid_field,  q=True, v=True)
-        self.hands_bf_base     = cmds.floatField(self.hands_bf_base_field,    q=True, v=True)
-        self.hands_bf_mid      = cmds.floatField(self.hands_bf_mid_field,     q=True, v=True)
+        self.hands_base_x = cmds.floatField(self.hands_base_x_field, q=True, v=True)
+        self.hands_x_q    = cmds.floatField(self.hands_x_q_field,    q=True, v=True)
+        self.hands_x_mid  = cmds.floatField(self.hands_x_mid_field,  q=True, v=True)
+        self.hands_x_3q   = cmds.floatField(self.hands_x_3q_field,   q=True, v=True)
+
+        
+        self.hands_base_y = cmds.floatField(self.hands_base_y_field, q=True, v=True)
+        self.hands_flap   = cmds.floatField(self.hands_flap_field,   q=True, v=True)
+
         # Root
         self.root_updown_base     = cmds.floatField(self.root_updown_base_field,     q=True, v=True)
         self.root_updown_mid      = cmds.floatField(self.root_updown_mid_field,      q=True, v=True)
@@ -308,6 +433,19 @@ class FlightGenerator:
         # Scapula
         self.scap_flap_base    = cmds.floatField(self.scap_flap_base_field, q=True, v=True)
         self.scap_flap_mid     = cmds.floatField(self.scap_flap_mid_field,  q=True, v=True)
+        # Poles
+        self.pole_off_x = cmds.floatField(self.pole_off_x_field, q=True, v=True)
+        self.pole_base_x = cmds.floatField(self.pole_base_x_field, q=True, v=True)
+        self.pole_mid_x  = cmds.floatField(self.pole_mid_x_field,  q=True, v=True)
+
+        self.pole_off_y = cmds.floatField(self.pole_off_y_field, q=True, v=True)
+        self.pole_base_y = cmds.floatField(self.pole_base_y_field, q=True, v=True)
+        self.pole_mid_y  = cmds.floatField(self.pole_mid_y_field,  q=True, v=True)
+
+        self.pole_off_z = cmds.floatField(self.pole_off_z_field, q=True, v=True)
+        self.pole_base_z = cmds.floatField(self.pole_base_z_field, q=True, v=True)
+        self.pole_mid_z  = cmds.floatField(self.pole_mid_z_field,  q=True, v=True)
+
         # FK/IK
         self.fkik_blend_value  = cmds.floatSlider(self.fkik_blend_slider, q=True, v=True)
 
@@ -317,12 +455,12 @@ class FlightGenerator:
         if cmds.window(self.window, exists=True):
             cmds.deleteUI(self.window)
 
-        self.window = cmds.window(self.window, title="Flight Generator", widthHeight=(620, 640), sizeable=True)
+        self.window = cmds.window(self.window, title="Flight Generator", widthHeight=(760, 820), sizeable=True)
         cmds.scrollLayout()
         cmds.columnLayout(adjustableColumn=True, rowSpacing=10)
 
         def two_col_row(label1, field_fn1, label2, field_fn2):
-            cmds.rowLayout(numberOfColumns=4, columnWidth4=(260, 100, 260, 100), adjustableColumn=4)
+            cmds.rowLayout(numberOfColumns=4, columnWidth4=(320, 100, 320, 100), adjustableColumn=4)
             cmds.text(label=label1); field_fn1()
             cmds.text(label=label2); field_fn2()
             cmds.setParent('..')
@@ -333,7 +471,7 @@ class FlightGenerator:
             "IK Arms down (Z @ 1/4):", lambda: setattr(self, 'ik_arms_down_field', cmds.floatField(value=self.ik_arms_down)),
             "IK Arms up (Z @ 3/4):",  lambda: setattr(self, 'ik_arms_up_field',   cmds.floatField(value=self.ik_arms_up))
         )
-        cmds.rowLayout(numberOfColumns=2, columnWidth2=(260, 100))
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=(320, 100))
         cmds.text(label="IK Arms rotateX (start=end):")
         self.arm_rotateX_field = cmds.floatField(value=self.arm_rotateX_value)
         cmds.setParent('..')
@@ -342,22 +480,45 @@ class FlightGenerator:
         # Hand Flap (rotateY, L/R oppose)
         cmds.frameLayout(label="Hand Flap (IK rotateY, L/R oppose)", collapsable=True, marginWidth=10)
         two_col_row(
-            "Hand Flap down (mid):", lambda: setattr(self, 'hand_flap_down_field', cmds.floatField(value=self.hand_flap_down)),
+            "Hand Flap down (1/4):", lambda: setattr(self, 'hand_flap_down_field', cmds.floatField(value=self.hand_flap_down)),
             "Hand Flap up (3/4):",   lambda: setattr(self, 'hand_flap_up_field',   cmds.floatField(value=self.hand_flap_up))
         )
         cmds.setParent('..')
 
-        # Hand Positioning (translates)
+        # Hand Positioning (IK translates)
         cmds.frameLayout(label="Hand Positioning (IK translates)", collapsable=True, marginWidth=10)
-        two_col_row(
-            "Hands Apart Base (X)  L=+,R=-:", lambda: setattr(self, 'hands_apart_base_field', cmds.floatField(value=self.hands_apart_base)),
-            "Hands Apart Mid (X)   L=+,R=-:", lambda: setattr(self, 'hands_apart_mid_field',  cmds.floatField(value=self.hands_apart_mid))
-        )
-        two_col_row(
-            "Hands Back/Forth Base (Y):",     lambda: setattr(self, 'hands_bf_base_field', cmds.floatField(value=self.hands_bf_base)),
-            "Hands Back/Forth Mid (Y):",      lambda: setattr(self, 'hands_bf_mid_field',  cmds.floatField(value=self.hands_bf_mid))
-        )
+        
+        # X row: Base, 1/4, 1/2, 3/4  (works in 2026)
+        row = cmds.rowLayout(numberOfColumns=8, adjustableColumn=8)
+        # set per-column widths
+        for i, w in [(1,120),(2,80),(3,120),(4,80),(5,120),(6,80),(7,120),(8,80)]:
+            cmds.rowLayout(row, e=True, columnWidth=(i, w))
+        
+        cmds.text(label="Base X (L=+, R=-):"); self.hands_base_x_field = cmds.floatField(value=self.hands_base_x)
+        cmds.text(label="X @ 1/4:");           self.hands_x_q_field    = cmds.floatField(value=self.hands_x_q)
+        cmds.text(label="X @ 1/2:");           self.hands_x_mid_field  = cmds.floatField(value=self.hands_x_mid)
+        cmds.text(label="X @ 3/4:");           self.hands_x_3q_field   = cmds.floatField(value=self.hands_x_3q)
         cmds.setParent('..')
+
+
+        
+        # inside the Hand Positioning frame, replace the inner def:
+        def two_col_row_small(label1, fn1, label2, fn2):
+            cmds.rowLayout(numberOfColumns=4, columnWidth4=(160, 100, 140, 100), adjustableColumn=4)
+            cmds.text(label=label1); fn1()
+            cmds.text(label=label2); fn2()
+            cmds.setParent('..')
+        
+        # and call it like this:
+        two_col_row_small(
+            "Base Y:", lambda: setattr(self, 'hands_base_y_field', cmds.floatField(value=self.hands_base_y)),
+            "Flap (Y @ 1/4):", lambda: setattr(self, 'hands_flap_field', cmds.floatField(value=self.hands_flap))
+        )
+
+        
+        cmds.setParent('..')  # end frameLayout
+
+
 
         # Root Movement
         cmds.frameLayout(label="Root Movement (RootX_M)", collapsable=True, marginWidth=10)
@@ -371,13 +532,55 @@ class FlightGenerator:
         )
         cmds.setParent('..')
 
-        # Scapula Flap
-        cmds.frameLayout(label="Scapula Flap (FKScapula_* rotateZ)", collapsable=True, marginWidth=10)
+        # Scapula Flap (updated pattern)
+        cmds.frameLayout(label="Scapula Flap (FKScapula_* rotateZ: 0 -> Base@1/4 -> Mid@3/4 -> 0)", collapsable=True, marginWidth=10)
         two_col_row(
-            "Flap Base (rotateZ):", lambda: setattr(self, 'scap_flap_base_field', cmds.floatField(value=self.scap_flap_base)),
-            "Flap Mid (rotateZ):",  lambda: setattr(self, 'scap_flap_mid_field',  cmds.floatField(value=self.scap_flap_mid))
+            "Flap Base (rotateZ @ 1/4):", lambda: setattr(self, 'scap_flap_base_field', cmds.floatField(value=self.scap_flap_base)),
+            "Flap Mid (rotateZ @ 3/4):",  lambda: setattr(self, 'scap_flap_mid_field',  cmds.floatField(value=self.scap_flap_mid))
         )
         cmds.setParent('..')
+
+        # Elbow Poles (PoleArm_* translates)
+        cmds.frameLayout(label="Elbow Poles (PoleArm_* translates)", collapsable=True, marginWidth=10)
+        
+        def three_col_row(label1, fn1, label2, fn2, label3, fn3):
+            cmds.rowLayout(numberOfColumns=6,
+                           columnWidth6=(220, 90, 140, 90, 100, 90),
+                           adjustableColumn=6)
+            cmds.text(label=label1); fn1()
+            cmds.text(label=label2); fn2()
+            cmds.text(label=label3); fn3()
+            cmds.setParent('..')
+        
+        three_col_row(
+            "X Offset (L=+, R=- mirrored):",
+            lambda: setattr(self, 'pole_off_x_field',  cmds.floatField(value=self.pole_off_x)),
+            "X Base:",
+            lambda: setattr(self, 'pole_base_x_field', cmds.floatField(value=self.pole_base_x)),
+            "X Mid:",
+            lambda: setattr(self, 'pole_mid_x_field',  cmds.floatField(value=self.pole_mid_x)),
+        )
+        
+        three_col_row(
+            "Y Offset:",
+            lambda: setattr(self, 'pole_off_y_field',  cmds.floatField(value=self.pole_off_y)),
+            "Y Base:",
+            lambda: setattr(self, 'pole_base_y_field', cmds.floatField(value=self.pole_base_y)),
+            "Y Mid:",
+            lambda: setattr(self, 'pole_mid_y_field',  cmds.floatField(value=self.pole_mid_y)),
+        )
+        
+        three_col_row(
+            "Z Offset:",
+            lambda: setattr(self, 'pole_off_z_field',  cmds.floatField(value=self.pole_off_z)),
+            "Z Base:",
+            lambda: setattr(self, 'pole_base_z_field', cmds.floatField(value=self.pole_base_z)),
+            "Z Mid:",
+            lambda: setattr(self, 'pole_mid_z_field',  cmds.floatField(value=self.pole_mid_z)),
+        )
+        
+        cmds.setParent('..')  # end frameLayout
+
 
         # FK IK Blend
         cmds.frameLayout(label="FK IK Blend", collapsable=True, marginWidth=10)
@@ -386,7 +589,7 @@ class FlightGenerator:
 
         # Actions
         cmds.separator(height=10, style='in')
-        cmds.rowLayout(numberOfColumns=3, columnWidth3=(260, 260, 260), adjustableColumn=3)
+        cmds.rowLayout(numberOfColumns=3, columnWidth3=(320, 320, 320), adjustableColumn=3)
         cmds.button(label="Generate Flight", command=self.on_generate)
         cmds.button(label="Print Settings", command=self.print_settings)
         cmds.button(label="Apply Settings", command=self.prompt_and_apply_settings)
