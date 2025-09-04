@@ -133,6 +133,10 @@ class HandSideStepGenerator:
                     cmds.cutKey(resolved, at=attr, time=(start, end))
                     if not cmds.getAttr(full_attr, lock=True) and not cmds.connectionInfo(full_attr, isDestination=True):
                         try:
+                            # inside clear_keys(), before setAttr(…, 0)
+                            if cmds.getAttr(full_attr, lock=True) or cmds.connectionInfo(full_attr, isDestination=True):
+                                continue
+
                             cmds.setAttr(full_attr, 0)
                         except Exception:
                             pass
@@ -146,19 +150,56 @@ class HandSideStepGenerator:
         self.frames = [start, quarter, mid, three_quarter, end]
 
     def set_key(self, obj, attr, time, value):
+        # Resolve node / attribute
         if not cmds.objExists(obj):
             resolved = self.resolve_node_case_insensitive(obj)
             if resolved:
                 obj = resolved
             else:
-                print(f"?? Skipping key: {obj}.{attr} (not found)")
+                print(f"?? Skipping key: {obj}.{attr} (node not found)")
                 return
         if not cmds.attributeQuery(attr, node=obj, exists=True):
             print(f"?? Skipping key: {obj}.{attr} (attr not found)")
             return
+    
+        full_attr = f"{obj}.{attr}"
+        try:
+            locked = cmds.getAttr(full_attr, lock=True)
+        except Exception:
+            locked = False
+    
         cmds.currentTime(time, edit=True)
-        cmds.setAttr(f"{obj}.{attr}", value)
-        cmds.setKeyframe(obj, at=attr, t=time)
+    
+        # If locked, don't fight it
+        if locked:
+            try:
+                # at least ensure there is a key at that time with current value
+                cmds.setKeyframe(obj, at=attr, t=time)
+            except Exception as e:
+                print(f"!! Could not key locked {full_attr}: {e}")
+            return
+    
+        # Is the attr already driven by an animCurve (or anything)?
+        connected = False
+        try:
+            connected = cmds.connectionInfo(full_attr, isDestination=True)
+        except Exception:
+            pass
+    
+        try:
+            if connected:
+                # Make sure a key exists at 'time', then set its value explicitly.
+                # (Keying via the object/attr works even when an animCurve is connected.)
+                cmds.setKeyframe(obj, at=attr, t=time)
+                cmds.keyframe(obj, at=attr, e=True, t=(time, time), vc=float(value))
+            else:
+                # First key on this attr: set the value, then key it.
+                cmds.setAttr(full_attr, float(value))
+                cmds.setKeyframe(obj, at=attr, t=time)
+        except Exception as e:
+            print(f"!! set_key failed on {full_attr} @ {time}: {e}")
+
+
 
     # ---------- keying ----------
 
@@ -323,6 +364,20 @@ class HandSideStepGenerator:
         self.set_stretch_keys()
 
     # ---------- settings I/O ----------
+
+    # ---- add inside class HandSideStepGenerator ----
+    def _as_bool(self, v, default=False):
+        if isinstance(v, bool): return v
+        if isinstance(v, (int, float)): return bool(v)
+        if isinstance(v, str): return v.strip().lower() in ("1","true","yes","on")
+        return default
+    
+    def _as_float(self, v, default=0.0):
+        try:
+            return float(v)
+        except Exception:
+            return default
+    
     def print_settings(self, *args):
         settings = {
             'mirror': self.mirror,
@@ -352,9 +407,35 @@ class HandSideStepGenerator:
         print("// HandSideStepGenerator Settings:\n" + json.dumps(settings, indent=2))
 
     def apply_settings(self, settings):
-        for k in settings:
-            if hasattr(self, k):
-                setattr(self, k, settings[k])
+        """Robustly apply a dict of settings (typed, clamped, ignores unknowns)."""
+        if not isinstance(settings, dict):
+            return
+    
+        # Booleans
+        for k in ("mirror", "stretch_arms"):
+            if k in settings:
+                setattr(self, k, self._as_bool(settings[k], getattr(self, k)))
+    
+        # Floats
+        float_keys = [
+            "step_width","step_height","step_narrowness","ground_height",
+            "root_tilt","root_bounce","root_offset_y",
+            "scapula_swing","hip_sway","spine_sway","chest_sway","neck_sway","head_sway",
+            "down_scapula_y","bent_scapula_z","twist_scapula_x",
+            "leg_fkik_blend","fk_hip_rz","fk_knee_rz","fk_foot_rz","fk_toe_rz",
+        ]
+        for k in float_keys:
+            if k in settings:
+                setattr(self, k, self._as_float(settings[k], getattr(self, k)))
+    
+        # Gracefully ignore anything else, but allow exact-name numeric/bool fields you might add later
+        for k, v in settings.items():
+            if hasattr(self, k) and k not in ("mirror","stretch_arms", *float_keys):
+                try:
+                    setattr(self, k, v)
+                except Exception:
+                    pass
+
 
     def prompt_and_apply_settings(self, *args):
         result = cmds.promptDialog(
@@ -369,11 +450,18 @@ class HandSideStepGenerator:
             return
         try:
             text = cmds.promptDialog(query=True, text=True)
-            settings = json.loads(text)
-            self.apply_settings(settings)
-            self.show()
+            data = json.loads(text)
+            if not isinstance(data, dict):
+                raise ValueError("Settings must be a JSON object.")
+            self.apply_settings(data)
+            try:
+                # Rebuild UI safely (or fall back to just keeping current window)
+                self.show()
+            except Exception as ui_err:
+                cmds.warning(f"[HandSideStepGenerator] UI refresh warning: {ui_err}")
         except Exception as e:
-            cmds.confirmDialog(title="Error", message=str(e))
+            cmds.confirmDialog(title="Error", message=f"Failed to apply settings:\n{e}")
+
 
     # ---------- UI ----------
     def on_generate(self, *args):
