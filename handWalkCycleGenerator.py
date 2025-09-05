@@ -31,7 +31,7 @@ class HandWalkCycleTool:
         # Ground clamp height (used to prevent hands from dipping below this)
         self.groundHeight = -57.04
         self.clamp_hands_to_ground = True  # new toggle
-
+        self.stretch_arms = 0.0  # 0..10
         self.stride_limbs = {
             'right': "IKArm_R",
             'left': "IKArm_L"
@@ -345,6 +345,10 @@ class HandWalkCycleTool:
         
         cmds.text(label="Clamp Hands To Ground")
         self.clamp_checkbox = cmds.checkBox(value=self.clamp_hands_to_ground)
+        
+        cmds.text(label="Stretch Arms (0-10)")
+        self.stretch_slider = cmds.floatSlider(min=0, max=10, value=self.stretch_arms, step=0.1)
+
         cmds.setParent('..'); cmds.setParent('..')
     
         # --- Actions / Presets ---
@@ -377,7 +381,7 @@ class HandWalkCycleTool:
         end   = cmds.playbackOptions(q=True, max=True)
     
         # common TRS attrs you key elsewhere
-        trs_attrs = ['translateX', 'translateY', 'translateZ', 'rotateX', 'rotateY', 'rotateZ']
+        trs_attrs = ['translateX', 'translateY', 'translateZ', 'rotateX', 'rotateY', 'rotateZ', 'stretchy']
     
         # base set you already had
         controls = []
@@ -521,13 +525,13 @@ class HandWalkCycleTool:
         self.set_head_and_neck_keys()
         self.set_legs_fk_keys_and_blend()
         self.set_elbow_pole_keys()
-
+        self.set_arm_stretch_keys()
+        
         # finally: clamp hands so they never dip below ground
-
         if self.clamp_hands_to_ground:
             self.clamp_hands_ty_two_stage_ground()
 
-
+        self.stretch_arms = cmds.floatSlider(self.stretch_slider, q=True, value=True)
 
         
         cmds.currentTime(original_time, edit=True)
@@ -564,44 +568,92 @@ class HandWalkCycleTool:
     def set_stride_keys(self):
         r = self.stride_limbs['right']
         l = self.stride_limbs['left']
+    
+        # Times
+        start, mid, end = [f[0] for f in self.frames_stride_halved]
+        q  = self.quarter
+        tq = self.three_quarter
+    
+        # -----------------
+        # Z (forward/back)
+        # -----------------
         rz_values = [f[1] for f in self.frames_stride_halved]
         lz_values = [f[2] for f in self.frames_stride_halved]
-    
-        # Z
         for (t, val_r, val_l) in zip([f[0] for f in self.frames_stride_halved], rz_values, lz_values):
             self.set_key(r, 'translateZ', t, val_r + self.hand_offsets['offset_z'])
             self.set_key(l, 'translateZ', t, val_l + self.hand_offsets['offset_z'])
     
-        # X
-        for t in [f[0] for f in self.frames_stride_halved]:
-            self.set_key(r, 'translateX', t, self.stride_width + self.hand_offsets['offset_x'])
-            self.set_key(l, 'translateX', t, -self.stride_width - self.hand_offsets['offset_x'])
+        # -----------------
+        # X (side-to-side)
+        # Pattern:
+        #   Right:
+        #     start:  base
+        #     quarter: base + offset
+        #     half:    base
+        #     threequarters: (no key)
+        #     end:     base
+        #
+        #   Left (mirrored X):
+        #     start:  -base
+        #     quarter: (no key)
+        #     half:    -base
+        #     threequarters: -base - offset  (outward = more negative)
+        #     end:     -base
+        # -----------------
+        base = float(self.stride_width)
+        ox   = float(self.hand_offsets['offset_x'])
     
-        # ----- Y (hands) — NEW pattern using groundHeight and offset_y -----
-        start, mid, end = [f[0] for f in self.frames_stride_halved]
+        # Right
+        self.set_key(r, 'translateX', start,  base)
+        self.set_key(r, 'translateX', q,      base + ox)
+        self.set_key(r, 'translateX', mid,    base)
+        # (no key at three_quarter for right)
+        self.set_key(r, 'translateX', end,    base)
+    
+        # Left (mirrored)
+        self.set_key(l, 'translateX', start, -base)
+        # (no key at quarter for left)
+        self.set_key(l, 'translateX', mid,   -base)
+        self.set_key(l, 'translateX', tq,    -base - ox)
+        self.set_key(l, 'translateX', end,   -base)
+    
+        # ----------------------------------
+        # Y (lift with ground/offset pattern)
+        # ----------------------------------
         gh = float(self.groundHeight)
         oy = float(self.hand_offsets['offset_y'])
-        
-        # Right hand
-        self.set_key(r, 'translateY', start,           gh)
-        self.set_key(r, 'translateY', self.quarter,    oy)  # lift at quarter
-        self.set_key(r, 'translateY', mid,             gh)
-        self.set_key(r, 'translateY', self.three_quarter, gh)
-        self.set_key(r, 'translateY', end,             gh)
-        
-        # Left hand
-        self.set_key(l, 'translateY', start,           gh)
-        self.set_key(l, 'translateY', self.quarter,    gh)
-        self.set_key(l, 'translateY', mid,             gh)
-        self.set_key(l, 'translateY', self.three_quarter, oy)  # lift at three-quarter
-        self.set_key(l, 'translateY', end,             gh)
-
     
+        # Right hand
+        self.set_key(r, 'translateY', start,            gh)
+        self.set_key(r, 'translateY', q,                oy)  # lift at quarter
+        self.set_key(r, 'translateY', mid,              gh)
+        self.set_key(r, 'translateY', tq,               gh)
+        self.set_key(r, 'translateY', end,              gh)
+    
+        # Left hand
+        self.set_key(l, 'translateY', start,            gh)
+        self.set_key(l, 'translateY', q,                gh)
+        self.set_key(l, 'translateY', mid,              gh)
+        self.set_key(l, 'translateY', tq,               oy)  # lift at three-quarter
+        self.set_key(l, 'translateY', end,              gh)
+    
+        # -----------
         # Y rotation
+        # -----------
         for t in [f[0] for f in self.frames_stride_halved]:
-            self.set_key(r, 'rotateY', t, self.hand_offsets['rotation_y'])
+            self.set_key(r, 'rotateY', t,  self.hand_offsets['rotation_y'])
             self.set_key(l, 'rotateY', t, -self.hand_offsets['rotation_y'])
 
+
+    # add this new method
+    def set_arm_stretch_keys(self):
+        start = cmds.playbackOptions(q=True, min=True)
+        end   = cmds.playbackOptions(q=True, max=True)
+        val = float(self.stretch_arms)
+        for node in (self.stride_limbs.get('right'), self.stride_limbs.get('left')):
+            if node and cmds.objExists(node) and cmds.attributeQuery('stretchy', node=node, exists=True):
+                self.set_key(node, 'stretchy', start, val)
+                self.set_key(node, 'stretchy', end,   val)
 
     def set_root_keys(self):
         root = self.root_ctrl
@@ -894,6 +946,7 @@ class HandWalkCycleTool:
             'head': self.head_params.copy(),
             'groundHeight': self.groundHeight,   # ← add this
             'clampHandsToGround': self.clamp_hands_to_ground,
+            'stretchArms': self.stretch_arms,
             'spine': self.spine_params.copy(),
             'chest': self.chest_params.copy(),
             'legs_fk': self.legs_fk_params.copy(),
@@ -1014,7 +1067,11 @@ class HandWalkCycleTool:
     
         self.groundHeight = settings.get('groundHeight', self.groundHeight)
         self.clamp_hands_to_ground = settings.get('clampHandsToGround', self.clamp_hands_to_ground)  # keep only once
-    
+        
+        if 'stretchArms' in settings:
+            try: self.stretch_arms = float(settings['stretchArms'])
+            except: pass
+            
         # Spine / Chest — update then coerce numeric fields to floats
         self.spine_params.update(settings.get('spine', self.spine_params))
         self.chest_params.update(settings.get('chest', self.chest_params))
@@ -1112,6 +1169,8 @@ class HandWalkCycleTool:
             cmds.floatField(self.ground_height_field, e=True, value=self.groundHeight)
         if hasattr(self, 'clamp_checkbox'):
             cmds.checkBox(self.clamp_checkbox, e=True, value=self.clamp_hands_to_ground)
+        if hasattr(self, 'stretch_slider'):
+            cmds.floatSlider(self.stretch_slider, e=True, value=self.stretch_arms)
 
         if hasattr(self, 'fkik_slider'):
             cmds.floatSlider(self.fkik_slider, e=True, value=self.legs_fk_params['fkik_blend'])
