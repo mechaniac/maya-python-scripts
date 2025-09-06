@@ -50,6 +50,7 @@ class HandWalkCycleTool:
             'rock': 1.0,
             'shift_x': 0.0,   # NEW: translateX amplitude (thirds)
             'swing_z': 0.0,   # NEW: rotateZ thirds
+            'bounce_z': 0.0,   # <-- NEW: forward bounce amplitude for translateZ (fifths)
         }
         
         self.hip_params = {
@@ -108,7 +109,8 @@ class HandWalkCycleTool:
             'counter_rotateZ':  2.0,   # fifths
             'bounce_tx':        0.0,   # fifths
             'bob_ty':           0.5,   # fifths
-            'sway_tz':          0.5    # thirds
+            'sway_tz':          0.5,    # thirds
+            'offsetZ':          0.0,   # <-- NEW additive rotateZ offset
         }
         self.head_params = {
             'counter_rotateX': -5.0,   # thirds
@@ -116,7 +118,8 @@ class HandWalkCycleTool:
             'counter_rotateZ':  3.0,   # fifths
             'bounce_tx':        0.0,   # fifths
             'bob_ty':           0.8,   # fifths
-            'sway_tz':          0.8    # thirds
+            'sway_tz':          0.8,    # thirds
+            'offsetZ':          0.0,   # <-- NEW additive rotateZ offset
         }
 
         # Spine & Chest controls
@@ -193,6 +196,8 @@ class HandWalkCycleTool:
         cmds.text(label="Rock (rotateX)");        self.root_rock_field     = cmds.floatField(value=self.root_params['rock'])
         cmds.text(label="Shift (translateX)");  self.root_shift_x_field = cmds.floatField(value=self.root_params['shift_x'])
         cmds.text(label="Swing (rotateZ)");    self.root_swing_z_field = cmds.floatField(value=self.root_params['swing_z'])  # NEW
+        cmds.text(label="Bounce Forward (translateZ)"); self.root_bounce_z_field = cmds.floatField(value=self.root_params.get('bounce_z', 0.0))
+
 
         cmds.setParent('..'); cmds.setParent('..')
     
@@ -241,6 +246,7 @@ class HandWalkCycleTool:
         cmds.text(label="Counter Rotate X (thirds)"); self.neck_rx_field = cmds.floatField(value=self.neck_params['counter_rotateX'])
         cmds.text(label="Counter Rotate Y (thirds)"); self.neck_ry_field = cmds.floatField(value=self.neck_params['counter_rotateY'])
         cmds.text(label="Counter Rotate Z (fifths)"); self.neck_rz_field = cmds.floatField(value=self.neck_params['counter_rotateZ'])
+        cmds.text(label="Offset Z (add)"); self.neck_rz_off_field = cmds.floatField(value=self.neck_params.get('offsetZ', 0.0))
         cmds.text(label="Bounce X tx (fifths)");      self.neck_tx_field = cmds.floatField(value=self.neck_params['bounce_tx'])
         cmds.text(label="Bob Y ty (fifths)");         self.neck_ty_field = cmds.floatField(value=self.neck_params['bob_ty'])
         cmds.text(label="Sway Z tz (thirds)");        self.neck_tz_field = cmds.floatField(value=self.neck_params['sway_tz'])
@@ -253,6 +259,7 @@ class HandWalkCycleTool:
         cmds.text(label="Counter Rotate X (thirds)"); self.head_rx_field = cmds.floatField(value=self.head_params['counter_rotateX'])
         cmds.text(label="Counter Rotate Y (thirds)"); self.head_ry_field = cmds.floatField(value=self.head_params['counter_rotateY'])
         cmds.text(label="Counter Rotate Z (fifths)"); self.head_rz_field = cmds.floatField(value=self.head_params['counter_rotateZ'])
+        cmds.text(label="Offset Z (add)"); self.head_rz_off_field = cmds.floatField(value=self.head_params.get('offsetZ', 0.0))
         cmds.text(label="Bounce X tx (fifths)");      self.head_tx_field = cmds.floatField(value=self.head_params['bounce_tx'])
         cmds.text(label="Bob Y ty (fifths)");         self.head_ty_field = cmds.floatField(value=self.head_params['bob_ty'])
         cmds.text(label="Sway Z tz (thirds)");        self.head_tz_field = cmds.floatField(value=self.head_params['sway_tz'])
@@ -447,6 +454,8 @@ class HandWalkCycleTool:
         self.root_params['rock'] = cmds.floatField(self.root_rock_field, q=True, value=True)
         self.root_params['shift_x'] = cmds.floatField(self.root_shift_x_field, q=True, value=True)
         self.root_params['swing_z'] = cmds.floatField(self.root_swing_z_field, q=True, value=True)  # NEW
+        self.root_params['bounce_z'] = cmds.floatField(self.root_bounce_z_field, q=True, value=True)
+
         
         # Spine/Chest UI reads
         self.spine_params['swing_rx'] = cmds.floatField(self.spine_rx_field, q=True, value=True)
@@ -492,6 +501,9 @@ class HandWalkCycleTool:
         self.neck_params['bounce_tx']      = cmds.floatField(self.neck_tx_field, q=True, value=True)
         self.neck_params['bob_ty']         = cmds.floatField(self.neck_ty_field, q=True, value=True)
         self.neck_params['sway_tz']        = cmds.floatField(self.neck_tz_field, q=True, value=True)
+        # Neck/Head rotateZ offsets (additive)
+        self.neck_params['offsetZ'] = cmds.floatField(self.neck_rz_off_field, q=True, value=True)
+        self.head_params['offsetZ'] = cmds.floatField(self.head_rz_off_field, q=True, value=True)
 
         # Head fields
         self.head_params['counter_rotateX'] = cmds.floatField(self.head_rx_field, q=True, value=True)
@@ -658,38 +670,50 @@ class HandWalkCycleTool:
     def set_root_keys(self):
         root = self.root_ctrl
         start, mid, end = [f[0] for f in self.frames_stride_halved]
-        offset_y = self.root_params['offset_y']
-        offset_z = self.root_params['offset_z']
-        offset_rx = self.root_params['offset_rx']
+        q  = self.quarter
+        tq = self.three_quarter
     
-        # Bounce and Rock (5 keys)
-        for attr, amp, off in [('translateY', self.root_params['bounce'], offset_y),
-                               ('rotateX', self.root_params['rock'], offset_rx)]:
+        offset_y = float(self.root_params['offset_y'])
+        offset_z = float(self.root_params['offset_z'])
+        offset_rx = float(self.root_params['offset_rx'])
+        bounce_y = float(self.root_params['bounce'])
+        sway_y   = float(self.root_params['sway'])
+        rock_x   = float(self.root_params['rock'])
+        shift_x  = float(self.root_params.get('shift_x', 0.0))
+        swing_z  = float(self.root_params.get('swing_z', 0.0))
+        bounce_z = float(self.root_params.get('bounce_z', 0.0))  # NEW
+    
+        # Bounce Y (translateY) and Rock X (rotateX) on fifths
+        for attr, amp, off in [('translateY', bounce_y, offset_y),
+                               ('rotateX',    rock_x,  offset_rx)]:
             self.set_key(root, attr, start,  amp + off)
-            self.set_key(root, attr, self.quarter, -amp + off)
-            self.set_key(root, attr, mid, amp + off)
-            self.set_key(root, attr, self.three_quarter, -amp + off)
-            self.set_key(root, attr, end, amp + off)
+            self.set_key(root, attr, q,     -amp + off)
+            self.set_key(root, attr, mid,    amp + off)
+            self.set_key(root, attr, tq,    -amp + off)
+            self.set_key(root, attr, end,    amp + off)
     
-        # Sway (3 keys)
-        self.set_key(root, 'rotateY', start,  self.root_params['sway'])
-        self.set_key(root, 'rotateY', mid,   -self.root_params['sway'])
-        self.set_key(root, 'rotateY', end,    self.root_params['sway'])
+        # Sway Y (rotateY) on thirds
+        self.set_key(root, 'rotateY', start,  sway_y)
+        self.set_key(root, 'rotateY', mid,   -sway_y)
+        self.set_key(root, 'rotateY', end,    sway_y)
     
-        # Offset Z (static)
-        for t in [start, mid, end]:
-            self.set_key(root, 'translateZ', t, offset_z)
         # Translate X (thirds)
-        sx = float(self.root_params['shift_x'])
-        self.set_key(root, 'translateX', start,  sx)
-        self.set_key(root, 'translateX', mid,   -sx)
-        self.set_key(root, 'translateX', end,    sx)
-        
-        # Swing Z (rotateZ) on thirds  ← NEW
-        sz = float(self.root_params.get('swing_z', 0.0))
-        self.set_key(root, 'rotateZ', start,  sz)
-        self.set_key(root, 'rotateZ', mid,   -sz)
-        self.set_key(root, 'rotateZ', end,    sz)
+        self.set_key(root, 'translateX', start,  shift_x)
+        self.set_key(root, 'translateX', mid,   -shift_x)
+        self.set_key(root, 'translateX', end,    shift_x)
+    
+        # Swing Z (rotateZ) on thirds
+        self.set_key(root, 'rotateZ', start,  swing_z)
+        self.set_key(root, 'rotateZ', mid,   -swing_z)
+        self.set_key(root, 'rotateZ', end,    swing_z)
+    
+        # Bounce Forward (translateZ) on fifths — baseline offset_z + bumps at quarter/three_quarter
+        self.set_key(root, 'translateZ', start, offset_z)
+        self.set_key(root, 'translateZ', q,     offset_z + bounce_z)
+        self.set_key(root, 'translateZ', mid,   offset_z)
+        self.set_key(root, 'translateZ', tq,    offset_z + bounce_z)
+        self.set_key(root, 'translateZ', end,   offset_z)
+
 
 
     def resolve_first_existing(self, names):
@@ -883,37 +907,39 @@ class HandWalkCycleTool:
         start, mid, end = [f[0] for f in self.frames_stride_halved]
         times_thirds = [start, mid, end]
         times_fifths = [start, self.quarter, mid, self.three_quarter, end]
-
+    
         def apply_joint(ctrl, p):
             # Rotations
             rx_vals = self.pattern_thirds(p['counter_rotateX'])
             ry_vals = self.pattern_thirds(p['counter_rotateY'])
             rz_vals = self.pattern_fifths(p['counter_rotateZ'])
-
+            offZ    = float(p.get('offsetZ', 0.0))  # <-- NEW additive offset
+    
             for t, v in zip(times_thirds, rx_vals):
                 self.set_key(ctrl, 'rotateX', t, v)
             for t, v in zip(times_thirds, ry_vals):
                 self.set_key(ctrl, 'rotateY', t, v)
             for t, v in zip(times_fifths, rz_vals):
-                self.set_key(ctrl, 'rotateZ', t, v)
-
+                self.set_key(ctrl, 'rotateZ', t, v + offZ)  # <-- add offset
+    
             # Translations
             tx_vals = self.pattern_fifths(p['bounce_tx'])   # Bounce X
             ty_vals = self.pattern_fifths(p['bob_ty'])      # Bob Y
             tz_vals = self.pattern_thirds(p['sway_tz'])     # Sway Z
-
+    
             for t, v in zip(times_fifths, tx_vals):
                 self.set_key(ctrl, 'translateX', t, v)
             for t, v in zip(times_fifths, ty_vals):
                 self.set_key(ctrl, 'translateY', t, v)
             for t, v in zip(times_thirds, tz_vals):
                 self.set_key(ctrl, 'translateZ', t, v)
-
+    
         # Apply to neck and head separately
         if cmds.objExists(self.head_ctrls['neck']):
             apply_joint(self.head_ctrls['neck'], self.neck_params)
         if cmds.objExists(self.head_ctrls['head']):
             apply_joint(self.head_ctrls['head'], self.head_params)
+
 
 
     def set_head_counter_keys(self):
@@ -1060,6 +1086,12 @@ class HandWalkCycleTool:
         self.scapula_params.update(settings.get('scapula', self.scapula_params))
         self.neck_params.update(settings.get('neck', self.neck_params))
         self.head_params.update(settings.get('head', self.head_params))
+        
+        self._coerce_section_floats(self.neck_params,
+            ['counter_rotateX','counter_rotateY','counter_rotateZ','bounce_tx','bob_ty','sway_tz','offsetZ'])
+        self._coerce_section_floats(self.head_params,
+            ['counter_rotateX','counter_rotateY','counter_rotateZ','bounce_tx','bob_ty','sway_tz','offsetZ'])
+
     
         # If only 'head' existed in old presets, mirror to neck once
         if 'head' in settings and 'neck' not in settings:
@@ -1102,7 +1134,7 @@ class HandWalkCycleTool:
                 self.elbow_params['offset']['z'] = float(ep['offset_r'].get('z', self.elbow_params['offset']['z']))
 
         self.root_params.update(settings.get('root', self.root_params))
-        self._coerce_section_floats(self.root_params, ['offset_y','offset_z','offset_rx','bounce','sway','rock','shift_x','swing_z'])
+        self._coerce_section_floats(self.root_params, ['offset_y','offset_z','offset_rx','bounce','sway','rock','shift_x','swing_z','bounce_z'])
 
 
         # After applying, push values to UI
@@ -1124,10 +1156,17 @@ class HandWalkCycleTool:
         cmds.floatField(self.root_bounce_field, e=True, value=self.root_params['bounce'])
         cmds.floatField(self.root_sway_field, e=True, value=self.root_params['sway'])
         cmds.floatField(self.root_rock_field, e=True, value=self.root_params['rock'])
+        if hasattr(self, 'root_bounce_z_field'):
+            cmds.floatField(self.root_bounce_z_field, e=True, value=self.root_params.get('bounce_z', 0.0))
         if hasattr(self, 'root_shift_x_field'):
             cmds.floatField(self.root_shift_x_field, e=True, value=self.root_params['shift_x'])
         if hasattr(self, 'root_swing_z_field'):
             cmds.floatField(self.root_swing_z_field, e=True, value=self.root_params['swing_z'])
+        if hasattr(self, 'neck_rz_off_field'):
+            cmds.floatField(self.neck_rz_off_field, e=True, value=self.neck_params.get('offsetZ', 0.0))
+        if hasattr(self, 'head_rz_off_field'):
+            cmds.floatField(self.head_rz_off_field, e=True, value=self.head_params.get('offsetZ', 0.0))
+
 
         cmds.floatSlider(self.move_feet_slider, e=True, value=self.feet_follow['moveFeetWithRoot'])
         cmds.floatField(self.feet_offset_x_field, e=True, value=self.feet_follow['offset_x'])
