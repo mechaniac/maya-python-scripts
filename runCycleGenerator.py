@@ -286,11 +286,13 @@ class RunCycleGenerator:
     
         # === ACTIONS ===
         cmds.separator(height=10, style='in')
-        cmds.rowLayout(numberOfColumns=3, columnWidth3=(180, 180, 180), adjustableColumn=3)
+        cmds.rowLayout(numberOfColumns=4, columnWidth4=(150, 150, 150, 150), adjustableColumn=4)
         cmds.button(label="Generate Run Cycle", command=self.on_generate)
         cmds.button(label="Print Settings", command=self.print_settings)
         cmds.button(label="Apply Settings", command=self.prompt_and_apply_settings)
+        cmds.button(label="Reload UI", command=lambda *_: self.show())
         cmds.setParent('..')
+
     
         cmds.setParent('..')
         cmds.showWindow(self.window)
@@ -373,95 +375,190 @@ class RunCycleGenerator:
             return
         raw = cmds.promptDialog(query=True, text=True)
         try:
-            data = json.loads(raw)
+            data = self._parse_settings_text(raw)
+            self.apply_settings(data)   # do NOT rebuild UI here
+            self.refresh_ui()           # just update fields
         except Exception as e:
-            cmds.confirmDialog(title="Error", message="Invalid JSON:\n%s" % e)
-            return
-    
-        self.apply_settings(data)
-        # rebuild UI with new defaults
-        self.show()
+            # keep the window alive; show the error
+            cmds.confirmDialog(title="Error", message=str(e))
+
 
 
     def apply_settings(self, settings):
-        # safe number coercion
-        def _num(v, default):
-            try:
-                return float(v)
-            except Exception:
-                return default
+        # root / global
+        self.root_bounce_up   = self._num(settings.get('root_bounce_up',   self.root_bounce_up),   self.root_bounce_up)
+        self.root_bounce_down = self._num(settings.get('root_bounce_down', self.root_bounce_down), self.root_bounce_down)
+        self.root_lean        = self._num(settings.get('root_lean',        self.root_lean),        self.root_lean)
+        self.root_sway        = self._num(settings.get('root_sway',        self.root_sway),        self.root_sway)
+        self.root_swing       = self._num(settings.get('root_swing',       self.root_swing),       self.root_swing)
+        self.root_back_forth  = self._num(settings.get('root_back_forth',  self.root_back_forth),  self.root_back_forth)
+        self.corkscrew        = self._bool(settings.get('corkscrew',        self.corkscrew),        self.corkscrew)
     
-        # ---- root / global ----
-        self.root_bounce_up   = _num(settings.get('root_bounce_up',   self.root_bounce_up),   self.root_bounce_up)
-        self.root_bounce_down = _num(settings.get('root_bounce_down', self.root_bounce_down), self.root_bounce_down)
-        self.root_lean        = _num(settings.get('root_lean',        self.root_lean),        self.root_lean)
-        self.root_sway        = _num(settings.get('root_sway',        self.root_sway),        self.root_sway)
-        self.root_swing       = _num(settings.get('root_swing',       self.root_swing),       self.root_swing)
-        self.root_back_forth  = _num(settings.get('root_back_forth',  self.root_back_forth),  self.root_back_forth)
-        self.corkscrew        = bool(settings.get('corkscrew',        self.corkscrew))
+        # stride / legs
+        self.stride_length = self._num(settings.get('stride_length', self.stride_length), self.stride_length)
+        self.stride_width  = self._num(settings.get('stride_width',  self.stride_width),  self.stride_width)
+        self.stride_height = self._num(settings.get('stride_height', self.stride_height), self.stride_height)
+        self.foot_raise    = self._num(settings.get('foot_raise',    self.foot_raise),    self.foot_raise)
     
-        # ---- stride / legs ----
-        self.stride_length = _num(settings.get('stride_length', self.stride_length), self.stride_length)
-        self.stride_width  = _num(settings.get('stride_width',  self.stride_width),  self.stride_width)
-        self.stride_height = _num(settings.get('stride_height', self.stride_height), self.stride_height)
-        self.foot_raise    = _num(settings.get('foot_raise',    self.foot_raise),    self.foot_raise)
+        # chest
+        self.chest_bounce   = self._num(settings.get('chest_bounce', self.chest_bounce), self.chest_bounce)
+        self.chest_swing    = self._num(settings.get('chest_swing',  self.chest_swing),  self.chest_swing)
+        self.chest_tilt     = self._num(settings.get('chest_tilt',   self.chest_tilt),   self.chest_tilt)
+        self.chest_z_offset = self._num(settings.get('chest_z_offset', self.chest_z_offset), self.chest_z_offset)
     
-        # ---- chest ----
-        self.chest_bounce   = _num(settings.get('chest_bounce', self.chest_bounce), self.chest_bounce)
-        self.chest_swing    = _num(settings.get('chest_swing',  self.chest_swing),  self.chest_swing)
-        self.chest_tilt     = _num(settings.get('chest_tilt',   self.chest_tilt),   self.chest_tilt)
-        self.chest_z_offset = _num(settings.get('chest_z_offset', self.chest_z_offset), self.chest_z_offset)
+        # spine
+        self.spine_bounce   = self._num(settings.get('spine_bounce', self.spine_bounce), self.spine_bounce)
+        self.spine_swing    = self._num(settings.get('spine_swing',  self.spine_swing),  self.spine_swing)
+        self.spine_tilt     = self._num(settings.get('spine_tilt',   self.spine_tilt),   self.spine_tilt)
+        self.spine_z_offset = self._num(settings.get('spine_z_offset', self.spine_z_offset), self.spine_z_offset)
     
-        # ---- spine ----
-        self.spine_bounce     = _num(settings.get('spine_bounce', self.spine_bounce), self.spine_bounce)
-        self.spine_swing      = _num(settings.get('spine_swing',  self.spine_swing),  self.spine_swing)
-        self.spine_tilt       = _num(settings.get('spine_tilt',   self.spine_tilt),   self.spine_tilt)
-        self.spine_z_offset   = _num(settings.get('spine_z_offset', self.spine_z_offset), self.spine_z_offset)
+        # hips
+        self.hip_swing = self._num(settings.get('hip_swing', self.hip_swing), self.hip_swing)
+        self.hip_side  = self._num(settings.get('hip_side',  self.hip_side),  self.hip_side)
     
-        # ---- hips ----
-        self.hip_swing = _num(settings.get('hip_swing', self.hip_swing), self.hip_swing)
-        self.hip_side  = _num(settings.get('hip_side',  self.hip_side),  self.hip_side)
+        # arms (nested)
+        arm = settings.get('arm', {}) if isinstance(settings.get('arm', {}), dict) else {}
+        self.shoulder_down_y     = self._num(arm.get('shoulder_down_y', self.shoulder_down_y), self.shoulder_down_y)
+        self.scapula_down_y      = self._num(arm.get('scapula_down_y',  self.scapula_down_y),  self.scapula_down_y)
+        self.scapula_z           = self._num(arm.get('scapula_z',       self.scapula_z),       self.scapula_z)
+        self.elbow_z             = abs(self._num(arm.get('elbow_z',     self.elbow_z),         self.elbow_z))
+        self.shoulder_rotate_x   = self._num(arm.get('shoulder_rotate_x',  self.shoulder_rotate_x),  self.shoulder_rotate_x)
+        self.shoulder_swing_z    = self._num(arm.get('shoulder_swing_z',   self.shoulder_swing_z),   self.shoulder_swing_z)
+        self.shoulder_sway_out_y = self._num(arm.get('shoulder_sway_out_y',self.shoulder_sway_out_y),self.shoulder_sway_out_y)
     
-        # ---- arms ----
-        arm = settings.get('arm', {})
-        self.shoulder_down_y    = _num(arm.get('shoulder_down_y', self.shoulder_down_y), self.shoulder_down_y)
-        self.scapula_down_y     = _num(arm.get('scapula_down_y',  self.scapula_down_y),  self.scapula_down_y)
-        self.scapula_z          = _num(arm.get('scapula_z',       self.scapula_z),       self.scapula_z)
-        self.elbow_z            = abs(_num(arm.get('elbow_z',     self.elbow_z),         self.elbow_z))
-        self.shoulder_rotate_x  = _num(arm.get('shoulder_rotate_x',  self.shoulder_rotate_x),  self.shoulder_rotate_x)
-        self.shoulder_swing_z   = _num(arm.get('shoulder_swing_z',   self.shoulder_swing_z),   self.shoulder_swing_z)
-        self.shoulder_sway_out_y= _num(arm.get('shoulder_sway_out_y',self.shoulder_sway_out_y),self.shoulder_sway_out_y)
+        # head (accept nested or flat)
+        hb = settings.get('head_bounce', self._dig(settings, 'head', 'bounce'))
+        hr = settings.get('head_rock',   self._dig(settings, 'head', 'rock'))
+        hl = settings.get('head_lean',   self._dig(settings, 'head', 'lean'))
+        hs = settings.get('head_sway',   self._dig(settings, 'head', 'sway'))
+        hY = settings.get('head_swing',  self._dig(settings, 'head', 'swing'))
+        self.head_bounce = self._num(hb if hb is not None else self.head_bounce, self.head_bounce)
+        self.head_rock   = self._num(hr if hr is not None else self.head_rock,   self.head_rock)
+        self.head_lean   = self._num(hl if hl is not None else self.head_lean,   self.head_lean)
+        self.head_sway   = self._num(hs if hs is not None else self.head_sway,   self.head_sway)
+        self.head_swing  = self._num(hY if hY is not None else self.head_swing,  self.head_swing)
     
-        # ---- head (accept nested or flat) ----
-        head = settings.get('head', {})
-        if head:
-            self.head_bounce = _num(head.get('bounce', self.head_bounce), self.head_bounce)
-            self.head_rock   = _num(head.get('rock',   self.head_rock),   self.head_rock)
-            self.head_lean   = _num(head.get('lean',   self.head_lean),   self.head_lean)
-            self.head_sway   = _num(head.get('sway',   self.head_sway),   self.head_sway)
-            self.head_swing  = _num(head.get('swing',  self.head_swing),  self.head_swing)
-        else:
-            self.head_bounce = _num(settings.get('head_bounce', self.head_bounce), self.head_bounce)
-            self.head_rock   = _num(settings.get('head_rock',   self.head_rock),   self.head_rock)
-            self.head_lean   = _num(settings.get('head_lean',   self.head_lean),   self.head_lean)
-            self.head_sway   = _num(settings.get('head_sway',   self.head_sway),   self.head_sway)
-            self.head_swing  = _num(settings.get('head_swing',  self.head_swing),  self.head_swing)
-    
-        # ---- neck (accept nested or flat) ----
-        neck = settings.get('neck', {})
-        if neck:
-            self.neck_bounce = _num(neck.get('bounce', self.neck_bounce), self.neck_bounce)
-            self.neck_rock   = _num(neck.get('rock',   self.neck_rock),   self.neck_rock)
-            self.neck_lean   = _num(neck.get('lean',   self.neck_lean),   self.neck_lean)
-            self.neck_sway   = _num(neck.get('sway',   self.neck_sway),   self.neck_sway)
-            self.neck_swing  = _num(neck.get('swing',  self.neck_swing),  self.neck_swing)
-        else:
-            self.neck_bounce = _num(settings.get('neck_bounce', self.neck_bounce), self.neck_bounce)
-            self.neck_rock   = _num(settings.get('neck_rock',   self.neck_rock),   self.neck_rock)
-            self.neck_lean   = _num(settings.get('neck_lean',   self.neck_lean),   self.neck_lean)
-            self.neck_sway   = _num(settings.get('neck_sway',   self.neck_sway),   self.neck_sway)
-            self.neck_swing  = _num(settings.get('neck_swing',  self.neck_swing),  self.neck_swing)
+        # neck (accept nested or flat)
+        nb = settings.get('neck_bounce', self._dig(settings, 'neck', 'bounce'))
+        nr = settings.get('neck_rock',   self._dig(settings, 'neck', 'rock'))
+        nl = settings.get('neck_lean',   self._dig(settings, 'neck', 'lean'))
+        ns = settings.get('neck_sway',   self._dig(settings, 'neck', 'sway'))
+        nY = settings.get('neck_swing',  self._dig(settings, 'neck', 'swing'))
+        self.neck_bounce = self._num(nb if nb is not None else self.neck_bounce, self.neck_bounce)
+        self.neck_rock   = self._num(nr if nr is not None else self.neck_rock,   self.neck_rock)
+        self.neck_lean   = self._num(nl if nl is not None else self.neck_lean,   self.neck_lean)
+        self.neck_sway   = self._num(ns if ns is not None else self.neck_sway,   self.neck_sway)
+        self.neck_swing  = self._num(nY if nY is not None else self.neck_swing,  self.neck_swing)
 
+
+    # --- tolerant parsing & coercion ---
+    def _sanitize_json_text(self, text):
+        import re
+        # strip // line comments
+        text = re.sub(r'//.*', '', text)
+        # strip /* block comments */
+        text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
+        # remove trailing commas before } or ]
+        text = re.sub(r',(\s*[}\]])', r'\1', text)
+        # common pythonisms -> JSON
+        text = re.sub(r'\bTrue\b', 'true', text)
+        text = re.sub(r'\bFalse\b', 'false', text)
+        text = re.sub(r'\bNone\b', 'null', text)
+        return text
+    
+    def _parse_settings_text(self, raw):
+        import json
+        try:
+            return json.loads(raw)
+        except Exception:
+            return json.loads(self._sanitize_json_text(raw))
+    
+    def _num(self, v, default):
+        try:
+            # Accept strings like "12", "12.0", "  -3 "
+            return float(v)
+        except Exception:
+            return default
+    
+    def _bool(self, v, default):
+        if isinstance(v, bool):
+            return v
+        s = str(v).strip().lower()
+        if s in ('1','true','yes','on'): return True
+        if s in ('0','false','no','off'): return False
+        return default
+    
+    def _dig(self, d, *ks):
+        cur = d
+        for k in ks:
+            if not isinstance(cur, dict) or k not in cur: return None
+            cur = cur[k]
+        return cur
+    
+    def refresh_ui(self):
+        """Update existing UI fields instead of rebuilding the window."""
+        def _set(ff, val):
+            if hasattr(self, ff):
+                try:
+                    cmds.floatField(getattr(self, ff), e=True, value=val)
+                except:
+                    pass
+        # root
+        _set('root_bounce_up_field',   self.root_bounce_up)
+        _set('root_bounce_down_field', self.root_bounce_down)
+        _set('root_lean_field',        self.root_lean)
+        _set('root_sway_field',        self.root_sway)
+        _set('root_swing_field',       self.root_swing)
+        _set('root_back_forth_field',  self.root_back_forth)
+        try: cmds.checkBox(self.corkscrew_field, e=True, value=self.corkscrew)
+        except: pass
+    
+        # legs
+        _set('stride_length_field', self.stride_length)
+        _set('stride_width_field',  self.stride_width)
+        _set('stride_height_field', self.stride_height)
+        _set('foot_raise_field',    self.foot_raise)
+    
+        # chest
+        _set('chest_bounce_field', self.chest_bounce)
+        _set('chest_swing_field',  self.chest_swing)
+        _set('chest_tilt_field',   self.chest_tilt)
+        _set('chest_z_offset_field', self.chest_z_offset)
+    
+        # spine
+        _set('spine_bounce_field', self.spine_bounce)
+        _set('spine_swing_field',  self.spine_swing)
+        _set('spine_tilt_field',   self.spine_tilt)
+        _set('spine_z_offset_field', self.spine_z_offset)
+    
+        # hips
+        _set('hip_swing_field', self.hip_swing)
+        _set('hip_side_field',  self.hip_side)
+    
+        # arms
+        _set('shoulder_down_y_field',    self.shoulder_down_y)
+        _set('scapula_down_y_field',     self.scapula_down_y)
+        _set('scapula_z_field',          self.scapula_z)
+        _set('elbow_z_field',            self.elbow_z)
+        _set('shoulder_rotate_x_field',  self.shoulder_rotate_x)
+        _set('shoulder_swing_z_field',   self.shoulder_swing_z)
+        _set('shoulder_sway_out_y_field', self.shoulder_sway_out_y)
+    
+        # neck
+        _set('neck_bounce_field', self.neck_bounce)
+        _set('neck_rock_field',   self.neck_rock)
+        _set('neck_lean_field',   self.neck_lean)
+        _set('neck_sway_field',   self.neck_sway)
+        _set('neck_swing_field',  self.neck_swing)
+        _set('neck_z_offset_field', self.neck_z_offset)
+    
+        # head
+        _set('head_bounce_field', self.head_bounce)
+        _set('head_rock_field',   self.head_rock)
+        _set('head_lean_field',   self.head_lean)
+        _set('head_sway_field',   self.head_sway)
+        _set('head_swing_field',  self.head_swing)
+        _set('head_z_offset_field', self.head_z_offset)
 
 
         
