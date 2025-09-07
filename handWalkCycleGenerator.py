@@ -69,7 +69,10 @@ class HandWalkCycleTool:
             'offset_x': 3.0,
             'offset_y': 5.0,
             'offset_z': 0.0,
-            'rotate_x': 20.0
+            'rotate_x': 20.0,
+            'bounce_y': 0.0,       # NEW: Bounce amplitude (translateY)
+            'swing_x': 0.0,        # NEW: Swing amplitude (translateX) – NOT mirrored
+            'back_forth_z': 0.0,   # NEW: Back/Forth amplitude (translateZ)
         }
         
         self.scapula_ctrls = {
@@ -308,9 +311,13 @@ class HandWalkCycleTool:
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1,150),(2,150)])
         cmds.text(label="Move Feet With Root"); self.move_feet_slider = cmds.floatSlider(min=0, max=1, value=self.feet_follow['moveFeetWithRoot'], step=0.01)
         cmds.text(label="Offset X (mirrored)"); self.feet_offset_x_field = cmds.floatField(value=self.feet_follow['offset_x'])
+        cmds.text(label="Swing X (no mirror)"); self.feet_swing_x_field    = cmds.floatField(value=self.feet_follow.get('swing_x', 0.0))        
         cmds.text(label="Offset Y");            self.feet_offset_y_field = cmds.floatField(value=self.feet_follow['offset_y'])
+        cmds.text(label="Bounce Y");        self.feet_bounce_y_field  = cmds.floatField(value=self.feet_follow.get('bounce_y', 0.0))
         cmds.text(label="Offset Z");            self.feet_offset_z_field = cmds.floatField(value=self.feet_follow['offset_z'])
+        cmds.text(label="Back/Forth Z");    self.feet_backforth_z_field = cmds.floatField(value=self.feet_follow.get('back_forth_z', 0.0))
         cmds.text(label="Rotate X");            self.feet_rotate_x_field = cmds.floatField(value=self.feet_follow['rotate_x'])
+
         cmds.setParent('..'); cmds.setParent('..')
         
         # --- Legs Forward Kinematics ---
@@ -765,38 +772,74 @@ class HandWalkCycleTool:
         self.apply_keyframe_pattern((hip, 'rotateY'), y_vals)
 
     def set_feet_follow_keys(self):
+        """IKLeg_[R/L]: offsets + Root blend, plus new fifths motions:
+           - Bounce (ty): start/off, quarter/+b, mid/off, threeQ/+b, end/off
+           - Swing (tx): start/+s, quarter/0, mid/-s, threeQ/0, end/+s  (NOT mirrored)
+           - BackForth (tz): start/off, quarter/+bf, mid/off, threeQ/+bf, end/off
+           X offset is mirrored (R:+, L:-) as before.
+        """
         right = self.feet['right']
-        left = self.feet['left']
-        blend = self.feet_follow['moveFeetWithRoot']
-        
-        offset_x = self.feet_follow['offset_x']
-        offset_y = self.feet_follow['offset_y']
-        offset_z = self.feet_follow['offset_z']
-        rotate_x = self.feet_follow['rotate_x']
+        left  = self.feet['left']
     
-        for t in [f[0] for f in self.frames_stride_halved] + [self.quarter, self.three_quarter]:
-            # Get root values
-            ry = cmds.getAttr(f"{self.root_ctrl}.translateY", time=t) if cmds.objExists(self.root_ctrl) else 0
-            rz = cmds.getAttr(f"{self.root_ctrl}.translateZ", time=t) if cmds.objExists(self.root_ctrl) else 0
-            rx = cmds.getAttr(f"{self.root_ctrl}.rotateX", time=t) if cmds.objExists(self.root_ctrl) else 0
+        start, mid, end = [f[0] for f in self.frames_stride_halved]
+        q  = self.quarter
+        tq = self.three_quarter
+        times = [start, q, mid, tq, end]
     
-            # Blend root values with 0
-            y = ry * blend + offset_y
-            z = rz * blend + offset_z
-            r = rx * blend + rotate_x
+        # Read params
+        blend   = float(self.feet_follow['moveFeetWithRoot'])
+        off_x   = float(self.feet_follow['offset_x'])
+        off_y   = float(self.feet_follow['offset_y'])
+        off_z   = float(self.feet_follow['offset_z'])
+        rot_x   = float(self.feet_follow['rotate_x'])
+        bounce  = float(self.feet_follow.get('bounce_y', 0.0))
+        swing   = float(self.feet_follow.get('swing_x', 0.0))        # NOT mirrored
+        back_f  = float(self.feet_follow.get('back_forth_z', 0.0))
     
-            # Apply mirrored X offset
-            self.set_key(right, 'translateX', t,  offset_x)
-            self.set_key(left,  'translateX', t, -offset_x)
+        # Helper: sample root for blend
+        def root_val(attr, t):
+            try:
+                return cmds.getAttr(f"{self.root_ctrl}.{attr}", time=t) if cmds.objExists(self.root_ctrl) else 0.0
+            except Exception:
+                return 0.0
     
-            self.set_key(right, 'translateY', t, y)
-            self.set_key(left,  'translateY', t, y)
+        # Fifths add-ons
+        def add_tx(t):
+            if t == start or t == end: return  swing
+            if t == mid:               return -swing
+            return 0.0
     
-            self.set_key(right, 'translateZ', t, z)
-            self.set_key(left,  'translateZ', t, z)
+        def add_ty(t):
+            return bounce if (t == q or t == tq) else 0.0
     
-            self.set_key(right, 'rotateX', t, r)
-            self.set_key(left,  'rotateX', t, r)
+        def add_tz(t):
+            return back_f if (t == q or t == tq) else 0.0
+    
+        for t in times:
+            # Root-blended baselines
+            baseY = root_val('translateY', t) * blend + off_y
+            baseZ = root_val('translateZ', t) * blend + off_z
+            baseRotX = root_val('rotateX', t) * blend + rot_x
+    
+            # X: mirrored offset baseline, swing not mirrored
+            baseXR =  +off_x
+            baseXL =  -off_x
+            ax = add_tx(t)
+            ay = add_ty(t)
+            az = add_tz(t)
+    
+            # Right
+            self.set_key(right, 'translateX', t, baseXR + ax)
+            self.set_key(right, 'translateY', t, baseY  + ay)
+            self.set_key(right, 'translateZ', t, baseZ  + az)
+            self.set_key(right, 'rotateX',    t, baseRotX)
+    
+            # Left  (same swing sign; mirrored X offset only)
+            self.set_key(left,  'translateX', t, baseXL + ax)
+            self.set_key(left,  'translateY', t, baseY  + ay)
+            self.set_key(left,  'translateZ', t, baseZ  + az)
+            self.set_key(left,  'rotateX',    t, baseRotX)
+
 
     def set_legs_fk_keys_and_blend(self):
         """Set constant FK Z rotations on Start/End and apply FKIK blend (0..10) to both legs."""
@@ -1156,6 +1199,13 @@ class HandWalkCycleTool:
         cmds.floatField(self.root_bounce_field, e=True, value=self.root_params['bounce'])
         cmds.floatField(self.root_sway_field, e=True, value=self.root_params['sway'])
         cmds.floatField(self.root_rock_field, e=True, value=self.root_params['rock'])
+        if hasattr(self, 'feet_bounce_y_field'):
+            cmds.floatField(self.feet_bounce_y_field, e=True, value=self.feet_follow.get('bounce_y', 0.0))
+        if hasattr(self, 'feet_swing_x_field'):
+            cmds.floatField(self.feet_swing_x_field, e=True, value=self.feet_follow.get('swing_x', 0.0))
+        if hasattr(self, 'feet_backforth_z_field'):
+            cmds.floatField(self.feet_backforth_z_field, e=True, value=self.feet_follow.get('back_forth_z', 0.0))
+
         if hasattr(self, 'root_bounce_z_field'):
             cmds.floatField(self.root_bounce_z_field, e=True, value=self.root_params.get('bounce_z', 0.0))
         if hasattr(self, 'root_shift_x_field'):
