@@ -204,92 +204,96 @@ class SideStepGenerator:
 
 
     def set_scapula_keys(self):
-        """Base scapula swing on rotateY + absolute add-ons on Y/Z/X for BOTH arms."""
+        """Base scapula rotateY swing (mirrored) + additive Y/Z/X (signed, non-mirrored) to BOTH scapulas."""
         start, mid, end = self.frames[0], self.frames[2], self.frames[4]
         d = self._dir()
         s = self.scapula_swing * d
-        addY = self._abs(self.down_scapula_y)
-        addZ = self._abs(self.bent_scapula_z)
-        addX = self._abs(self.twist_scapula_x)
-
+    
+        # use signed values (allow negatives)
+        addY = float(self.down_scapula_y)
+        addZ = float(self.bent_scapula_z)
+        addX = float(self.twist_scapula_x)
+    
         for node, sign in [(self.scapula_l, +1), (self.scapula_r, -1)]:
-            # rotateY (base swing ±s) + absolute down
-            self.set_key(node, 'rotateY', start,  sign*s + addY)
-            self.set_key(node, 'rotateY', mid,   -sign*s + addY)
-            self.set_key(node, 'rotateY', end,    sign*s + addY)
-            # rotateZ (no base swing) + absolute bent
+            # rotateY: base swing ±s plus additive Y
+            self.set_key(node, 'rotateY', start,  sign * s + addY)
+            self.set_key(node, 'rotateY', mid,   -sign * s + addY)
+            self.set_key(node, 'rotateY', end,    sign * s + addY)
+    
+            # additive only on Z/X (constant over the cycle)
             self.set_key(node, 'rotateZ', start,  addZ)
             self.set_key(node, 'rotateZ', mid,    addZ)
             self.set_key(node, 'rotateZ', end,    addZ)
-            # rotateX (no base swing) + absolute twist
+    
             self.set_key(node, 'rotateX', start,  addX)
             self.set_key(node, 'rotateX', mid,    addX)
             self.set_key(node, 'rotateX', end,    addX)
 
+
     def set_shoulder_elbow_keys(self):
-        """Shoulder/elbow rotateZ base swings + add-ons for Y/Z/X. Also keys wrists with add-ons."""
+        """Shoulder/Elbow: rotateZ base swings (mirrored) + additive Y/Z/X (signed, non-mirrored).
+        Wrist: additive Y/Z/X only (signed, non-mirrored)."""
         start, mid, end = self.frames[0], self.frames[2], self.frames[4]
-        d   = self._dir()
+        d = self._dir()
         shZ = self.shoulder_swing * d
         elZ = self.elbow_swing * d
-
-        # absolute adds
-        addY_sh = self._abs(self.down_shoulder_y)
-        addZ_sh = self._abs(self.bent_shoulder_z)
-        addX_sh = self._abs(self.twist_shoulder_x)
-
-        addY_el = self._abs(self.down_elbow_y)
-        addZ_el = self._abs(self.bent_elbow_z)
-        addX_el = self._abs(self.twist_elbow_x)
-
-        addY_wr = self._abs(self.down_wrist_y)
-        addZ_wr = self._abs(self.bent_wrist_z)
-        addX_wr = self._abs(self.twist_wrist_x)
-
+    
+        # use signed values (allow negatives)
+        addY_sh = float(self.down_shoulder_y)
+        addZ_sh = float(self.bent_shoulder_z)
+        addX_sh = float(self.twist_shoulder_x)
+    
+        addY_el = float(self.down_elbow_y)
+        addZ_el = float(self.bent_elbow_z)
+        addX_el = float(self.twist_elbow_x)
+    
+        addY_wr = float(self.down_wrist_y)
+        addZ_wr = float(self.bent_wrist_z)
+        addX_wr = float(self.twist_wrist_x)
+    
         for (shoulder, elbow, wrist, sign) in [
             (self.shoulder_l, self.elbow_l, self.wrist_l, +1),
             (self.shoulder_r, self.elbow_r, self.wrist_r, -1),
         ]:
             # SHOULDER
-            # Z: base swing ±shZ + absolute bent
-            self.set_key(shoulder, 'rotateZ', start,  sign*shZ + addZ_sh)
-            self.set_key(shoulder, 'rotateZ', mid,   -sign*shZ + addZ_sh)
-            self.set_key(shoulder, 'rotateZ', end,    sign*shZ + addZ_sh)
-            # Y: absolute down
+            self.set_key(shoulder, 'rotateZ', start,  sign * shZ + addZ_sh)
+            self.set_key(shoulder, 'rotateZ', mid,   -sign * shZ + addZ_sh)
+            self.set_key(shoulder, 'rotateZ', end,    sign * shZ + addZ_sh)
+    
             self.set_key(shoulder, 'rotateY', start,  addY_sh)
             self.set_key(shoulder, 'rotateY', mid,    addY_sh)
             self.set_key(shoulder, 'rotateY', end,    addY_sh)
-            # X: absolute twist
+    
             self.set_key(shoulder, 'rotateX', start,  addX_sh)
             self.set_key(shoulder, 'rotateX', mid,    addX_sh)
             self.set_key(shoulder, 'rotateX', end,    addX_sh)
-
+    
             # ELBOW
-            # Z: base swing ±elZ + absolute bent
-            self.set_key(elbow, 'rotateZ', start,  sign*elZ + addZ_el)
-            self.set_key(elbow, 'rotateZ', mid,   -sign*elZ + addZ_el)
-            self.set_key(elbow, 'rotateZ', end,    sign*elZ + addZ_el)
-            # Y: absolute down
+            self.set_key(elbow, 'rotateZ', start,  sign * elZ + addZ_el)
+            self.set_key(elbow, 'rotateZ', mid,   -sign * elZ + addZ_el)
+            self.set_key(elbow, 'rotateZ', end,    sign * elZ + addZ_el)
+    
             self.set_key(elbow, 'rotateY', start,  addY_el)
             self.set_key(elbow, 'rotateY', mid,    addY_el)
             self.set_key(elbow, 'rotateY', end,    addY_el)
-            # X: absolute twist
+    
             self.set_key(elbow, 'rotateX', start,  addX_el)
             self.set_key(elbow, 'rotateX', mid,    addX_el)
             self.set_key(elbow, 'rotateX', end,    addX_el)
-
-            # WRIST (no base swing; just absolute adds so hands can relax)
+    
+            # WRIST (additives only)
             self.set_key(wrist, 'rotateY', start,  addY_wr)
             self.set_key(wrist, 'rotateY', mid,    addY_wr)
             self.set_key(wrist, 'rotateY', end,    addY_wr)
-
+    
             self.set_key(wrist, 'rotateZ', start,  addZ_wr)
             self.set_key(wrist, 'rotateZ', mid,    addZ_wr)
             self.set_key(wrist, 'rotateZ', end,    addZ_wr)
-
+    
             self.set_key(wrist, 'rotateX', start,  addX_wr)
             self.set_key(wrist, 'rotateX', mid,    addX_wr)
             self.set_key(wrist, 'rotateX', end,    addX_wr)
+
 
     def set_sidewhip_keys(self):
         start, quarter, mid, three_quarter, end = self.frames
