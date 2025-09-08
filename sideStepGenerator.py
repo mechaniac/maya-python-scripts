@@ -182,19 +182,19 @@ class SideStepGenerator:
         d = self._dir()
         off = self.root_offset_y  # signed
     
-        # translateX: same as before (peak at mid)
+        # translateX: use HALF step width at mid  ⬅️ fix
         self.set_key(self.root, 'translateX', start, 0)
-        self.set_key(self.root, 'translateX', mid,   d * self.step_width)
+        self.set_key(self.root, 'translateX', mid,   d * (self.step_width * 0.5))
         self.set_key(self.root, 'translateX', end,   0)
     
-        # rotateZ on fifths (mirrored)
+        # rotateZ (fifths)
         self.set_key(self.root, 'rotateZ', start,         0)
         self.set_key(self.root, 'rotateZ', quarter,       d * self.root_tilt)
         self.set_key(self.root, 'rotateZ', mid,           0)
         self.set_key(self.root, 'rotateZ', three_quarter, -d * self.root_tilt)
         self.set_key(self.root, 'rotateZ', end,           0)
     
-        # translateY bounce on fifths with signed offset
+        # translateY (fifths with signed offset)
         self.set_key(self.root, 'translateY', start,         off)
         self.set_key(self.root, 'translateY', quarter,   off + self.root_bounce)
         self.set_key(self.root, 'translateY', mid,           off)
@@ -455,6 +455,7 @@ class SideStepGenerator:
         cmds.text(label="Root Offset (translateY):")
         self.root_offset_y_field = cmds.floatField(value=self.root_offset_y)
         cmds.setParent('..')
+        cmds.setParent('..')     # <-- ADD THIS: closes the frame
 
 
         # Arm / Scapula base anim
