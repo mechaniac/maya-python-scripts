@@ -5,7 +5,7 @@ import json
 class FlightGenerator:
     def __init__(self):
         self.window = "FlightGeneratorWindow"
-
+    
         # Controls (resolved case-insensitively when keying)
         self.root     = "RootX_M"
         self.ik_arm_l = "IKArm_L"
@@ -16,81 +16,82 @@ class FlightGenerator:
         self.scap_r   = "FKScapula_R"
         self.pole_l   = "PoleArm_L"
         self.pole_r   = "PoleArm_R"
-
-        # IKArm_*.translateZ pattern (start:0, quarter:down, three_quarter:up, end:0)
-        self.ik_arms_down = 5.0
-        self.ik_arms_up   = 2.5
-
-        # IKArm_*.rotateX constant (start=end=input)
-        self.arm_rotateX_value = 10.0
-
-        # Hand Flap on IKArm_*.rotateY (start:0, quarter:down, three_quarter:up, end:0), L opposes R
-        self.hand_flap_down = 8.0
-        self.hand_flap_up   = -4.0
-
-        # Hand Positioning (translates) — Base + two deltas
-        # X (Apart) uses opposing signs; Y (Flap) same both sides
-        # Hand Positioning X (mirrored L=+, R=-)
-        self.hands_base_x = 0.0
-        self.hands_x_q    = 0.0   # at 1/4
-        self.hands_x_mid  = 0.0   # at 1/2
-        self.hands_x_3q   = 0.0   # at 3/4
+    
+        # IKArm_*.translateZ (start:0 -> 1/4:down -> 3/4:up -> end:0)
+        self.ik_arms_down = 300.0
+        self.ik_arms_up   = -200.0
+    
+        # IKArm_*.rotateX constant (start=end)
+        self.arm_rotateX_value = -90.0
+    
+        # Hand flap on IKArm_*.rotateY (L opposes R)
+        self.hand_flap_down = -90.0
+        self.hand_flap_up   = 90.0
+    
+        # Hand Positioning (IK translates)
+        # X is mirrored (L=+, R=-), Y same both sides
+        self.hands_base_x = 100.0
+        self.hands_x_q    = -300.0   # @ 1/4
+        self.hands_x_mid  = 100.0    # @ 1/2
+        self.hands_x_3q   = 0.0      # @ 3/4
         self.hands_base_y = 0.0
-        self.hands_flap   = 0.0   # Y delta applied at 1/4
-
+        self.hands_flap   = 0.0      # Y delta @ 1/4
+    
         # Extra torso controls
-        self.spine = "FKSpine1_M"   # alias to FKSpine_M handled below
+        self.spine = "FKSpine1_M"   # alias to FKSpine_M handled in resolver
         self.chest = "FKChest_M"
         self.neck  = "FKNeck_M"
         self.head  = "FKHead_M"
-        
-        # Stretch & Bend Posture (rotateZ) per control: offset, 1/3, 2/3
+    
+        # Stretch & Bend Posture (rotateZ): start=off, 1/3=off+v1, 2/3=off+v2, end=off
         self.spine_off = 0.0; self.spine_1_3 = 0.0; self.spine_2_3 = 0.0
         self.chest_off = 0.0; self.chest_1_3 = 0.0; self.chest_2_3 = 0.0
         self.neck_off  = 0.0; self.neck_1_3  = 0.0; self.neck_2_3  = 0.0
         self.head_off  = 0.0; self.head_1_3  = 0.0; self.head_2_3  = 0.0
-
-        # FK/IK blend (0..10) on FKIKArm_*.FKIKBlend (constant, keyed start & end)
+    
+        # FK/IK blend (0..10) on FKIKArm_*.FKIKBlend
         self.fkik_blend_value = 10.0
-
+    
         # ROOT movement
-        # Up/Down (translateZ) — start=Base, quarter=Mid, threeQuarters=-Mid, end=Base
-        self.root_updown_base = 0.0
-        self.root_updown_mid  = 0.0
-        # Back/Forth (rotateX) — same pattern
+        # Up/Down (translateZ): start=Base, 1/4=Mid, 3/4=-Mid, end=Base
+        self.root_updown_base = 6.0
+        self.root_updown_mid  = -12.0
+        # Back/Forth (rotateX) same pattern
         self.root_backforth_base = 0.0
         self.root_backforth_mid  = 0.0
-        
-        # Root back/forth translate (X) with offset: start=off, 1/4=off+q, 1/2=off+mid, 3/4=off+q3, end=off
+    
+        # Back/Forth Y translate with offset (start=off, 1/4=off+q, 1/2=off+mid, 3/4=off+q3, end=off)
         self.root_bf_off = 0.0
         self.root_bf_q   = 0.0
         self.root_bf_mid = 0.0
         self.root_bf_3q  = 0.0
-        
-        # IK Legs
+    
+        # IK Legs (feet)
         self.leg_l = "IKLeg_L"
         self.leg_r = "IKLeg_R"
-        
-        # Feet translate (on fifths) — X mirrored, Y/Z same; Base + deltas (returns to Base at end)
+    
+        # Feet translate (on fifths) — X mirrored, Y/Z same
         self.leg_tx_base = 0.0; self.leg_tx_q = 0.0; self.leg_tx_mid = 0.0; self.leg_tx_3q = 0.0
         self.leg_ty_base = 0.0; self.leg_ty_q = 0.0; self.leg_ty_mid = 0.0; self.leg_ty_3q = 0.0
         self.leg_tz_base = 0.0; self.leg_tz_q = 0.0; self.leg_tz_mid = 0.0; self.leg_tz_3q = 0.0
-        
-        # Feet rotate X (with offset, on fifths; same both sides)
-        self.leg_rx_off = 0.0; self.leg_rx_q = 0.0; self.leg_rx_mid = 0.0; self.leg_rx_3q = 0.0
-
-        # SCAPULA flap (rotateZ) — NEW pattern: start=0, quarter=Base, threeQuarters=Mid, end=0
-        self.scap_flap_base = 0.0
-        self.scap_flap_mid  = 0.0
-
-        # ELBOW POLES (PoleArm_* translates)
-        # Pattern per axis: start=offset, quarter=offset+base, threeQuarters=offset+mid, end=offset
-        # X is mirrored L(+)/R(-); Y and Z same both sides
+    
+        # Feet rotate X (offset pattern, on fifths)
+        self.leg_rx_off = 45.0
+        self.leg_rx_q   = 0.0
+        self.leg_rx_mid = 0.0
+        self.leg_rx_3q  = 0.0
+    
+        # Scapula flap (rotateZ): start=0, 1/4=Base, 3/4=Mid, end=0
+        self.scap_flap_base = 45.0
+        self.scap_flap_mid  = -35.0
+    
+        # Elbow poles (PoleArm_* translates) with offsets; X mirrored
         self.pole_off_x = 0.0; self.pole_base_x = 0.0; self.pole_mid_x = 0.0
         self.pole_off_y = 0.0; self.pole_base_y = 0.0; self.pole_mid_y = 0.0
         self.pole_off_z = 0.0; self.pole_base_z = 0.0; self.pole_mid_z = 0.0
-
-        self.frames = []  # [start, quarter, mid, three_quarter, end]
+    
+        # Timeline cache (start, 1/4, 1/2, 3/4, end)
+        self.frames = []
 
     # ---------- helpers ----------
     def resolve_node_case_insensitive(self, name):
