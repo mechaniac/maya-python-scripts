@@ -84,6 +84,17 @@ class FlightGenerator:
         # Scapula flap (rotateZ): start=0, 1/4=Base, 3/4=Mid, end=0
         self.scap_flap_base = 45.0
         self.scap_flap_mid  = -35.0
+        # --- add below your existing scapula fields ---
+        # Scapula Z had Base/Mid; now also an Offset (start/end).
+        self.scap_rz_off  = 0.0          # rotateZ offset
+        # New: X and Y each get offset + base + mid (same on L/R)
+        self.scap_rx_off  = 0.0
+        self.scap_rx_base = 0.0
+        self.scap_rx_mid  = 0.0
+        self.scap_ry_off  = 0.0
+        self.scap_ry_base = 0.0
+        self.scap_ry_mid  = 0.0
+
     
         # Elbow poles (PoleArm_* translates) with offsets; X mirrored
         self.pole_off_x = 0.0; self.pole_base_x = 0.0; self.pole_mid_x = 0.0
@@ -186,8 +197,9 @@ class FlightGenerator:
             # root
             (self.root,     ["translateZ", "rotateX"]),
             # scapulas
-            (self.scap_l,   ["rotateZ"]),
-            (self.scap_r,   ["rotateZ"]),
+            (self.scap_l,   ["rotateZ", "rotateY", "rotateX"]),
+            (self.scap_r,   ["rotateZ", "rotateY", "rotateX"]),
+
             # elbow poles
             (self.pole_l,   ["translateX", "translateY", "translateZ"]),
             (self.pole_r,   ["translateX", "translateY", "translateZ"]),
@@ -335,17 +347,34 @@ class FlightGenerator:
             self.set_key(node, "rotateX", three_quarter, roff + r3)
             self.set_key(node, "rotateX", end,           roff)
 
-    def key_scapula_flap(self):
-        # NEW pattern for scapula rotateZ:
-        # start: 0, quarter: Base, three_quarters: Mid, end: 0
+    def key_scapula(self):
+        # Pattern for each axis: start=off, 1/4=off+base, 3/4=off+mid, end=off
         start, quarter, mid, three_quarter, end = self.frames
-        base = float(self.scap_flap_base)
-        midv = float(self.scap_flap_mid)
+    
+        rz_off = float(self.scap_rz_off)
+        rz_b   = float(self.scap_flap_base)  # keep your existing names for Z
+        rz_m   = float(self.scap_flap_mid)
+    
+        rx_off = float(self.scap_rx_off); rx_b = float(self.scap_rx_base); rx_m = float(self.scap_rx_mid)
+        ry_off = float(self.scap_ry_off); ry_b = float(self.scap_ry_base); ry_m = float(self.scap_ry_mid)
+    
         for node in [self.scap_l, self.scap_r]:
-            self.set_key(node, "rotateZ", start,         0.0)
-            self.set_key(node, "rotateZ", quarter,       base)
-            self.set_key(node, "rotateZ", three_quarter, midv)
-            self.set_key(node, "rotateZ", end,           0.0)
+            # Z
+            self.set_key(node, "rotateZ", start,         rz_off)
+            self.set_key(node, "rotateZ", quarter,       rz_off + rz_b)
+            self.set_key(node, "rotateZ", three_quarter, rz_off + rz_m)
+            self.set_key(node, "rotateZ", end,           rz_off)
+            # Y
+            self.set_key(node, "rotateY", start,         ry_off)
+            self.set_key(node, "rotateY", quarter,       ry_off + ry_b)
+            self.set_key(node, "rotateY", three_quarter, ry_off + ry_m)
+            self.set_key(node, "rotateY", end,           ry_off)
+            # X
+            self.set_key(node, "rotateX", start,         rx_off)
+            self.set_key(node, "rotateX", quarter,       rx_off + rx_b)
+            self.set_key(node, "rotateX", three_quarter, rx_off + rx_m)
+            self.set_key(node, "rotateX", end,           rx_off)
+
 
     def key_elbow_poles(self):
         # PoleArm_* translates with offset + base/mid; X mirrored
@@ -388,7 +417,7 @@ class FlightGenerator:
         self.key_root_movement()
         self.key_stretch_bend_posture()
         self.key_legs()            # <-- add this
-        self.key_scapula_flap()
+        self.key_scapula()
         self.key_elbow_poles()
         self.key_fkik_blend()
         self.print_settings()
@@ -451,8 +480,11 @@ class FlightGenerator:
         self._try_set_float(getattr(self, 'head_2_3_field', None),  self.head_2_3)
     
         # Scapula
-        self._try_set_float(getattr(self, 'scap_flap_base_field', None), self.scap_flap_base)
-        self._try_set_float(getattr(self, 'scap_flap_mid_field',  None), self.scap_flap_mid)
+        for name in ['scap_rz_off_field','scap_flap_base_field','scap_flap_mid_field',
+                     'scap_ry_off_field','scap_ry_base_field','scap_ry_mid_field',
+                     'scap_rx_off_field','scap_rx_base_field','scap_rx_mid_field']:
+            self._try_set_float(getattr(self, name, None), getattr(self, name.replace('_field','')))
+
     
         # Poles
         self._try_set_float(getattr(self, 'pole_off_x_field', None),  self.pole_off_x)
@@ -509,12 +541,16 @@ class FlightGenerator:
             "head_off":  self.head_off,  "head_1_3":  self.head_1_3,  "head_2_3":  self.head_2_3,
             'scap_flap_base':      self.scap_flap_base,
             'scap_flap_mid':       self.scap_flap_mid,
+            'scap_rz_off': self.scap_rz_off,
+            'scap_rx_off': self.scap_rx_off, 'scap_rx_base': self.scap_rx_base, 'scap_rx_mid': self.scap_rx_mid,
+            'scap_ry_off': self.scap_ry_off, 'scap_ry_base': self.scap_ry_base, 'scap_ry_mid': self.scap_ry_mid,
             'pole_off_x': self.pole_off_x, 'pole_base_x': self.pole_base_x, 'pole_mid_x': self.pole_mid_x,
             'pole_off_y': self.pole_off_y, 'pole_base_y': self.pole_base_y, 'pole_mid_y': self.pole_mid_y,
             'pole_off_z': self.pole_off_z, 'pole_base_z': self.pole_base_z, 'pole_mid_z': self.pole_mid_z,
             'fkik_blend_value':    self.fkik_blend_value,
             "root_bf_off": self.root_bf_off, "root_bf_q": self.root_bf_q, "root_bf_mid": self.root_bf_mid, "root_bf_3q": self.root_bf_3q,
-            
+
+
             "leg_tx_base": self.leg_tx_base, "leg_tx_q": self.leg_tx_q, "leg_tx_mid": self.leg_tx_mid, "leg_tx_3q": self.leg_tx_3q,
             "leg_ty_base": self.leg_ty_base, "leg_ty_q": self.leg_ty_q, "leg_ty_mid": self.leg_ty_mid, "leg_ty_3q": self.leg_ty_3q,
             "leg_tz_base": self.leg_tz_base, "leg_tz_q": self.leg_tz_q, "leg_tz_mid": self.leg_tz_mid, "leg_tz_3q": self.leg_tz_3q,
@@ -630,6 +666,17 @@ class FlightGenerator:
         # Scapula
         self.scap_flap_base    = cmds.floatField(self.scap_flap_base_field, q=True, v=True)
         self.scap_flap_mid     = cmds.floatField(self.scap_flap_mid_field,  q=True, v=True)
+        self.scap_rz_off   = cmds.floatField(self.scap_rz_off_field,   q=True, v=True)
+        self.scap_flap_base= cmds.floatField(self.scap_flap_base_field, q=True, v=True)
+        self.scap_flap_mid = cmds.floatField(self.scap_flap_mid_field,  q=True, v=True)
+        
+        self.scap_ry_off   = cmds.floatField(self.scap_ry_off_field,   q=True, v=True)
+        self.scap_ry_base  = cmds.floatField(self.scap_ry_base_field,  q=True, v=True)
+        self.scap_ry_mid   = cmds.floatField(self.scap_ry_mid_field,   q=True, v=True)
+        
+        self.scap_rx_off   = cmds.floatField(self.scap_rx_off_field,   q=True, v=True)
+        self.scap_rx_base  = cmds.floatField(self.scap_rx_base_field,  q=True, v=True)
+        self.scap_rx_mid   = cmds.floatField(self.scap_rx_mid_field,   q=True, v=True)
         
 
         # Poles
@@ -768,13 +815,27 @@ class FlightGenerator:
         
         cmds.setParent('..')
 
-        # Scapula Flap (updated pattern)
-        cmds.frameLayout(label="Scapula Flap (FKScapula_* rotateZ: 0 -> Base@1/4 -> Mid@3/4 -> 0)", collapsable=True, marginWidth=10)
-        two_col_row(
-            "Flap Base (rotateZ @ 1/4):", lambda: setattr(self, 'scap_flap_base_field', cmds.floatField(value=self.scap_flap_base)),
-            "Flap Mid (rotateZ @ 3/4):",  lambda: setattr(self, 'scap_flap_mid_field',  cmds.floatField(value=self.scap_flap_mid))
-        )
-        cmds.setParent('..')
+        cmds.frameLayout(label="Scapula Rotations (FKScapula_* offsets @ start/end; Base@1/4, Mid@3/4)", collapsable=True, marginWidth=10)
+        
+        def scap_row(axis_label, off_attr, base_attr, mid_attr):
+            row = cmds.rowLayout(numberOfColumns=6, adjustableColumn=6)
+            for i, w in [(1,140),(2,90),(3,120),(4,90),(5,100),(6,90)]:
+                cmds.rowLayout(row, e=True, columnWidth=(i, w))
+            cmds.text(label=axis_label + " Offset:")
+            setattr(self, off_attr,  cmds.floatField(value=getattr(self, off_attr.replace('_field',''))))
+            cmds.text(label=axis_label + " @ 1/4:")
+            setattr(self, base_attr, cmds.floatField(value=getattr(self, base_attr.replace('_field',''))))
+            cmds.text(label=axis_label + " @ 3/4:")
+            setattr(self, mid_attr,  cmds.floatField(value=getattr(self, mid_attr.replace('_field',''))))
+            cmds.setParent('..')
+        
+        # Z uses existing Base/Mid names; we add the offset field
+        scap_row("Z", 'scap_rz_off_field', 'scap_flap_base_field', 'scap_flap_mid_field')
+        scap_row("Y", 'scap_ry_off_field', 'scap_ry_base_field',  'scap_ry_mid_field')
+        scap_row("X", 'scap_rx_off_field', 'scap_rx_base_field',  'scap_rx_mid_field')
+        
+        cmds.setParent('..')  # end frame
+
         
         cmds.frameLayout(label="IK Legs (Feet)", collapsable=True, marginWidth=10)
         
