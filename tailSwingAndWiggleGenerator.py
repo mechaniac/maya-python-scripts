@@ -39,11 +39,12 @@ class TailWiggleGenerator:
         if cmds.window(self.win, exists=True):
             cmds.deleteUI(self.win)
         self.node_rows = []
-        cmds.window(self.win, t="Tail Swing & Wiggle", sizeable=True)
+
+        win = cmds.window(self.win, t="Tail Swing & Wiggle", sizeable=True)
         col = cmds.columnLayout(adj=True, rs=6)
 
         # seed input + scan
-        cmds.rowLayout(nc=3, adj=2, columnWidth=[(1, 90), (2, 320), (3, 120)])
+        r = cmds.rowLayout(nc=3, adj=2)  # keep it simple/portable
         cmds.text(l="Base name:")
         cmds.textField(self.chain_input, tx="FKhair0_M")
         cmds.button(l="Scan Chain", c=lambda *_: self.populate_rows())
@@ -51,45 +52,39 @@ class TailWiggleGenerator:
 
         cmds.separator(h=6, style="in")
 
-        # headers
-        # Node | RotX RotY RotZ | OffX OffY OffZ | X Halves? Y Halves? Z Halves? | X IsSine Y IsSine Z IsSine | Save | Load | Del
-        cmds.rowLayout(
-            nc=17,
-            columnWidth=[(1,200),(2,60),(3,60),(4,60),
-                         (5,60),(6,60),(7,60),
-                         (8,88),(9,88),(10,88),
-                         (11,80),(12,80),(13,80),
-                         (14,70),(15,70),(16,60),(17,1)]
-        )
-        cmds.text(l="Node")
-        cmds.text(l="RotX"); cmds.text(l="RotY"); cmds.text(l="RotZ")
-        cmds.text(l="OffX"); cmds.text(l="OffY"); cmds.text(l="OffZ")
-        cmds.text(l="X: Halves?"); cmds.text(l="Y: Halves?"); cmds.text(l="Z: Halves?")
-        cmds.text(l="X: IsSine"); cmds.text(l="Y: IsSine"); cmds.text(l="Z: IsSine")
-        cmds.button(l="Save", c=lambda *_: self.save_settings_ui())
-        cmds.button(l="Load", c=lambda *_: self.load_settings_ui())
-        cmds.text(l="Del"); cmds.text(l="")  # spacer
+        # headers (no risky columnWidth flags)
+        hdr = cmds.rowLayout(nc=14)
+        for lbl in [
+            "Node",
+            "RotX","RotY","RotZ",
+            "OffX","OffY","OffZ",
+            "X:Halves","Y:Halves","Z:Halves",
+            "X:IsSine","Y:IsSine","Z:IsSine",
+            "Del"
+        ]:
+            cmds.text(l=lbl, al="left")
         cmds.setParent("..")
 
-
         # rows scroll host
-        cmds.scrollLayout(h=320)
+        rows_scroll = cmds.scrollLayout(h=320)
         if cmds.layout(self.rows_parent, q=True, ex=True):
             cmds.deleteUI(self.rows_parent)
-        cmds.columnLayout(self.rows_parent, adj=True)
+        cmds.columnLayout(self.rows_parent, adj=True, p=rows_scroll)
         cmds.setParent(col)
 
         cmds.separator(h=6, style="in")
 
-        # footer
-        cmds.rowLayout(nc=4, columnWidth=[(1, 140), (2, 180), (3, 140), (4, 160)])
+        # footer (one Save + one Load)
+        f = cmds.rowLayout(nc=6, adj=3)
         cmds.button(l="Select Chain", c=lambda *_: self.select_chain())
         cmds.button(l="Clear Keys (timeline)", c=lambda *_: self.clear_keys_range())
+        cmds.button(l="Save JSON", c=lambda *_: self.save_settings_ui())
+        cmds.button(l="Load JSON", c=lambda *_: self.load_settings_ui())
         cmds.button(l="Animate", bgc=(0.6, 0.9, 0.6), c=lambda *_: self.animate())
         cmds.button(l="Close", c=lambda *_: cmds.deleteUI(self.win))
         cmds.setParent("..")
 
-        cmds.showWindow(self.win)
+        cmds.showWindow(win)
 
     def clear_rows(self):
         if cmds.layout(self.rows_parent, q=True, ca=True):
@@ -111,41 +106,34 @@ class TailWiggleGenerator:
                 x_halves=True, y_halves=True, z_halves=True,
                 x_sine=False, y_sine=False, z_sine=False,
                 off_x=0.0, off_y=0.0, off_z=0.0):
-        r = cmds.rowLayout(
-            nc=17, adj=1, parent=self.rows_parent,
-            columnWidth=[(1,200),(2,60),(3,60),(4,60),
-                         (5,60),(6,60),(7,60),
-                         (8,88),(9,88),(10,88),
-                         (11,80),(12,80),(13,80),
-                         (14,70),(15,70),(16,60),(17,1)]
-        )
+        r = cmds.rowLayout(nc=14, adj=1, parent=self.rows_parent)
+
         cmds.text(l=node, al="left")
-    
+
         # amplitudes
-        x_amp_f = cmds.floatField(v=float(x_amp), pre=2)
-        y_amp_f = cmds.floatField(v=float(y_amp), pre=2)
-        z_amp_f = cmds.floatField(v=float(z_amp), pre=2)
-    
-        # offsets (absolute baseline)
-        x_off_f = cmds.floatField(v=float(off_x), pre=2)
-        y_off_f = cmds.floatField(v=float(off_y), pre=2)
-        z_off_f = cmds.floatField(v=float(off_z), pre=2)
-    
-        # modes
-        x_halves_cb = cmds.checkBox(v=bool(x_halves), l='')
-        y_halves_cb = cmds.checkBox(v=bool(y_halves), l='')
-        z_halves_cb = cmds.checkBox(v=bool(z_halves), l='')
-        x_sine_cb   = cmds.checkBox(v=bool(x_sine), l='')
-        y_sine_cb   = cmds.checkBox(v=bool(y_sine), l='')
-        z_sine_cb   = cmds.checkBox(v=bool(z_sine), l='')
-    
-        # header’s Save/Load columns -> blank for rows
-        cmds.text(l=""); cmds.text(l="")
-    
-        # delete + spacer
+        x_amp_f = cmds.floatField(v=float(x_amp), pre=2, minValue=-1e6, maxValue=1e6)
+        y_amp_f = cmds.floatField(v=float(y_amp), pre=2, minValue=-1e6, maxValue=1e6)
+        z_amp_f = cmds.floatField(v=float(z_amp), pre=2, minValue=-1e6, maxValue=1e6)
+        
+        # offsets
+        x_off_f = cmds.floatField(v=float(off_x), pre=2, minValue=-1e6, maxValue=1e6)
+        y_off_f = cmds.floatField(v=float(off_y), pre=2, minValue=-1e6, maxValue=1e6)
+        z_off_f = cmds.floatField(v=float(off_z), pre=2, minValue=-1e6, maxValue=1e6)
+
+
+        # modes (now with labels)
+        x_halves_cb = cmds.checkBox(l='X Halves', v=bool(x_halves), ann='Use halves pattern for rotateX')
+        y_halves_cb = cmds.checkBox(l='Y Halves', v=bool(y_halves), ann='Use halves pattern for rotateY')
+        z_halves_cb = cmds.checkBox(l='Z Halves', v=bool(z_halves), ann='Use halves pattern for rotateZ')
+
+        x_sine_cb   = cmds.checkBox(l='X IsSine', v=bool(x_sine), ann='Use sine-style fifths for rotateX')
+        y_sine_cb   = cmds.checkBox(l='Y IsSine', v=bool(y_sine), ann='Use sine-style fifths for rotateY')
+        z_sine_cb   = cmds.checkBox(l='Z IsSine', v=bool(z_sine), ann='Use sine-style fifths for rotateZ')
+
+
+        # delete
         cmds.button(l="X", c=lambda *_: self.delete_row(r))
-        cmds.text(l="")
-    
+
         self.node_rows.append({
             "layout": r, "name": node,
             "xAmp": x_amp_f, "yAmp": y_amp_f, "zAmp": z_amp_f,
@@ -154,7 +142,6 @@ class TailWiggleGenerator:
             "xSine": x_sine_cb, "ySine": y_sine_cb, "zSine": z_sine_cb
         })
 
-
     def delete_row(self, row_layout):
         self.node_rows = [nr for nr in self.node_rows if nr["layout"] != row_layout]
         if cmds.layout(row_layout, q=True, ex=True):
@@ -162,11 +149,18 @@ class TailWiggleGenerator:
 
     def select_chain(self):
         names = [nr["name"] for nr in self.node_rows]
-        if names: cmds.select(names, r=True)
+        if names:
+            cmds.select(names, r=True)
 
-    # ---------- save/load (JSON string) ----------
-    def serialize_settings(self):
-        data = {"base": cmds.textField(self.chain_input, q=True, tx=True).strip(), "nodes":[]}
+    # ---------- JSON (single save/load including selection) ----------
+    def get_settings_dict(self):
+        """Return current UI state + selection as a Python dict."""
+        data = {
+            "version": 1,
+            "base": cmds.textField(self.chain_input, q=True, tx=True).strip(),
+            "selection": cmds.ls(sl=True) or [],
+            "nodes": []
+        }
         for nr in self.node_rows:
             data["nodes"].append({
                 "name": nr["name"],
@@ -183,14 +177,62 @@ class TailWiggleGenerator:
                 "ySine": cmds.checkBox(nr["ySine"], q=True, v=True),
                 "zSine": cmds.checkBox(nr["zSine"], q=True, v=True),
             })
-        return json.dumps(data, indent=2)
-    
+        return data
+
+    def save_settings_ui(self):
+        """One-click save: settings + selection -> JSON dialog."""
+        txt = json.dumps(self.get_settings_dict(), indent=2)
+        w = "TWG_SaveJSON"
+        if cmds.window(w, exists=True): cmds.deleteUI(w)
+        cmds.window(w, t="TailWiggle: Save JSON", sizeable=True)
+        cmds.columnLayout(adj=True, rs=6)
+        cmds.text(l="Copy this JSON:")
+        cmds.scrollField(tx=txt, editable=False, wordWrap=False, h=260)
+        cmds.button(l="Close", c=lambda *_: cmds.deleteUI(w))
+        cmds.showWindow(w)
+
+    def load_settings_ui(self):
+        """One-click load: paste JSON -> apply UI; also restores selection if present."""
+        w = "TWG_LoadJSON"
+        if cmds.window(w, exists=True): cmds.deleteUI(w)
+        cmds.window(w, t="TailWiggle: Load JSON", sizeable=True, w=560)
+        cmds.columnLayout(adj=True, rs=6)
+        cmds.text(l="Paste JSON then Apply:")
+        sf = cmds.scrollField(tx="", editable=True, wordWrap=False, h=260)
+        def _apply(*_):
+            raw = cmds.scrollField(sf, q=True, tx=True)
+            try:
+                data = json.loads(raw)
+                if not isinstance(data, dict):
+                    raise ValueError("Top-level JSON must be an object.")
+            except Exception as e:
+                cmds.warning("Invalid JSON: %s" % e); return
+            self.apply_settings(data)  # UI rows + base
+            # optional: restore selection
+            sel = [s for s in data.get("selection", []) if cmds.objExists(s)]
+            if sel:
+                try: cmds.select(sel, r=True)
+                except: pass
+            cmds.deleteUI(w)
+        cmds.rowLayout(nc=2)
+        cmds.button(l="Apply", bgc=(0.6,0.9,0.6), c=_apply)
+        cmds.button(l="Cancel", c=lambda *_: cmds.deleteUI(w))
+        cmds.setParent(".."); cmds.showWindow(w)
+
     def apply_settings(self, data):
+        """Error-tolerant UI update from dict (Python 3 safe)."""
         self.clear_rows()
-        if "base" in data:
-            try: cmds.textField(self.chain_input, e=True, tx=data["base"])
-            except: pass
+
+        base = data.get("base", "")
+        if isinstance(base, str):
+            try:
+                cmds.textField(self.chain_input, e=True, tx=base)
+            except Exception:
+                pass
+
         for item in data.get("nodes", []):
+            if not isinstance(item, dict):
+                continue
             self.add_row(
                 item.get("name",""),
                 item.get("rotX",0.0), item.get("rotY",25.0), item.get("rotZ",0.0),
@@ -199,36 +241,6 @@ class TailWiggleGenerator:
                 off_x=item.get("offX", 0.0), off_y=item.get("offY", 0.0), off_z=item.get("offZ", 0.0)
             )
 
-
-    def save_settings_ui(self):
-        txt = self.serialize_settings()
-        w = "TWG_SaveJSON"
-        if cmds.window(w, exists=True): cmds.deleteUI(w)
-        cmds.window(w, t="TailWiggle: Save Settings", sizeable=True)
-        cmds.columnLayout(adj=True, rs=6)
-        cmds.text(l="Copy this JSON:")
-        cmds.scrollField(tx=txt, editable=False, wordWrap=False, h=260)
-        cmds.button(l="Close", c=lambda *_: cmds.deleteUI(w))
-        cmds.showWindow(w)
-
-    def load_settings_ui(self):
-        w = "TWG_LoadJSON"
-        if cmds.window(w, exists=True): cmds.deleteUI(w)
-        cmds.window(w, t="TailWiggle: Load Settings", sizeable=True, w=560)
-        cmds.columnLayout(adj=True, rs=6)
-        cmds.text(l="Paste JSON then Apply:")
-        sf = cmds.scrollField(tx="", editable=True, wordWrap=False, h=260)
-        def _apply(*_):
-            raw = cmds.scrollField(sf, q=True, tx=True)
-            try:
-                data = json.loads(raw)
-            except Exception as e:
-                cmds.warning("Invalid JSON: %s" % e); return
-            self.apply_settings(data); cmds.deleteUI(w)
-        cmds.rowLayout(nc=2, columnWidth=[(1,120),(2,120)])
-        cmds.button(l="Apply", bgc=(0.6,0.9,0.6), c=_apply)
-        cmds.button(l="Cancel", c=lambda *_: cmds.deleteUI(w))
-        cmds.setParent(".."); cmds.showWindow(w)
 
     # ---------- animation core ----------
     def get_timeline(self):
@@ -254,7 +266,7 @@ class TailWiggleGenerator:
         start, end = self.get_timeline()
         if (end - start) <= 0: cmds.warning("Invalid timeline length."); return
         self.clear_keys_range()
-    
+
         for row in self.node_rows:
             name = row["name"]
             x_amp = cmds.floatField(row["xAmp"], q=True, v=True)
@@ -269,41 +281,34 @@ class TailWiggleGenerator:
             x_sine = cmds.checkBox(row["xSine"], q=True, v=True)
             y_sine = cmds.checkBox(row["ySine"], q=True, v=True)
             z_sine = cmds.checkBox(row["zSine"], q=True, v=True)
-    
+
             self.key_axis(name, "rotateX", x_amp, start, end, halves=x_halves, is_sine=x_sine, offset=x_off)
             self.key_axis(name, "rotateY", y_amp, start, end, halves=y_halves, is_sine=y_sine, offset=y_off)
             self.key_axis(name, "rotateZ", z_amp, start, end, halves=z_halves, is_sine=z_sine, offset=z_off)
-    
+
         cmds.inViewMessage(amg="Tail/Hair keys set.", pos="midCenter", fade=True)
 
-
     def key_axis(self, node, attr, amp, start, end, halves=True, is_sine=False, offset=0.0):
-        """Idempotent inside [start,end]; keeps external keys.
-           Halves:  start=+A, 1/2=-A, end=+A
-           Fifths:  start=0, 1/4=+A, 1/2=0, 3/4=-A, end=0
-           Fifths+IsSine: start=-A, 1/4=+A, 1/2=-A, 3/4=+A, end=-A
-           Offset: adds +offset to every keyed value.
-        """
         plug = f"{node}.{attr}"
         if not cmds.objExists(plug):
             return
-    
+
         length = float(end - start)
         if length <= 0.0:
             return
-    
+
         half = start + 0.5 * length
         q1   = start + 0.25 * length
         q3   = start + 0.75 * length
-    
+
         def set_and_key(t, v):
             val = v + offset
             cmds.currentTime(t, e=True)
             cmds.setAttr(plug, val)
             cmds.setKeyframe(plug, t=t, v=val)
-    
+
         A = float(amp)
-    
+
         if halves:
             set_and_key(start,  A)
             set_and_key(half,  -abs(A) if A >= 0 else abs(A))
@@ -321,13 +326,10 @@ class TailWiggleGenerator:
                 set_and_key(half,  0.0)
                 set_and_key(q3,   -A)
                 set_and_key(end,   0.0)
-    
-        # tangents: keep ends exact
+
         cmds.keyTangent(plug, e=True, itt='auto', ott='auto', time=(start, end))
         cmds.keyTangent(plug, e=True, itt='flat', ott='flat', time=(start, start))
         cmds.keyTangent(plug, e=True, itt='flat', ott='flat', time=(end, end))
-
-
 
 # ---------- run ----------
 tool = TailWiggleGenerator()
