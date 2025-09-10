@@ -6,6 +6,9 @@ class TailWiggleGenerator:
         self.win = "TailWiggleGeneratorWin"
         self.chain_input = "twg_baseInput"
         self.rows_parent = "twg_rowsParent"
+        self.mirror_x = False
+        self.mirror_y = False
+        self.mirror_z = False
         self.node_rows = []  # [{...ui ids...}]
 
     # ---------- chain detection ----------
@@ -63,6 +66,14 @@ class TailWiggleGenerator:
             "Del"
         ]:
             cmds.text(l=lbl, al="left")
+        cmds.setParent("..")
+
+        # --- Global mirrors row ---
+        mir = cmds.rowLayout(nc=6, adj=1)
+        cmds.text(l="Mirror Animation:")
+        self.mirror_x_cb = cmds.checkBox(l="X", v=self.mirror_x, ann="Mirror all rotateX animation")
+        self.mirror_y_cb = cmds.checkBox(l="Y", v=self.mirror_y, ann="Mirror all rotateY animation")
+        self.mirror_z_cb = cmds.checkBox(l="Z", v=self.mirror_z, ann="Mirror all rotateZ animation")
         cmds.setParent("..")
 
         # rows scroll host
@@ -159,6 +170,11 @@ class TailWiggleGenerator:
             "version": 1,
             "base": cmds.textField(self.chain_input, q=True, tx=True).strip(),
             "selection": cmds.ls(sl=True) or [],
+            "mirror": {  # NEW
+                "x": cmds.checkBox(self.mirror_x_cb, q=True, v=True),
+                "y": cmds.checkBox(self.mirror_y_cb, q=True, v=True),
+                "z": cmds.checkBox(self.mirror_z_cb, q=True, v=True),
+            },
             "nodes": []
         }
         for nr in self.node_rows:
@@ -229,7 +245,13 @@ class TailWiggleGenerator:
                 cmds.textField(self.chain_input, e=True, tx=base)
             except Exception:
                 pass
-
+        mir = data.get("mirror", {})
+        try:
+            if "x" in mir: cmds.checkBox(self.mirror_x_cb, e=True, v=bool(mir["x"]))
+            if "y" in mir: cmds.checkBox(self.mirror_y_cb, e=True, v=bool(mir["y"]))
+            if "z" in mir: cmds.checkBox(self.mirror_z_cb, e=True, v=bool(mir["z"]))
+        except:
+            pass
         for item in data.get("nodes", []):
             if not isinstance(item, dict):
                 continue
@@ -266,27 +288,34 @@ class TailWiggleGenerator:
         start, end = self.get_timeline()
         if (end - start) <= 0: cmds.warning("Invalid timeline length."); return
         self.clear_keys_range()
-
+    
+        # NEW: global multipliers
+        mx = -1.0 if cmds.checkBox(self.mirror_x_cb, q=True, v=True) else 1.0
+        my = -1.0 if cmds.checkBox(self.mirror_y_cb, q=True, v=True) else 1.0
+        mz = -1.0 if cmds.checkBox(self.mirror_z_cb, q=True, v=True) else 1.0
+    
         for row in self.node_rows:
-            name = row["name"]
-            x_amp = cmds.floatField(row["xAmp"], q=True, v=True)
-            y_amp = cmds.floatField(row["yAmp"], q=True, v=True)
-            z_amp = cmds.floatField(row["zAmp"], q=True, v=True)
-            x_off = cmds.floatField(row["xOff"], q=True, v=True)
-            y_off = cmds.floatField(row["yOff"], q=True, v=True)
-            z_off = cmds.floatField(row["zOff"], q=True, v=True)
+            name   = row["name"]
+            x_amp  = cmds.floatField(row["xAmp"], q=True, v=True)
+            y_amp  = cmds.floatField(row["yAmp"], q=True, v=True)
+            z_amp  = cmds.floatField(row["zAmp"], q=True, v=True)
+            x_off  = cmds.floatField(row["xOff"], q=True, v=True)
+            y_off  = cmds.floatField(row["yOff"], q=True, v=True)
+            z_off  = cmds.floatField(row["zOff"], q=True, v=True)
             x_halves = cmds.checkBox(row["xHalves"], q=True, v=True)
             y_halves = cmds.checkBox(row["yHalves"], q=True, v=True)
             z_halves = cmds.checkBox(row["zHalves"], q=True, v=True)
-            x_sine = cmds.checkBox(row["xSine"], q=True, v=True)
-            y_sine = cmds.checkBox(row["ySine"], q=True, v=True)
-            z_sine = cmds.checkBox(row["zSine"], q=True, v=True)
-
-            self.key_axis(name, "rotateX", x_amp, start, end, halves=x_halves, is_sine=x_sine, offset=x_off)
-            self.key_axis(name, "rotateY", y_amp, start, end, halves=y_halves, is_sine=y_sine, offset=y_off)
-            self.key_axis(name, "rotateZ", z_amp, start, end, halves=z_halves, is_sine=z_sine, offset=z_off)
-
+            x_sine   = cmds.checkBox(row["xSine"],   q=True, v=True)
+            y_sine   = cmds.checkBox(row["ySine"],   q=True, v=True)
+            z_sine   = cmds.checkBox(row["zSine"],   q=True, v=True)
+    
+            # apply mirrors to amplitude and offset
+            self.key_axis(name, "rotateX", mx * x_amp, start, end, halves=x_halves, is_sine=x_sine, offset=mx * x_off)
+            self.key_axis(name, "rotateY", my * y_amp, start, end, halves=y_halves, is_sine=y_sine, offset=my * y_off)
+            self.key_axis(name, "rotateZ", mz * z_amp, start, end, halves=z_halves, is_sine=z_sine, offset=mz * z_off)
+    
         cmds.inViewMessage(amg="Tail/Hair keys set.", pos="midCenter", fade=True)
+
 
     def key_axis(self, node, attr, amp, start, end, halves=True, is_sine=False, offset=0.0):
         plug = f"{node}.{attr}"
