@@ -24,6 +24,9 @@ class WalkCycleTool:
         self.root_backforth = 0.0  # 🔹 NEW — translateZ on fifths
         self.root_leftright = 0.0  # 🔹 NEW — translateX on thirds (replaces/renames root_side_sway)
 
+        self.leg_stretch_L = 0.0
+        self.leg_stretch_R = 0.0
+
 
 
         self.arm_params = {
@@ -130,7 +133,20 @@ class WalkCycleTool:
     
         cmds.setParent('..')
         cmds.setParent('..')
-    
+
+        # --- Leg Stretch (IKLeg_*.Stretchy) ---
+        cmds.frameLayout(label="Leg Stretch (IKLeg_*.Stretchy)", collapsable=True, marginWidth=10, marginHeight=5)
+        cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 220), (2, 400)])
+        
+        cmds.text(label="IKLeg_L.Stretchy (0–10)")
+        self.leg_stretch_L_slider = cmds.floatSliderGrp(label="", field=True, min=0.0, max=10.0, value=self.leg_stretch_L)
+        
+        cmds.text(label="IKLeg_R.Stretchy (0–10)")
+        self.leg_stretch_R_slider = cmds.floatSliderGrp(label="", field=True, min=0.0, max=10.0, value=self.leg_stretch_R)
+        
+        cmds.setParent('..')
+        cmds.setParent('..')
+
         # --- Spine / Neck / Head ---
         cmds.frameLayout(label="Spine / Neck / Head", collapsable=True, marginWidth=10, marginHeight=5)
         for key in self.upper_body_params:
@@ -251,7 +267,8 @@ class WalkCycleTool:
             self.upper_body_params[key]['rz'] = cmds.floatField(self.upper_body_params[key]['rz_field'], query=True, value=True)
             self.upper_body_params[key]['rz_offset'] = cmds.floatField(self.upper_body_params[key]['rz_offset_field'], query=True, value=True)
 
-
+        self.leg_stretch_L = cmds.floatSliderGrp(self.leg_stretch_L_slider, query=True, value=True)
+        self.leg_stretch_R = cmds.floatSliderGrp(self.leg_stretch_R_slider, query=True, value=True)
 
         for key in ['shoulder_down_y', 'scapula_z', 'shoulder_z', 'elbow_z', 'wrist_z']:
             self.arm_params[key] = cmds.floatField(self.arm_params[key + '_field'], query=True, value=True)
@@ -263,6 +280,8 @@ class WalkCycleTool:
         original_time = cmds.currentTime(query=True)
         self.clear_keys()
         self.compute_frame_data()
+        
+        self.set_leg_stretch_keys()
         self.set_feet_keys()
         self.set_foot_raise_keys()
         self.set_hip_swinger_keys()
@@ -294,6 +313,36 @@ class WalkCycleTool:
         obj, attr = obj_attr
         for (t, *_), v in zip(self.frames_stride_halved, values_per_frame):
             self.set_key(obj, attr, t, v)
+
+    
+    def set_leg_stretch_keys(self):
+        """
+        Uses existing IKLeg_*.stretchy (0..10). 
+        If the attribute doesn't exist, skip and warn. Sets static start/end keys.
+        """
+        leg_l = self.limbs['left_leg']
+        leg_r = self.limbs['right_leg']
+        start = cmds.playbackOptions(q=True, min=True)
+        end   = cmds.playbackOptions(q=True, max=True)
+    
+        for node, val in [(leg_l, self.leg_stretch_L), (leg_r, self.leg_stretch_R)]:
+            if not cmds.objExists(node):
+                cmds.warning("Node not found: {}".format(node))
+                continue
+            if not cmds.attributeQuery('stretchy', node=node, exists=True):
+                cmds.warning("Attribute 'stretchy' not found on {} — skipping".format(node))
+                continue
+    
+            # Clear old keys on 'stretchy' in the current range
+            try:
+                cmds.cutKey(node, at='stretchy', time=(start, end))
+            except Exception:
+                pass
+    
+            # Static value + start/end keys
+            cmds.setAttr("{}.stretchy".format(node), val)
+            self.set_key(node, 'stretchy', start, val)
+            self.set_key(node, 'stretchy', end,   val)
 
     def set_feet_keys(self):
         r = self.limbs['right_leg']
@@ -423,31 +472,33 @@ class WalkCycleTool:
 
     def set_right_arm_keys(self):
         start, mid, end = [f[0] for f in self.frames_stride_halved]
+    
+        # static Y downs
         static_ry = self.arm_params['shoulder_down_y']
         cmds.setAttr(f"{self.arm_ctrls['shoulder']}.rotateY", static_ry)
         self.set_key(self.arm_ctrls['shoulder'], 'rotateY', start, static_ry)
-        self.set_key(self.arm_ctrls['shoulder'], 'rotateY', end, static_ry)
+        self.set_key(self.arm_ctrls['shoulder'], 'rotateY', end,   static_ry)
+    
         scapula_ctrl = self.arm_ctrls['scapula']
         scapula_down = self.arm_params['scapula_down']
         cmds.setAttr(f"{scapula_ctrl}.rotateY", scapula_down)
         self.set_key(scapula_ctrl, 'rotateY', start, scapula_down)
-        self.set_key(scapula_ctrl, 'rotateY', end, scapula_down)
-
-        # Animate Shoulder X
+        self.set_key(scapula_ctrl, 'rotateY', end,   scapula_down)
+    
+        # Shoulder X (thirds)
         x_vals = [self.arm_params['shoulder_x'], -self.arm_params['shoulder_x'], self.arm_params['shoulder_x']]
         self.apply_keyframe_pattern((self.arm_ctrls['shoulder'], 'rotateX'), x_vals)
-
-        
+    
+        # Z swings
         for key, ctrl in zip(['scapula_z', 'shoulder_z', 'elbow_z', 'wrist_z'],
-                             ['scapula', 'shoulder', 'elbow', 'wrist']):
+                             ['scapula',   'shoulder',   'elbow',   'wrist']):
             val = self.arm_params[key]
             if key == 'elbow_z':
-                val = max(val, 0)
+                # right elbow peaks at mid; allow negatives
                 values = [0, val, 0]
             else:
                 values = [val, -val, val]
             self.apply_keyframe_pattern((self.arm_ctrls[ctrl], 'rotateZ'), values)
-
 
 
             
@@ -455,31 +506,35 @@ class WalkCycleTool:
     
     def set_left_arm_keys(self):
         start, mid, end = [f[0] for f in self.frames_stride_halved]
-        static_ry = self.arm_params['shoulder_down_y']
-        cmds.setAttr(f"{self.arm_ctrls['shoulder'].replace('_R', '_L')}.rotateY", static_ry)
-        self.set_key(self.arm_ctrls['shoulder'].replace('_R', '_L'), 'rotateY', start, static_ry)
-        self.set_key(self.arm_ctrls['shoulder'].replace('_R', '_L'), 'rotateY', end, static_ry)
-        scapula_ctrl = self.arm_ctrls['scapula'].replace('_R', '_L')
-        scapula_down = self.arm_params['scapula_down']
-        cmds.setAttr(f"{scapula_ctrl}.rotateY", scapula_down)
-        self.set_key(scapula_ctrl, 'rotateY', start, scapula_down)
-        self.set_key(scapula_ctrl, 'rotateY', end, scapula_down)
-
-        # Animate Shoulder X (mirrored)
-        x_vals = [-self.arm_params['shoulder_x'], self.arm_params['shoulder_x'], -self.arm_params['shoulder_x']]
-        self.apply_keyframe_pattern((self.arm_ctrls['shoulder'].replace('_R', '_L'), 'rotateX'), x_vals)
-
     
+        # static Y downs
+        static_ry = self.arm_params['shoulder_down_y']
+        l_shoulder = self.arm_ctrls['shoulder'].replace('_R', '_L')
+        cmds.setAttr(f"{l_shoulder}.rotateY", static_ry)
+        self.set_key(l_shoulder, 'rotateY', start, static_ry)
+        self.set_key(l_shoulder, 'rotateY', end,   static_ry)
+    
+        l_scapula = self.arm_ctrls['scapula'].replace('_R', '_L')
+        scapula_down = self.arm_params['scapula_down']
+        cmds.setAttr(f"{l_scapula}.rotateY", scapula_down)
+        self.set_key(l_scapula, 'rotateY', start, scapula_down)
+        self.set_key(l_scapula, 'rotateY', end,   scapula_down)
+    
+        # Shoulder X (mirrored on thirds)
+        x_vals = [-self.arm_params['shoulder_x'], self.arm_params['shoulder_x'], -self.arm_params['shoulder_x']]
+        self.apply_keyframe_pattern((l_shoulder, 'rotateX'), x_vals)
+    
+        # Z swings
         for key, ctrl in zip(['scapula_z', 'shoulder_z', 'elbow_z', 'wrist_z'],
-                             ['scapula', 'shoulder', 'elbow', 'wrist']):
+                             ['scapula',   'shoulder',   'elbow',   'wrist']):
             val = self.arm_params[key]
+            l_ctrl = self.arm_ctrls[ctrl].replace('_R', '_L')
             if key == 'elbow_z':
-                val = max(val, 0)
+                # left elbow peaks at start/end; allow negatives
                 values = [val, 0, val]
             else:
                 values = [-val, val, -val]
-            self.apply_keyframe_pattern((self.arm_ctrls[ctrl].replace('_R', '_L'), 'rotateZ'), values)
-
+            self.apply_keyframe_pattern((l_ctrl, 'rotateZ'), values)
 
 
 
@@ -498,7 +553,8 @@ class WalkCycleTool:
             'root_twist': self.root_twist,
             'root_backforth': self.root_backforth,
             'root_leftright': self.root_leftright,
-
+            'leg_stretch_L': self.leg_stretch_L,
+            'leg_stretch_R': self.leg_stretch_R,
             'upper_body': {
                 k: {
                     'rx': v['rx'],
@@ -544,6 +600,8 @@ class WalkCycleTool:
         self.foot_raise = settings.get('foot_raise', 0.0)
         self.root_bounce_offset = settings.get('root_bounce_offset', 0.0)
         self.root_twist = settings.get('root_twist', 0.0)
+        self.leg_stretch_L = settings.get('leg_stretch_L', 0.0)
+        self.leg_stretch_R = settings.get('leg_stretch_R', 0.0)
 
         self.root_backforth = settings.get('root_backforth', 0.0)
         self.root_leftright = settings.get('root_leftright', 0.0)
@@ -580,6 +638,8 @@ class WalkCycleTool:
         cmds.floatField(self.root_backforth_field, e=True, value=self.root_backforth)
         cmds.floatField(self.root_leftright_field, e=True, value=self.root_leftright)
 
+        cmds.floatSliderGrp(self.leg_stretch_L_slider, e=True, value=self.leg_stretch_L)
+        cmds.floatSliderGrp(self.leg_stretch_R_slider, e=True, value=self.leg_stretch_R)
 
     
         for key in self.upper_body_params:
