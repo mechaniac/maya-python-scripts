@@ -498,6 +498,7 @@ def log_uv_sets(*args):
     print(f"Total mesh shapes logged: {total}")
     print("=== END ===\n")
 
+
 def _get_world_bbox(transform):
     # (minX, minY, minZ, maxX, maxY, maxZ)
     bbox = cmds.exactWorldBoundingBox(transform)
@@ -571,8 +572,23 @@ def show_cleanup_window():
     if cmds.window("sceneCleanupWin", exists=True):
         cmds.deleteUI("sceneCleanupWin")
 
-    cmds.window("sceneCleanupWin", title="Scene Tools", widthHeight=(280, 400), sizeable=True)
-    cmds.columnLayout(adjustableColumn=True, rowSpacing=10, columnAlign="center")
+    cmds.window("sceneCleanupWin",
+                title="Scene Tools",
+                widthHeight=(320, 500),
+                sizeable=True)
+
+    # --- Scrollable area ---
+    cmds.scrollLayout(
+        "sceneCleanupScroll",
+        verticalScrollBarThickness=12,
+        childResizable=True
+    )
+
+    cmds.columnLayout(
+        adjustableColumn=True,
+        rowSpacing=10,
+        columnAlign="center"
+    )
 
     cmds.button(label="Clean Scene", height=40, command=run_cleanup)
 
