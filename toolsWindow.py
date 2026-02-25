@@ -304,6 +304,267 @@ def set_uv_set_0(*args):
 def set_uv_set_1(*args):
     set_uv_set(1)
 
+def ensure_layout_uvset_from_map1(*args):
+    meshes = cmds.ls(selection=True, type='transform')
+    if not meshes:
+        cmds.warning("No meshes selected.")
+        return
+
+    for mesh in meshes:
+        shapes = cmds.listRelatives(mesh, shapes=True, fullPath=True) or []
+        for shape in shapes:
+            if cmds.nodeType(shape) != "mesh":
+                continue
+
+            uv_sets = cmds.polyUVSet(shape, q=True, allUVSets=True) or []
+            current = (cmds.polyUVSet(shape, q=True, currentUVSet=True) or ["map1"])[0]
+
+            # decide source (prefer map1 if it exists)
+            src = "map1" if "map1" in uv_sets else (uv_sets[0] if uv_sets else None)
+            if not src:
+                print(f"?? No UV sets found on {shape}")
+                continue
+
+            if "layout" in uv_sets:
+                print(f"? '{shape}' already has UV set 'layout' (skipping create)")
+                continue
+
+            # create layout and copy src -> layout
+            try:
+                cmds.polyUVSet(shape, create=True, uvSet="layout")
+                cmds.polyCopyUV(shape, uvSetNameInput=src, uvSetName= "layout")
+                cmds.polyUVSet(shape, currentUVSet=True, uvSet=current)
+                print(f"? Created 'layout' on {shape} and copied from '{src}'")
+            except Exception as e:
+                print(f"?? Failed on {shape}: {e}")
+                
+def set_uv0_to_lezoo_color_gradient(*args):
+    meshes = cmds.ls(selection=True, type='transform')
+    if not meshes:
+        cmds.warning("No meshes selected.")
+        return
+
+    target_u = 1.0 / 81.0
+    target_v = 1.0 / 4.0
+
+    for mesh in meshes:
+        shapes = cmds.listRelatives(mesh, shapes=True, fullPath=True) or []
+        for shape in shapes:
+            if cmds.nodeType(shape) != "mesh":
+                continue
+
+            # Work on UV set 0 (whatever the first UV set is; prefer map1 when present)
+            uv_sets = cmds.polyUVSet(shape, q=True, allUVSets=True) or []
+            if not uv_sets:
+                print(f"?? No UV sets on {shape}")
+                continue
+
+            uv0 = "map1" if "map1" in uv_sets else uv_sets[0]
+
+            try:
+                prev_current = (cmds.polyUVSet(shape, q=True, currentUVSet=True) or [uv0])[0]
+                cmds.polyUVSet(shape, currentUVSet=True, uvSet=uv0)
+
+                # get shells for this UV set on this shape
+                shells = cmds.polyEvaluate(shape, uvShell=True) or 0
+                if shells <= 0:
+                    print(f"?? No UV shells on {shape}")
+                    cmds.polyUVSet(shape, currentUVSet=True, uvSet=prev_current)
+                    continue
+
+                # Process each shell independently: normalize -> scale -> move to 0,0
+                for shell_index in range(shells):
+                    # select shell
+                    cmds.select(clear=True)
+                    cmds.polySelectConstraint(mode=3, type=0x0010, shell=True, uvShell=shell_index)  # UVs by shell
+                    # Convert selection to UV components
+                    cmds.select(cmds.polyListComponentConversion(shape, toUV=True))
+                    uvs = cmds.ls(selection=True, flatten=True) or []
+                    cmds.polySelectConstraint(disable=True)
+
+                    if not uvs:
+                        continue
+
+                    # Normalize shell to fill 0..1 in both axes
+                    cmds.polyEditUV(uvs, u=0, v=0)  # no-op, keeps call safe
+                    cmds.polyNormalizeUV(uvs, normalizeType=1, preserveAspectRatio=False)
+
+                    # Now scale to target size and move to lower-left corner
+                    cmds.polyEditUV(uvs, relative=True, scaleU=target_u, scaleV=target_v)
+                    cmds.polyEditUV(uvs, u=0.0, v=0.0)
+
+                cmds.polyUVSet(shape, currentUVSet=True, uvSet=prev_current)
+                print(f"? UV0 set to LeZooColorGradient on {shape} (uvSet='{uv0}')")
+
+            except Exception as e:
+                try:
+                    cmds.polySelectConstraint(disable=True)
+                except:
+                    pass
+                print(f"?? Failed on {shape}: {e}")
+
+def normalize_layout_uvs_non_overlapping(*args):
+    meshes = cmds.ls(selection=True, type='transform')
+    if not meshes:
+        cmds.warning("No meshes selected.")
+        return
+
+    for mesh in meshes:
+        shapes = cmds.listRelatives(mesh, shapes=True, fullPath=True) or []
+        for shape in shapes:
+            if cmds.nodeType(shape) != "mesh":
+                continue
+
+            uv_sets = cmds.polyUVSet(shape, q=True, allUVSets=True) or []
+            if not uv_sets:
+                print(f"?? No UV sets on {shape}")
+                continue
+
+            if "layout" not in uv_sets:
+                print(f"?? '{shape}' has no UV set named 'layout'")
+                continue
+
+            try:
+                prev_current = (cmds.polyUVSet(shape, q=True, currentUVSet=True) or ["layout"])[0]
+                cmds.polyUVSet(shape, currentUVSet=True, uvSet="layout")
+
+                # select all UVs on this mesh
+                cmds.select(clear=True)
+                cmds.select(cmds.polyListComponentConversion(shape, toUV=True))
+                uvs = cmds.ls(selection=True, flatten=True) or []
+                if not uvs:
+                    print(f"?? No UVs on {shape}")
+                    cmds.polyUVSet(shape, currentUVSet=True, uvSet=prev_current)
+                    continue
+
+                # normalize + pack shells into 0..1 without overlaps
+                # normalizeType=1: normalize shells; preserveAspectRatio=True keeps shapes
+                cmds.polyNormalizeUV(uvs, normalizeType=1, preserveAspectRatio=True)
+
+                # pack into 0..1 (layout UVs)
+                # rotateForBestFit helps packing, scaleMode=1 allows uniform scaling into 0..1
+                cmds.polyLayoutUV(
+                    uvs,
+                    layout=2,              # pack into 0..1
+                    rotateForBestFit=True,
+                    scaleMode=1,
+                    separate=1,
+                    spacing=0.002
+                )
+
+                cmds.polyUVSet(shape, currentUVSet=True, uvSet=prev_current)
+                print(f"? Packed non-overlapping UV shells into 0..1 on {shape} (uvSet='layout')")
+
+            except Exception as e:
+                print(f"?? Failed on {shape}: {e}")
+
+
+def log_uv_sets(*args):
+    meshes = cmds.ls(selection=True, type='transform')
+    if not meshes:
+        cmds.warning("No meshes selected.")
+        return
+
+    records = []  # (uv_count, shape, [uvsets])
+    for mesh in meshes:
+        shapes = cmds.listRelatives(mesh, shapes=True, fullPath=True) or []
+        for shape in shapes:
+            if cmds.nodeType(shape) != "mesh":
+                continue
+            uv_sets = cmds.polyUVSet(shape, q=True, allUVSets=True) or []
+            records.append((len(uv_sets), shape, uv_sets))
+
+    if not records:
+        cmds.warning("No polygon mesh shapes found in selection.")
+        return
+
+    # sort by uv set count (ascending)
+    records.sort(key=lambda r: r[0])
+
+    print("\n=== UV SETS PER MESH (sorted by UV set count) ===")
+    counts_hist = {}  # uv_count -> how many meshes
+    total = 0
+
+    for uv_count, shape, uv_sets in records:
+        total += 1
+        counts_hist[uv_count] = counts_hist.get(uv_count, 0) + 1
+        uv_list = ", ".join(uv_sets) if uv_sets else "(none)"
+        print(f"- {shape}  |  UV sets: {uv_count}  |  [{uv_list}]")
+
+    print("\n--- Summary ---")
+    # summary sorted by uv_count
+    for uv_count in sorted(counts_hist.keys()):
+        print(f"{counts_hist[uv_count]} mesh(es) with {uv_count} UV set(s)")
+    print(f"Total mesh shapes logged: {total}")
+    print("=== END ===\n")
+
+def _get_world_bbox(transform):
+    # (minX, minY, minZ, maxX, maxY, maxZ)
+    bbox = cmds.exactWorldBoundingBox(transform)
+    return bbox[0], bbox[1], bbox[2], bbox[3], bbox[4], bbox[5]
+
+def _safe_size(minv, maxv):
+    return max(1e-8, maxv - minv)
+
+def scale_selected_to_bounding_box(*args):
+    # target box in world units
+    tx = cmds.floatFieldGrp("fitBoxField", q=True, value1=True)
+    ty = cmds.floatFieldGrp("fitBoxField", q=True, value2=True)
+    tz = cmds.floatFieldGrp("fitBoxField", q=True, value3=True)
+
+    if tx <= 0 or ty <= 0 or tz <= 0:
+        cmds.warning("Bounding box dimensions must be > 0.")
+        return
+
+    selected = cmds.ls(selection=True, type='transform')
+    if not selected:
+        cmds.warning("No transforms selected.")
+        return
+
+    mode = cmds.optionMenu("fitScaleModeMenu", q=True, value=True)  # "Uniform" / "Non-uniform"
+    center_ground_pivot = cmds.checkBox("centerGroundPivotCB", q=True, value=True)
+
+    for obj in selected:
+        try:
+            # --- scale to fit ---
+            minx, miny, minz, maxx, maxy, maxz = _get_world_bbox(obj)
+            sx = _safe_size(minx, maxx)
+            sy = _safe_size(miny, maxy)
+            sz = _safe_size(minz, maxz)
+
+            fx = tx / sx
+            fy = ty / sy
+            fz = tz / sz
+
+            if mode == "Uniform":
+                f = min(fx, fy, fz)
+                cmds.xform(obj, relative=True, scale=(f, f, f))
+            else:
+                cmds.xform(obj, relative=True, scale=(fx, fy, fz))
+
+            if center_ground_pivot:
+                # 1) center pivot
+                cmds.xform(obj, centerPivots=True)
+
+                # 2) shift pivot down to the lower bbox Y (keep X/Z as centered)
+                minx, miny, minz, maxx, maxy, maxz = _get_world_bbox(obj)
+                px, py, pz = cmds.xform(obj, q=True, ws=True, rp=True)
+                cmds.xform(obj, ws=True, pivots=(px, miny, pz))
+
+                # 3) move object so pivot sits at world origin -> mesh sits on ground at (0,0,0)
+                px2, py2, pz2 = cmds.xform(obj, q=True, ws=True, rp=True)
+                cmds.xform(obj, ws=True, t=(-px2, -py2, -pz2), r=True)
+
+                # 4) freeze after move
+                cmds.makeIdentity(obj, apply=True, translate=True, rotate=True, scale=True, normal=False)
+            else:
+                # freeze after scale only
+                cmds.makeIdentity(obj, apply=True, translate=True, rotate=True, scale=True, normal=False)
+
+            print(f"? Fit: {obj} -> target ({tx:.3f}, {ty:.3f}, {tz:.3f}) mode={mode} centerGroundPivot={center_ground_pivot}")
+
+        except Exception as e:
+            print(f"?? Failed on {obj}: {e}")
 
 # === Main Window ===
 def show_cleanup_window():
@@ -324,10 +585,31 @@ def show_cleanup_window():
     cmds.text(label="UV Edits", align="center", height=20)
     cmds.button(label="Delete Extra UV Sets", command=delete_extra_uv_sets)
     cmds.button(label="Delete Third UVset", command=delete_third_uv_set)
+    cmds.button(label="Create 'layout' UVset (copy from map1)", command=ensure_layout_uvset_from_map1)
+    cmds.button(label="Set UV0 to LeZooColorGradient", command=set_uv0_to_lezoo_color_gradient)
+    cmds.button(label="Normalize + Pack UV1 'layout' (0..1)", command=normalize_layout_uvs_non_overlapping)
     cmds.button(label="Rename UVsets", command=rename_uv_sets)
     cmds.button(label="Set UVs to 00", command=set_uv_set_0)
     cmds.button(label="Set UVs to 01", command=set_uv_set_1)
+    cmds.button(label="Log UV sets", command=log_uv_sets)
 
+    cmds.separator(height=10)
+    cmds.text(label="Fit To Bounding Box", align="center", height=20)
+
+    cmds.floatFieldGrp(
+        "fitBoxField",
+        label="Target Box (X,Y,Z)",
+        numberOfFields=3,
+        value1=1.0, value2=1.0, value3=1.0
+    )
+
+    cmds.optionMenu("fitScaleModeMenu", label="Scale Mode")
+    cmds.menuItem(label="Uniform")
+    cmds.menuItem(label="Non-uniform")
+
+    cmds.checkBox("centerGroundPivotCB", label="centerGroundPivot", value=False)
+
+    cmds.button(label="Fit Selected + Freeze", height=30, command=scale_selected_to_bounding_box)
 
     cmds.separator(height=10)
     cmds.text(label="Layout Tools", align="center", height=20)
