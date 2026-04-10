@@ -1,0 +1,767 @@
+"""
+autoControlRig.py  —  Auto Control Rig for Maya (Driver-Skeleton approach)
+
+Generates AdvancedSkeleton-compatible controls on any joint hierarchy.
+A clean intermediate "driver" skeleton is built with proper orientations,
+IK/FK controls drive those driver joints, and the original skin joints
+are simply parent-constrained to follow.
+
+Usage:
+    import autoControlRig; autoControlRig.show()
+"""
+
+import maya.cmds as cmds
+import json, math, os
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+RIG_GRP = "AutoCtrlRig_GRP"
+
+SLOT_DEFS = [
+    ("root",       "Root / Pelvis",        "M", ["pelvis","hips","root"]),
+    ("spine",      "Spine",                "M", ["spine_01","spine1","spine"]),
+    ("chest",      "Chest",                "M", ["spine_02","spine2","chest"]),
+    ("neck",       "Neck",                 "M", ["neck"]),
+    ("head",       "Head",                 "M", ["head"]),
+    ("scapula_l",  "Scapula / Clavicle L", "L", ["clavicle_l","l_clavicle","shoulder_l","leftshoulder"]),
+    ("shoulder_l", "Upper Arm L",          "L", ["upperarm_l","l_upperarm","arm_l","leftarm"]),
+    ("elbow_l",    "Lower Arm L",          "L", ["lowerarm_l","l_lowerarm","forearm_l","leftforearm"]),
+    ("wrist_l",    "Hand L",               "L", ["hand_l","l_hand","lefthand"]),
+    ("scapula_r",  "Scapula / Clavicle R", "R", ["clavicle_r","r_clavicle","shoulder_r","rightshoulder"]),
+    ("shoulder_r", "Upper Arm R",          "R", ["upperarm_r","r_upperarm","arm_r","rightarm"]),
+    ("elbow_r",    "Lower Arm R",          "R", ["lowerarm_r","r_lowerarm","forearm_r","rightforearm"]),
+    ("wrist_r",    "Hand R",               "R", ["hand_r","r_hand","righthand"]),
+    ("hip_l",      "Upper Leg L",          "L", ["thigh_l","l_thigh","upperleg_l","leftupleg"]),
+    ("knee_l",     "Lower Leg L",          "L", ["calf_l","l_calf","lowerleg_l","shin_l","leftleg"]),
+    ("foot_l",     "Foot L",               "L", ["foot_l","l_foot","leftfoot"]),
+    ("toe_l",      "Toe L",                "L", ["toe_l","l_toe","ball_l","lefttoebase"]),
+    ("hip_r",      "Upper Leg R",          "R", ["thigh_r","r_thigh","upperleg_r","rightupleg"]),
+    ("knee_r",     "Lower Leg R",          "R", ["calf_r","r_calf","lowerleg_r","shin_r","rightleg"]),
+    ("foot_r",     "Foot R",               "R", ["foot_r","r_foot","rightfoot"]),
+    ("toe_r",      "Toe R",                "R", ["toe_r","r_toe","ball_r","righttoebase"]),
+]
+
+SLOT_TO_CTRL = {
+    "root":"RootX_M", "spine":"FKSpine1_M", "chest":"FKChest_M",
+    "neck":"FKNeck_M", "head":"FKHead_M",
+    "scapula_l":"FKScapula_L", "shoulder_l":"FKShoulder_L",
+    "elbow_l":"FKElbow_L", "wrist_l":"FKWrist_L",
+    "scapula_r":"FKScapula_R", "shoulder_r":"FKShoulder_R",
+    "elbow_r":"FKElbow_R", "wrist_r":"FKWrist_R",
+    "hip_l":"FKHip_L", "knee_l":"FKKnee_L", "foot_l":"FKFoot_L", "toe_l":"FKToe_L",
+    "hip_r":"FKHip_R", "knee_r":"FKKnee_R", "foot_r":"FKFoot_R", "toe_r":"FKToe_R",
+}
+
+COL_L, COL_R, COL_M, COL_IK, COL_POLE = 13, 6, 17, 18, 9
+
+
+# ---------------------------------------------------------------------------
+# Tiny helpers
+# ---------------------------------------------------------------------------
+def _pos(jnt):
+    return cmds.xform(jnt, q=1, ws=1, t=1)
+
+def _color(ctrl, idx):
+    for s in (cmds.listRelatives(ctrl, s=1, f=1) or []):
+        cmds.setAttr(s+".overrideEnabled", 1)
+        cmds.setAttr(s+".overrideColor", idx)
+
+def _side_color(side):
+    return COL_L if side == "L" else (COL_R if side == "R" else COL_M)
+
+def _circle(name, r=1, n=(0,1,0)):
+    return cmds.circle(n=name, r=r, nr=n, ch=0)[0]
+
+def _box(name, sz=1):
+    h = sz; s = sz * 0.5
+    pts = [(-s,0,-s),(-s,0,s),(s,0,s),(s,0,-s),(-s,0,-s),
+           (-s,h,-s),(-s,h,s),(s,h,s),(s,h,-s),(-s,h,-s)]
+    c = cmds.curve(n=name, d=1, p=pts)
+    for a, b in [(1,6),(2,7),(3,8)]:
+        ex = cmds.curve(d=1, p=[pts[a], pts[b]])
+        cmds.parent(cmds.listRelatives(ex, s=1)[0], c, s=1, r=1)
+        cmds.delete(ex)
+    return c
+
+def _diamond(name, sz=1):
+    s = sz
+    return cmds.curve(n=name, d=1, p=[(0,s,0),(s,0,0),(0,-s,0),(-s,0,0),
+                                       (0,s,0),(0,0,s),(0,-s,0),(0,0,-s),(0,s,0)])
+
+def _snap(node, jnt):
+    cmds.xform(node, ws=1, t=_pos(jnt))
+    cmds.xform(node, ws=1, ro=cmds.xform(jnt, q=1, ws=1, ro=1))
+
+def _offset(ctrl):
+    """Create an offset (zero) group above ctrl. Returns group name."""
+    grp = cmds.group(em=1, n=ctrl+"_offset")
+    cmds.xform(grp, ws=1, t=cmds.xform(ctrl, q=1, ws=1, t=1))
+    cmds.xform(grp, ws=1, ro=cmds.xform(ctrl, q=1, ws=1, ro=1))
+    cmds.parent(ctrl, grp)
+    cmds.xform(ctrl, t=(0,0,0), ro=(0,0,0))
+    return grp
+
+
+# ---------------------------------------------------------------------------
+# Driver-skeleton utilities
+# ---------------------------------------------------------------------------
+def _make_driver_joint(skin_jnt, name, parent):
+    cmds.select(cl=1)
+    dj = cmds.joint(n=name)
+    cmds.xform(dj, ws=1, t=_pos(skin_jnt))
+    cmds.parent(dj, parent)
+    return dj
+
+
+def _orient_chain(joints):
+    """Orient a joint chain: X aim down bone, Y up = world-Y."""
+    if len(joints) < 2:
+        return
+    for j in joints[:-1]:
+        cmds.joint(j, e=1, oj="xyz", sao="yup", zso=1)
+    # Last joint copies parent orient
+    po = cmds.getAttr(joints[-2]+".jointOrient")[0]
+    cmds.setAttr(joints[-1]+".jointOrient", *po)
+
+
+def _orient_ik_chain(start, mid, end, bend_dir):
+    """Orient a 3-joint chain and inject a tiny pre-bend toward bend_dir."""
+    _orient_chain([start, mid, end])
+    # Small bend to break collinearity
+    cmds.xform(mid, r=1, ro=(0, 0, 2), os=1)
+    # Check direction — flip if wrong
+    a, b, c = _pos(start), _pos(mid), _pos(end)
+    mp = [(a[i]+c[i])*0.5 for i in range(3)]
+    v = [b[i]-mp[i] for i in range(3)]
+    dot = sum(v[i]*bend_dir[i] for i in range(3))
+    if dot < 0:
+        cmds.xform(mid, r=1, ro=(0, 0, -4), os=1)
+    cmds.joint(mid, e=1, spa=1)
+
+
+def _pole_pos(j_mid, dist, direction):
+    """Pole vector at mid-joint, pushed along a known direction."""
+    p = _pos(j_mid)
+    ln = math.sqrt(sum(d*d for d in direction)) or 1
+    return [p[i] + (direction[i]/ln)*dist for i in range(3)]
+
+
+# ---------------------------------------------------------------------------
+# Hierarchy scan & auto-map
+# ---------------------------------------------------------------------------
+def get_hierarchy_joints(root):
+    desc = cmds.listRelatives(root, ad=1, type="joint", f=1) or []
+    return [j.split("|")[-1] for j in [root] + desc]
+
+
+def auto_map_joints(joint_list):
+    mapping = {}
+    lmap = {j.lower(): j for j in joint_list}
+    for key, _, _, hints in SLOT_DEFS:
+        found = ""
+        for h in hints:
+            hl = h.lower()
+            if hl in lmap:
+                found = lmap[hl]; break
+            for jl, jn in lmap.items():
+                if hl in jl:
+                    found = jn; break
+            if found:
+                break
+        mapping[key] = found
+    return mapping
+
+
+# ---------------------------------------------------------------------------
+# Builder
+# ---------------------------------------------------------------------------
+class AutoControlRigBuilder:
+    """
+    Architecture:
+        Controls  -->  Driver joints (clean orient, IK-friendly)
+                            |
+                       parentConstraint (maintainOffset)
+                            v
+                       Skin joints (untouched)
+    """
+    def __init__(self, mapping, opts):
+        self.m = mapping            # slot -> skin joint name
+        self.opts = opts
+        self.sz = opts.get("control_size", 1.0)
+        self.taper = opts.get("scale_taper", 1.3)
+        self.dj = {}                # slot -> driver joint
+        self.fk_con = {}            # slot -> orient constraint on driver
+        self.ik_con = {}            # end slot -> orient constraint on driver
+        self.fk_offsets = {}        # slot -> FK offset group
+        self.ik_offsets = {}        # "Limb_Side" -> list of IK offset groups
+        self.ik_fk_oc = {}          # end slot -> orient constraint (IK ctrl -> FK ctrl)
+        self.skin_constraints = []  # list of constraint names on skin joints
+
+    # ----- public ----------------------------------------------------------
+    def build(self):
+        if cmds.objExists(RIG_GRP):
+            cmds.warning("Rig exists — remove it first."); return
+
+        # Top groups
+        self.top = cmds.group(em=1, n=RIG_GRP)
+        self.ctrl_grp = cmds.group(em=1, n="Ctrl_GRP", p=self.top)
+        self.drv_grp  = cmds.group(em=1, n="Driver_GRP", p=self.top)
+        self.ik_grp   = cmds.group(em=1, n="IK_GRP", p=self.top)
+        self.misc_grp = cmds.group(em=1, n="Misc_GRP", p=self.top)
+        cmds.setAttr(self.ik_grp+".v", 0)
+        cmds.setAttr(self.misc_grp+".v", 0)
+
+        # 1) Driver skeleton
+        self._driver_skeleton()
+        # 2) Controls
+        self._ctrl_root()
+        self._ctrl_fk_spine()
+        for s in "LR":
+            if self.opts.get("create_fk_arms", True):  self._ctrl_fk_arm(s)
+            if self.opts.get("create_fk_legs", True):  self._ctrl_fk_leg(s)
+            if self.opts.get("create_ik_legs", True):  self._ctrl_ik_leg(s)
+            if self.opts.get("create_ik_arms", True):  self._ctrl_ik_arm(s)
+        for s in "LR":
+            if self.opts.get("create_fkik_blend", True):
+                if self.opts.get("create_ik_legs") and self.opts.get("create_fk_legs"):
+                    self._ctrl_fkik("Leg", s)
+                if self.opts.get("create_ik_arms") and self.opts.get("create_fk_arms"):
+                    self._ctrl_fkik("Arm", s)
+        # 3) Bind skin joints to driver
+        self._bind_skin()
+        # 4) Store data for clean removal
+        cmds.addAttr(self.top, ln="skin_constraints", dt="string")
+        cmds.setAttr(self.top+".skin_constraints",
+                     json.dumps(self.skin_constraints), type="string")
+        cmds.addAttr(self.top, ln="bind_pose", dt="string")
+        cmds.setAttr(self.top+".bind_pose",
+                     json.dumps(self.bind_pose), type="string")
+
+        cmds.select(cl=1)
+        print("// AutoControlRig built.")
+
+    # ----- driver skeleton -------------------------------------------------
+    def _driver_skeleton(self):
+        m, dj, grp = self.m, self.dj, self.drv_grp
+
+        # Root
+        self._drv("root", grp, copy_orient=True)
+
+        # Spine
+        spine = ["spine","chest","neck","head"]
+        par = dj.get("root", grp)
+        for sl in spine:
+            self._drv(sl, par); par = dj.get(sl, par)
+        chain = [dj[s] for s in spine if s in dj]
+        if chain: _orient_chain(chain)
+
+        # Arms & legs
+        for s in ("l","r"):
+            S = s.upper()
+            self._driver_arm(s, S)
+            self._driver_leg(s, S)
+
+    def _drv(self, slot, parent, copy_orient=False):
+        """Create one driver joint for slot if mapped."""
+        skin = self.m.get(slot, "")
+        if not skin or not cmds.objExists(skin):
+            return
+        dj = _make_driver_joint(skin, "drv_"+slot, parent)
+        if copy_orient:
+            cmds.xform(dj, ws=1, ro=cmds.xform(skin, q=1, ws=1, ro=1))
+            cmds.makeIdentity(dj, a=1, r=1)
+        self.dj[slot] = dj
+
+    def _driver_arm(self, s, S):
+        chest = self.dj.get("chest", self.drv_grp)
+        self._drv("scapula_"+s, chest)
+        par = self.dj.get("scapula_"+s, chest)
+        for sl in ["shoulder_"+s, "elbow_"+s, "wrist_"+s]:
+            self._drv(sl, par); par = self.dj.get(sl, par)
+
+        arm = [self.dj[k] for k in ["shoulder_"+s,"elbow_"+s,"wrist_"+s] if k in self.dj]
+        if len(arm) == 3:
+            _orient_ik_chain(arm[0], arm[1], arm[2], bend_dir=(0,0,-1))
+
+        sc = self.dj.get("scapula_"+s)
+        if sc and arm:
+            cmds.joint(sc, e=1, oj="xyz", sao="yup", zso=1)
+
+    def _driver_leg(self, s, S):
+        root = self.dj.get("root", self.drv_grp)
+        # Create hip, knee, foot first (NOT toe — it would shift during orient)
+        for sl in ["hip_"+s, "knee_"+s, "foot_"+s]:
+            self._drv(sl, root); root = self.dj.get(sl, root)
+
+        leg = [self.dj[k] for k in ["hip_"+s,"knee_"+s,"foot_"+s] if k in self.dj]
+        if len(leg) == 3:
+            _orient_ik_chain(leg[0], leg[1], leg[2], bend_dir=(0,0,1))
+
+        # Create toe AFTER orienting the IK chain so foot orient doesn't displace it
+        foot_drv = self.dj.get("foot_"+s, root)
+        self._drv("toe_"+s, foot_drv)
+        toe = self.dj.get("toe_"+s)
+        if toe and len(leg) == 3:
+            fo = cmds.getAttr(leg[2]+".jointOrient")[0]
+            cmds.setAttr(toe+".jointOrient", *fo)
+
+    # ----- bind skin joints ------------------------------------------------
+    def _bind_skin(self):
+        self.bind_pose = {}
+        for slot, dj in self.dj.items():
+            skin = self.m.get(slot, "")
+            if skin and cmds.objExists(skin):
+                self.bind_pose[skin] = {
+                    "t": list(cmds.getAttr(skin+".t")[0]),
+                    "r": list(cmds.getAttr(skin+".r")[0]),
+                    "s": list(cmds.getAttr(skin+".s")[0]),
+                }
+                c = cmds.parentConstraint(dj, skin, mo=1)[0]
+                self.skin_constraints.append(c)
+
+    # ----- Root / Hip controls ---------------------------------------------
+    def _ctrl_root(self):
+        dj = self.dj.get("root")
+        if not dj: return
+        c = _circle("RootX_M", r=self.sz*8)
+        _snap(c, dj); _color(c, COL_M)
+        cmds.xform(c, ws=1, ro=(0,0,0))  # keep horizontal
+        o = _offset(c); cmds.parent(o, self.ctrl_grp)
+        cmds.pointConstraint(c, dj, mo=1)
+
+        h = _circle("HipSwinger_M", r=self.sz*5)
+        _snap(h, dj); _color(h, COL_M)
+        cmds.xform(h, ws=1, ro=(0,0,0))  # keep horizontal
+        ho = _offset(h); cmds.parent(ho, c)
+        cmds.orientConstraint(h, dj, mo=1)
+
+    # ----- FK spine --------------------------------------------------------
+    def _ctrl_fk_spine(self):
+        par = "RootX_M" if cmds.objExists("RootX_M") else self.ctrl_grp
+        for slot in ["spine","chest","neck","head"]:
+            dj = self.dj.get(slot)
+            if not dj: continue
+            c = _circle(SLOT_TO_CTRL[slot], r=self.sz*8)
+            _snap(c, dj); _color(c, COL_M)
+            cmds.xform(c, ws=1, ro=(0,0,0))  # keep horizontal
+            o = _offset(c)
+            cmds.parent(o, par if cmds.objExists(par) else self.ctrl_grp)
+            cmds.orientConstraint(c, dj, mo=1)
+            par = c
+
+    # ----- FK arm ----------------------------------------------------------
+    def _ctrl_fk_arm(self, side):
+        s = side.lower(); col = _side_color(side)
+        ik_too = self.opts.get("create_ik_arms", False)
+        ik_slots = {"shoulder_"+s, "elbow_"+s}
+        par = "FKChest_M" if cmds.objExists("FKChest_M") else self.ctrl_grp
+        chain = [("scapula_"+s, "FKScapula_"+side),
+                 ("shoulder_"+s,"FKShoulder_"+side),
+                 ("elbow_"+s,   "FKElbow_"+side),
+                 ("wrist_"+s,   "FKWrist_"+side)]
+        n = len(chain)
+        for i, (slot, ctrl_name) in enumerate(chain):
+            dj = self.dj.get(slot)
+            if not dj: continue
+            r = self.sz * 2.5 * (self.taper ** (n-1-i))
+            c = _circle(ctrl_name, r=r, n=(1,0,0))
+            _snap(c, dj); _color(c, col)
+            o = _offset(c)
+            cmds.parent(o, par if cmds.objExists(par) else self.ctrl_grp)
+            self.fk_offsets[slot] = o
+            con = cmds.orientConstraint(c, dj, mo=1)[0]
+            self.fk_con[slot] = con
+            if ik_too and slot in ik_slots:
+                w = cmds.orientConstraint(con, q=1, wal=1)
+                if w: cmds.setAttr("{}.{}".format(con, w[0]), 0)
+            par = c
+
+    # ----- FK leg ----------------------------------------------------------
+    def _ctrl_fk_leg(self, side):
+        s = side.lower(); col = _side_color(side)
+        ik_too = self.opts.get("create_ik_legs", False)
+        par = "RootX_M" if cmds.objExists("RootX_M") else self.ctrl_grp
+        chain = [("hip_"+s, "FKHip_"+side),
+                 ("knee_"+s,"FKKnee_"+side),
+                 ("foot_"+s,"FKFoot_"+side),
+                 ("toe_"+s, "FKToe_"+side)]
+        n = len(chain)
+        for i, (slot, ctrl_name) in enumerate(chain):
+            dj = self.dj.get(slot)
+            if not dj: continue
+            r = self.sz * 2.5 * (self.taper ** (n-1-i))
+            c = _circle(ctrl_name, r=r, n=(1,0,0))
+            _snap(c, dj); _color(c, col)
+            o = _offset(c)
+            cmds.parent(o, par if cmds.objExists(par) else self.ctrl_grp)
+            self.fk_offsets[slot] = o
+            con = cmds.orientConstraint(c, dj, mo=1)[0]
+            self.fk_con[slot] = con
+            if ik_too and slot in ("hip_"+s, "knee_"+s):
+                w = cmds.orientConstraint(con, q=1, wal=1)
+                if w: cmds.setAttr("{}.{}".format(con, w[0]), 0)
+            par = c
+
+    # ----- IK leg ----------------------------------------------------------
+    def _ctrl_ik_leg(self, side):
+        s = side.lower()
+        hip, knee, foot = [self.dj.get(k+"_"+s) for k in ("hip","knee","foot")]
+        if not all([hip, knee, foot]): return
+
+        # IK control at DRIVER foot position (not skin) for zero-offset match
+        c = _box("IKLeg_"+side, sz=self.sz*4)
+        cmds.xform(c, ws=1, t=_pos(foot))
+        cmds.xform(c, ws=1, ro=(0,0,0))
+        _color(c, COL_IK if side=="L" else COL_R)
+        o = _offset(c); cmds.parent(o, self.ctrl_grp)
+        ik_key = "Leg_"+side
+        self.ik_offsets.setdefault(ik_key, []).append(o)
+
+        ikh, _ = cmds.ikHandle(n="ikh_Leg_"+side, sj=hip, ee=foot, sol="ikRPsolver")
+
+        # Foot roll — ball-of-foot pivot
+        toe_dj = self.dj.get("toe_"+s)
+        if toe_dj:
+            follow = cmds.group(em=1, n="footFollow_"+side, p=self.ik_grp)
+            cmds.xform(follow, ws=1, t=_pos(foot))
+            cmds.pointConstraint(c, follow)  # zero offset — both at driver foot
+            ball_piv = cmds.group(em=1, n="ballPivot_"+side, p=follow)
+            cmds.xform(ball_piv, ws=1, t=_pos(toe_dj))
+            cmds.parent(ikh, ball_piv)
+            cmds.addAttr(c, ln="Roll", at="float", dv=0, k=1)
+            cmds.connectAttr(c+".Roll", ball_piv+".rx")
+        else:
+            cmds.parent(ikh, self.ik_grp)
+            cmds.pointConstraint(c, ikh)  # zero offset
+
+        # Pole vector — knees forward (+Z)
+        pole = cmds.spaceLocator(n="PoleLeg_"+side)[0]
+        cmds.xform(pole, ws=1, t=_pole_pos(knee, self.sz*20, (0,0,1)))
+        _color(pole, COL_POLE)
+        po = _offset(pole); cmds.parent(po, self.ctrl_grp)
+        self.ik_offsets[ik_key].append(po)
+        cmds.poleVectorConstraint(pole, ikh)
+
+        # IK control drives foot orientation via FK control
+        fk_foot = SLOT_TO_CTRL.get("foot_"+s)
+        if fk_foot and cmds.objExists(fk_foot):
+            oc = cmds.orientConstraint(c, fk_foot, mo=1)[0]
+            w = cmds.orientConstraint(oc, q=1, wal=1)
+            if w: cmds.setAttr("{}.{}".format(oc, w[0]), 0)
+            self.ik_fk_oc["foot_"+s] = oc
+
+    # ----- IK arm ----------------------------------------------------------
+    def _ctrl_ik_arm(self, side):
+        s = side.lower()
+        sho, elb, wri = [self.dj.get(k+"_"+s) for k in ("shoulder","elbow","wrist")]
+        if not all([sho, elb, wri]): return
+
+        # IK control at DRIVER wrist position (not skin) for zero-offset match
+        c = _box("IKArm_"+side, sz=self.sz*2.5)
+        cmds.xform(c, ws=1, t=_pos(wri))
+        _color(c, COL_IK if side=="L" else COL_R)
+        o = _offset(c); cmds.parent(o, self.ctrl_grp)
+        ik_key = "Arm_"+side
+        self.ik_offsets.setdefault(ik_key, []).append(o)
+
+        ikh, _ = cmds.ikHandle(n="ikh_Arm_"+side, sj=sho, ee=wri, sol="ikRPsolver")
+        cmds.parent(ikh, self.ik_grp)
+        cmds.pointConstraint(c, ikh)  # zero offset — both at driver wrist
+
+        # Pole vector — elbows backward (-Z)
+        pole = cmds.spaceLocator(n="PoleArm_"+side)[0]
+        cmds.xform(pole, ws=1, t=_pole_pos(elb, self.sz*20, (0,0,-1)))
+        _color(pole, COL_POLE)
+        po = _offset(pole); cmds.parent(po, self.ctrl_grp)
+        self.ik_offsets[ik_key].append(po)
+        cmds.poleVectorConstraint(pole, ikh)
+
+        # IK control drives wrist orientation via FK control
+        fk_wrist = SLOT_TO_CTRL.get("wrist_"+s)
+        if fk_wrist and cmds.objExists(fk_wrist):
+            oc = cmds.orientConstraint(c, fk_wrist, mo=1)[0]
+            w = cmds.orientConstraint(oc, q=1, wal=1)
+            if w: cmds.setAttr("{}.{}".format(oc, w[0]), 0)
+            self.ik_fk_oc["wrist_"+s] = oc
+
+    # ----- FK/IK blend switch ----------------------------------------------
+    def _ctrl_fkik(self, limb, side):
+        s = side.lower()
+        end_slot = ("foot_" if limb=="Leg" else "wrist_") + s
+        ref = self.dj.get(end_slot)
+        if not ref: return
+
+        c = _diamond("FKIK{}_{}".format(limb, side), sz=self.sz*2)
+        _snap(c, ref)
+        p = cmds.xform(c, q=1, ws=1, t=1)
+        cmds.xform(c, ws=1, t=(p[0] + self.sz*10*(1 if side=="R" else -1), p[1], p[2]))
+        _color(c, _side_color(side))
+        o = _offset(c); cmds.parent(o, self.ctrl_grp)
+
+        cmds.addAttr(c, ln="FKIKBlend", at="float", min=0, max=10, dv=10, k=1)
+
+        # norm = blend / 10
+        norm = cmds.createNode("multiplyDivide", n="fkikN_{}_{}".format(limb, side))
+        cmds.setAttr(norm+".operation", 2)
+        cmds.connectAttr(c+".FKIKBlend", norm+".input1X")
+        cmds.setAttr(norm+".input2X", 10)
+
+        # reverse = 1 - norm
+        rev = cmds.createNode("reverse", n="fkikR_{}_{}".format(limb, side))
+        cmds.connectAttr(norm+".outputX", rev+".inputX")
+
+        # Drive IK blend
+        ikh = "ikh_{}_{}".format(limb, side)
+        if cmds.objExists(ikh):
+            cmds.connectAttr(norm+".outputX", ikh+".ikBlend")
+
+        # FK slots — chain joints only (end effector routed via FK ctrl)
+        if limb == "Leg":
+            fk_slots = ["hip_"+s,"knee_"+s]
+        else:
+            fk_slots = ["shoulder_"+s,"elbow_"+s]
+
+        for sl in fk_slots:
+            fc = self.fk_con.get(sl)
+            if not fc or not cmds.objExists(fc): continue
+            w = cmds.orientConstraint(fc, q=1, wal=1)
+            if w: cmds.connectAttr(rev+".outputX", "{}.{}".format(fc, w[0]))
+
+        # End effector: blend IK-drives-FK-control constraint
+        end_slot = ("foot_" if limb=="Leg" else "wrist_") + s
+        ik_fk_oc = self.ik_fk_oc.get(end_slot)
+        if ik_fk_oc and cmds.objExists(ik_fk_oc):
+            w = cmds.orientConstraint(ik_fk_oc, q=1, wal=1)
+            if w: cmds.connectAttr(norm+".outputX", "{}.{}".format(ik_fk_oc, w[0]))
+
+        # --- Visibility: hide unused controls at slider extremes ---
+        # FK visible when blend < 10 (norm < 1)
+        fk_vis = cmds.createNode("condition", n="fkVis_{}_{}".format(limb, side))
+        cmds.connectAttr(norm+".outputX", fk_vis+".firstTerm")
+        cmds.setAttr(fk_vis+".secondTerm", 1)
+        cmds.setAttr(fk_vis+".operation", 4)  # less than
+        cmds.setAttr(fk_vis+".colorIfTrueR", 1)
+        cmds.setAttr(fk_vis+".colorIfFalseR", 0)
+
+        # IK visible when blend > 0 (norm > 0)
+        ik_vis = cmds.createNode("condition", n="ikVis_{}_{}".format(limb, side))
+        cmds.connectAttr(norm+".outputX", ik_vis+".firstTerm")
+        cmds.setAttr(ik_vis+".secondTerm", 0)
+        cmds.setAttr(ik_vis+".operation", 2)  # greater than
+        cmds.setAttr(ik_vis+".colorIfTrueR", 1)
+        cmds.setAttr(ik_vis+".colorIfFalseR", 0)
+
+        # Hide FK offsets
+        if limb == "Leg":
+            vis_fk = ["hip_"+s, "knee_"+s, "foot_"+s, "toe_"+s]
+        else:
+            vis_fk = ["scapula_"+s, "shoulder_"+s, "elbow_"+s, "wrist_"+s]
+        for sl in vis_fk:
+            off = self.fk_offsets.get(sl)
+            if off and cmds.objExists(off):
+                cmds.connectAttr(fk_vis+".outColorR", off+".v")
+
+        # Hide IK offsets (ctrl + pole)
+        ik_key = "{}_{}".format(limb, side)
+        for off in self.ik_offsets.get(ik_key, []):
+            if cmds.objExists(off):
+                cmds.connectAttr(ik_vis+".outColorR", off+".v")
+
+
+
+# ---------------------------------------------------------------------------
+# Remove
+# ---------------------------------------------------------------------------
+def remove_control_rig():
+    if not cmds.objExists(RIG_GRP):
+        cmds.warning("No rig found."); return
+
+    # Read stored data before deleting anything
+    bind_pose = {}
+    if cmds.attributeQuery("bind_pose", node=RIG_GRP, exists=True):
+        try:
+            bind_pose = json.loads(cmds.getAttr(RIG_GRP+".bind_pose"))
+        except Exception:
+            pass
+
+    # Delete constraints on skin joints first (stored on the rig group)
+    if cmds.attributeQuery("skin_constraints", node=RIG_GRP, exists=True):
+        try:
+            names = json.loads(cmds.getAttr(RIG_GRP+".skin_constraints"))
+            for n in names:
+                if cmds.objExists(n): cmds.delete(n)
+        except Exception:
+            pass
+
+    cmds.delete(RIG_GRP)
+
+    # Restore original bind pose
+    for jnt, xf in bind_pose.items():
+        if not cmds.objExists(jnt):
+            continue
+        try:
+            cmds.setAttr(jnt+".t", *xf["t"])
+            cmds.setAttr(jnt+".r", *xf["r"])
+            cmds.setAttr(jnt+".s", *xf["s"])
+        except Exception:
+            pass
+
+    print("// AutoControlRig removed — bind pose restored.")
+
+
+# ---------------------------------------------------------------------------
+# UI
+# ---------------------------------------------------------------------------
+_ui = {"win":"AutoCtrlRigWin", "joints":[], "fields":{}, "labels":{}, "root":None}
+
+try:
+    _PRESET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "joint_mappings")
+except NameError:
+    _PRESET_DIR = os.path.join(cmds.workspace(q=1, rd=1), "joint_mappings")
+
+
+def _color_labels():
+    for k, lbl in _ui["labels"].items():
+        v = cmds.optionMenu(_ui["fields"][k], q=1, v=1)
+        bg = (0.8,0.3,0.3) if v == "(none)" else (0.36,0.36,0.36)
+        cmds.text(lbl, e=1, bgc=bg)
+
+def _on_root(*a):
+    sel = cmds.ls(sl=1, type="joint")
+    if not sel: cmds.warning("Select a root joint."); return
+    cmds.textField(_ui["root"], e=1, tx=sel[0])
+    _ui["joints"] = get_hierarchy_joints(sel[0])
+    _fill_menus()
+
+def _on_sel(slot, *a):
+    sel = cmds.ls(sl=1, type="joint")
+    if not sel: return
+    menu = _ui["fields"].get(slot)
+    if not menu: return
+    items = [cmds.menuItem(i, q=1, l=1) for i in (cmds.optionMenu(menu, q=1, ill=1) or [])]
+    if sel[0] not in items:
+        cmds.menuItem(l=sel[0], p=menu)
+    cmds.optionMenu(menu, e=1, v=sel[0])
+    _color_labels()
+
+def _on_auto(*a):
+    if not _ui["joints"]: cmds.warning("Load a root joint first."); return
+    mp = auto_map_joints(_ui["joints"])
+    for k, j in mp.items():
+        menu = _ui["fields"].get(k)
+        if menu and j:
+            try: cmds.optionMenu(menu, e=1, v=j)
+            except: pass
+    _color_labels()
+
+def _fill_menus():
+    jts = ["(none)"] + sorted(_ui["joints"])
+    for k, menu in _ui["fields"].items():
+        for i in (cmds.optionMenu(menu, q=1, ill=1) or []): cmds.deleteUI(i)
+        for j in jts: cmds.menuItem(l=j, p=menu)
+    _color_labels()
+
+def _read_map():
+    return {k: ("" if cmds.optionMenu(m, q=1, v=1)=="(none)" else cmds.optionMenu(m, q=1, v=1))
+            for k, m in _ui["fields"].items()}
+
+def _on_build(*a):
+    opts = {
+        "control_size": cmds.floatField(_ui["sz"], q=1, v=1),
+        "create_ik_legs": cmds.checkBox(_ui["ik_l"], q=1, v=1),
+        "create_ik_arms": cmds.checkBox(_ui["ik_a"], q=1, v=1),
+        "create_fk_arms": cmds.checkBox(_ui["fk_a"], q=1, v=1),
+        "create_fk_legs": cmds.checkBox(_ui["fk_l"], q=1, v=1),
+        "create_fkik_blend": cmds.checkBox(_ui["fkik"], q=1, v=1),
+        "scale_taper": cmds.floatField(_ui["taper"], q=1, v=1),
+    }
+    AutoControlRigBuilder(_read_map(), opts).build()
+
+def _on_save(*a):
+    if not os.path.exists(_PRESET_DIR): os.makedirs(_PRESET_DIR)
+    r = cmds.fileDialog2(cap="Save Mapping", ff="JSON (*.json)", ds=2, fm=0, dir=_PRESET_DIR)
+    if not r: return
+    data = {"root": cmds.textField(_ui["root"], q=1, tx=1), "mapping": _read_map()}
+    with open(r[0], "w") as f: json.dump(data, f, indent=2)
+    print("// Saved:", r[0])
+
+def _on_load(*a):
+    sd = _PRESET_DIR if os.path.exists(_PRESET_DIR) else ""
+    r = cmds.fileDialog2(cap="Load Mapping", ff="JSON (*.json)", ds=2, fm=1, dir=sd)
+    if not r: return
+    with open(r[0]) as f: data = json.load(f)
+    rj = data.get("root","")
+    if rj and cmds.objExists(rj):
+        cmds.textField(_ui["root"], e=1, tx=rj)
+        _ui["joints"] = get_hierarchy_joints(rj)
+        _fill_menus()
+    for k, j in data.get("mapping",{}).items():
+        menu = _ui["fields"].get(k)
+        if menu and j:
+            items = [cmds.menuItem(i, q=1, l=1) for i in (cmds.optionMenu(menu, q=1, ill=1) or [])]
+            if j not in items: cmds.menuItem(l=j, p=menu)
+            try: cmds.optionMenu(menu, e=1, v=j)
+            except: pass
+    _color_labels()
+    print("// Loaded:", r[0])
+
+
+def show():
+    w = _ui["win"]
+    if cmds.window(w, ex=1): cmds.deleteUI(w)
+    cmds.window(w, t="Auto Control Rig", wh=(520,700), s=1)
+    cmds.scrollLayout(cr=1)
+    cmds.columnLayout(adj=1, rs=6)
+
+    cmds.frameLayout(l="Joint Hierarchy", cll=0, mw=10, mh=5)
+    cmds.rowLayout(nc=3, cw3=(60,300,100), adj=2)
+    cmds.text(l="Root:")
+    _ui["root"] = cmds.textField(pht="Select root joint...")
+    cmds.button(l="From Selection", c=_on_root)
+    cmds.setParent(".."); cmds.button(l="Auto-Map", c=_on_auto, h=28)
+    cmds.setParent("..")
+
+    cmds.frameLayout(l="Joint Mapping", cll=1, mw=10, mh=5)
+    _ui["fields"], _ui["labels"] = {}, {}
+    for key, name, side, _ in SLOT_DEFS:
+        cmds.rowLayout(nc=3, cw3=(160,240,80), adj=2)
+        tag = {"L":" [L]","R":" [R]","M":""}[side]
+        _ui["labels"][key] = cmds.text(l=name+tag, al="right", bgc=(0.8,0.3,0.3))
+        _ui["fields"][key] = cmds.optionMenu(cc=lambda *a: _color_labels())
+        cmds.menuItem(l="(none)")
+        cmds.button(l="< Sel", c=lambda x, k=key: _on_sel(k))
+        cmds.setParent("..")
+    cmds.setParent("..")
+
+    cmds.frameLayout(l="Options", cll=1, mw=10, mh=5)
+    cmds.rowColumnLayout(nc=2, cw=[(1,200),(2,200)])
+    _ui["ik_l"] = cmds.checkBox(l="IK Legs", v=1)
+    _ui["ik_a"] = cmds.checkBox(l="IK Arms", v=1)
+    _ui["fk_a"] = cmds.checkBox(l="FK Arms", v=1)
+    _ui["fk_l"] = cmds.checkBox(l="FK Legs", v=1)
+    _ui["fkik"] = cmds.checkBox(l="FK/IK Blend", v=1)
+    cmds.setParent("..")
+    cmds.rowLayout(nc=2, cw2=(130,100))
+    cmds.text(l="Control Size:")
+    _ui["sz"] = cmds.floatField(v=1, min=0.1, max=100)
+    cmds.setParent("..")
+    cmds.rowLayout(nc=2, cw2=(130,100))
+    cmds.text(l="Scale Taper:")
+    _ui["taper"] = cmds.floatField(v=1.3, min=1.0, max=3.0)
+    cmds.setParent(".."); cmds.setParent("..")
+
+    cmds.separator(h=10, st="in")
+    cmds.button(l="Build Control Rig", h=40, bgc=(0.4,0.8,0.4), c=_on_build)
+    cmds.button(l="Remove Control Rig", h=32, bgc=(0.9,0.4,0.4), c=lambda *a: remove_control_rig())
+    cmds.separator(h=10, st="in")
+    cmds.frameLayout(l="Presets", cll=1, mw=10, mh=5)
+    cmds.rowLayout(nc=2, cw2=(200,200), adj=2)
+    cmds.button(l="Save Mapping", c=_on_save)
+    cmds.button(l="Load Mapping", c=_on_load)
+    cmds.setParent(".."); cmds.setParent("..")
+
+    cmds.showWindow(w)
+
+if __name__ == "__main__":
+    show()
