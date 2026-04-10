@@ -217,6 +217,7 @@ class AutoControlRigBuilder:
         self.ik_offsets = {}        # "Limb_Side" -> list of IK offset groups
         self.ik_fk_oc = {}          # end slot -> orient constraint (IK ctrl -> FK ctrl)
         self.skin_constraints = []  # list of constraint names on skin joints
+        self.twist_nodes = []       # utility nodes for twist joint drivers
 
     # ----- public ----------------------------------------------------------
     def build(self):
@@ -250,6 +251,9 @@ class AutoControlRigBuilder:
                     self._ctrl_fkik("Arm", s)
         # 3) Bind skin joints to driver
         self._bind_skin()
+        # 3.25) Twist joint drivers
+        if self.opts.get("create_twist_drivers", True):
+            self._setup_twist_joints()
         # 3.5) Debug visualization
         if self.opts.get("show_debug", False):
             self._create_debug_vis()
@@ -257,6 +261,9 @@ class AutoControlRigBuilder:
         cmds.addAttr(self.top, ln="skin_constraints", dt="string")
         cmds.setAttr(self.top+".skin_constraints",
                      json.dumps(self.skin_constraints), type="string")
+        cmds.addAttr(self.top, ln="twist_nodes", dt="string")
+        cmds.setAttr(self.top+".twist_nodes",
+                     json.dumps(self.twist_nodes), type="string")
         cmds.addAttr(self.top, ln="bind_pose", dt="string")
         cmds.setAttr(self.top+".bind_pose",
                      json.dumps(self.bind_pose), type="string")
@@ -369,6 +376,77 @@ class AutoControlRigBuilder:
                 _color(loc, col)
                 cmds.parentConstraint(grp_name, loc, mo=0)
                 cmds.parent(loc, dbg)
+
+    # ----- twist joint drivers ---------------------------------------------
+    def _setup_twist_joints(self):
+        """Counter-rotate twist joints for smooth twist distribution.
+
+        Twist joints are children of skin joints and inherit 100% of the
+        parent's rotation.  To make twist_i sit at *fraction* of the full
+        twist we apply:  twist.rx = drv.rx * (fraction - 1.0)
+        Fraction attributes are exposed on RootX_M for runtime tuning.
+        """
+        root_ctrl = "RootX_M"
+        if not cmds.objExists(root_ctrl):
+            return
+
+        twist_segs = [
+            ("shoulder", "UpperArm"),
+            ("elbow",    "LowerArm"),
+            ("hip",      "UpperLeg"),
+            ("knee",     "LowerLeg"),
+        ]
+
+        has_sep = False
+        for s in ("l", "r"):
+            S = s.upper()
+            for slot_base, label in twist_segs:
+                slot = slot_base + "_" + s
+                skin_jnt = self.m.get(slot, "")
+                drv_jnt = self.dj.get(slot)
+                if not skin_jnt or not drv_jnt or not cmds.objExists(skin_jnt):
+                    continue
+
+                children = cmds.listRelatives(skin_jnt, c=1, type="joint") or []
+                twist_jnts = sorted([c for c in children if "twist" in c.lower()])
+                if not twist_jnts:
+                    continue
+
+                if not has_sep:
+                    cmds.addAttr(root_ctrl, ln="__twist__", nn="--- Twist ---",
+                                 at="enum", en=" ", k=1)
+                    cmds.setAttr(root_ctrl + ".__twist__", l=1)
+                    has_sep = True
+
+                n = len(twist_jnts)
+                for i, tj in enumerate(twist_jnts):
+                    frac = (n - i) / float(n + 1)
+
+                    attr_name = "twist{}_{}{}".format(label, S, i)
+                    cmds.addAttr(root_ctrl, ln=attr_name, at="float",
+                                 min=0, max=1, dv=frac, k=1)
+
+                    # PMA: fraction - 1.0
+                    pma = cmds.createNode("plusMinusAverage",
+                        n="twistSub_{}_{}{}".format(label, S, i))
+                    cmds.setAttr(pma + ".operation", 2)  # subtract
+                    cmds.connectAttr(root_ctrl + "." + attr_name,
+                                     pma + ".input1D[0]")
+                    cmds.setAttr(pma + ".input1D[1]", 1.0)
+
+                    # MD: drv.rx * (fraction - 1) -> twist.rx
+                    md = cmds.createNode("multiplyDivide",
+                        n="twistMul_{}_{}{}".format(label, S, i))
+                    cmds.connectAttr(drv_jnt + ".rx", md + ".input1X")
+                    cmds.connectAttr(pma + ".output1D", md + ".input2X")
+                    cmds.connectAttr(md + ".outputX", tj + ".rx")
+
+                    self.twist_nodes.extend([pma, md])
+                    self.bind_pose[tj] = {
+                        "t": list(cmds.getAttr(tj + ".t")[0]),
+                        "r": list(cmds.getAttr(tj + ".r")[0]),
+                        "s": list(cmds.getAttr(tj + ".s")[0]),
+                    }
 
     # ----- Root / Hip controls ---------------------------------------------
     def _ctrl_root(self):
@@ -498,22 +576,30 @@ class AutoControlRigBuilder:
             cmds.xform(ball_grp, ws=1, t=ball_p)
 
             cmds.parent(ikh, ball_grp)
-            # Toe SC solver — keeps toe aimed forward during ball roll
-            ikh_toe, _ = cmds.ikHandle(n="ikh_Toe_"+side, sj=foot, ee=toe_dj, sol="ikSCsolver")
-            cmds.parent(ikh_toe, toetip_grp)
 
-            # Zero foot/toe FK constraints — SC solver handles orient in IK mode
-            for fk_slot in ["foot_"+s, "toe_"+s]:
-                fc = self.fk_con.get(fk_slot)
-                if fc and cmds.objExists(fc):
-                    w = cmds.orientConstraint(fc, q=1, wal=1)
-                    if w: cmds.setAttr("{}.{}".format(fc, w[0]), 0)
+            # IK orient targets — drive foot/toe via orient constraints
+            # (no IK solver on foot/toe — avoids conflict with FK constraints)
+            ik_orient_foot = cmds.group(em=1, n="ikOrientFoot_"+side, p=ball_grp)
+            cmds.xform(ik_orient_foot, ws=1, ro=cmds.xform(foot, q=1, ws=1, ro=1))
+            ik_orient_toe = cmds.group(em=1, n="ikOrientToe_"+side, p=toetip_grp)
+            cmds.xform(ik_orient_toe, ws=1, ro=cmds.xform(toe_dj, q=1, ws=1, ro=1))
 
-            # Orient-constrain toe to toetip_grp so it stays flat during ball roll
-            toe_fc = self.fk_con.get("toe_"+s)
-            if toe_fc and cmds.objExists(toe_fc):
-                cmds.orientConstraint(toetip_grp, toe_dj, mo=1)
-                self.ik_con["toe_"+s] = toe_fc
+            # Add IK orient as second target to existing FK orient constraints
+            fc_foot = self.fk_con.get("foot_"+s)
+            if fc_foot:
+                cmds.orientConstraint(ik_orient_foot, foot, e=1, mo=1)
+                w = cmds.orientConstraint(fc_foot, q=1, wal=1)
+                if len(w) >= 2:
+                    cmds.setAttr("{}.{}".format(fc_foot, w[0]), 0)   # FK off
+                    cmds.setAttr("{}.{}".format(fc_foot, w[1]), 1)   # IK on
+
+            fc_toe = self.fk_con.get("toe_"+s)
+            if fc_toe:
+                cmds.orientConstraint(ik_orient_toe, toe_dj, e=1, mo=1)
+                w = cmds.orientConstraint(fc_toe, q=1, wal=1)
+                if len(w) >= 2:
+                    cmds.setAttr("{}.{}".format(fc_toe, w[0]), 0)
+                    cmds.setAttr("{}.{}".format(fc_toe, w[1]), 1)
 
             # Roll attributes
             start = self.opts.get("roll_start_angle", 30)
@@ -576,11 +662,23 @@ class AutoControlRigBuilder:
         sho, elb, wri = [self.dj.get(k+"_"+s) for k in ("shoulder","elbow","wrist")]
         if not all([sho, elb, wri]): return
 
-        # IK control at DRIVER wrist position (not skin) for zero-offset match
-        c = _box("IKArm_"+side, sz=self.sz*2.5)
+        # IK control at DRIVER wrist position, oriented along the arm chain
+        c = _box("IKArm_"+side, sz=self.sz*5)
         cmds.xform(c, ws=1, t=_pos(wri))
-        # Center box shape around pivot
-        _shift_cvs(c, dy=-self.sz*2.5*0.5)
+        # Orient controller to follow arm direction (shoulder→elbow→wrist)
+        sho_p, elb_p, wri_p = _pos(sho), _pos(elb), _pos(wri)
+        arm = [wri_p[i] - sho_p[i] for i in range(3)]
+        se  = [elb_p[i] - sho_p[i] for i in range(3)]
+        up  = [arm[1]*se[2] - arm[2]*se[1],
+               arm[2]*se[0] - arm[0]*se[2],
+               arm[0]*se[1] - arm[1]*se[0]]
+        _tmp = cmds.spaceLocator()[0]
+        cmds.xform(_tmp, ws=1, t=sho_p)
+        _ac = cmds.aimConstraint(_tmp, c, aim=(0, 1, 0), u=(0, 0, 1),
+                                 wut="vector", wu=up)[0]
+        cmds.delete(_ac, _tmp)
+        # Shift box shape to sit past wrist (on top of hand)
+        _shift_cvs(c, dy=-self.sz*5)
         _color(c, COL_IK if side=="L" else COL_R)
         o = _offset(c); cmds.parent(o, self.ctrl_grp)
         ik_key = "Arm_"+side
@@ -645,17 +743,9 @@ class AutoControlRigBuilder:
         ikh = "ikh_{}_{}".format(limb, side)
         if cmds.objExists(ikh):
             cmds.connectAttr(norm+".outputX", ikh+".ikBlend")
-        if limb == "Leg":
-            ikh_toe = "ikh_Toe_{}".format(side)
-            if cmds.objExists(ikh_toe):
-                cmds.connectAttr(norm+".outputX", ikh_toe+".ikBlend")
-
-        # FK slots — joints whose FK constraints need FKIK blending
+        # FK chain slots — single-target FK constraints (hip/knee or shoulder/elbow)
         if limb == "Leg":
             fk_slots = ["hip_"+s, "knee_"+s]
-            # SC solver handles foot orient — blend foot/toe FK too
-            if "foot_"+s not in self.ik_fk_oc:
-                fk_slots.extend(["foot_"+s, "toe_"+s])
         else:
             fk_slots = ["shoulder_"+s, "elbow_"+s]
 
@@ -665,13 +755,18 @@ class AutoControlRigBuilder:
             w = cmds.orientConstraint(fc, q=1, wal=1)
             if w: cmds.connectAttr(rev+".outputX", "{}.{}".format(fc, w[0]))
 
-        # Drive IK orient weight for toe (toetip target keeps toe flat)
+        # Blend dual-target foot/toe orient constraints (FK vs IK orient groups)
         if limb == "Leg":
-            toe_oc = self.ik_con.get("toe_"+s)
-            if toe_oc and cmds.objExists(toe_oc):
-                w = cmds.orientConstraint(toe_oc, q=1, wal=1)
+            for sl in ["foot_"+s, "toe_"+s]:
+                fc = self.fk_con.get(sl)
+                if not fc or not cmds.objExists(fc): continue
+                w = cmds.orientConstraint(fc, q=1, wal=1)
                 if len(w) >= 2:
-                    cmds.connectAttr(norm+".outputX", "{}.{}".format(toe_oc, w[-1]))
+                    # w[0]=FK target, w[1]=IK orient target
+                    cmds.connectAttr(rev+".outputX", "{}.{}".format(fc, w[0]))
+                    cmds.connectAttr(norm+".outputX", "{}.{}".format(fc, w[1]))
+                elif w:
+                    cmds.connectAttr(rev+".outputX", "{}.{}".format(fc, w[0]))
 
         # End effector: blend IK-drives-FK-control constraint
         end_slot = ("foot_" if limb=="Leg" else "wrist_") + s
@@ -735,6 +830,15 @@ def remove_control_rig():
         try:
             names = json.loads(cmds.getAttr(RIG_GRP+".skin_constraints"))
             for n in names:
+                if cmds.objExists(n): cmds.delete(n)
+        except Exception:
+            pass
+
+    # Delete twist utility nodes (DG nodes, not parented under rig group)
+    if cmds.attributeQuery("twist_nodes", node=RIG_GRP, exists=True):
+        try:
+            nodes = json.loads(cmds.getAttr(RIG_GRP+".twist_nodes"))
+            for n in nodes:
                 if cmds.objExists(n): cmds.delete(n)
         except Exception:
             pass
@@ -893,6 +997,7 @@ def _on_build(*a):
         "create_fkik_blend": cmds.checkBox(_ui["fkik"], q=1, v=1),
         "scale_taper": cmds.floatField(_ui["taper"], q=1, v=1),
         "show_debug": cmds.checkBox(_ui["dbg"], q=1, v=1),
+        "create_twist_drivers": cmds.checkBox(_ui["twist"], q=1, v=1),
         "roll_start_angle": cmds.floatField(_ui["roll_start"], q=1, v=1),
         "roll_end_angle": cmds.floatField(_ui["roll_end"], q=1, v=1),
     }
@@ -968,6 +1073,7 @@ def show():
     _ui["fk_a"] = cmds.checkBox(l="FK Arms", v=1)
     _ui["fk_l"] = cmds.checkBox(l="FK Legs", v=1)
     _ui["fkik"] = cmds.checkBox(l="FK/IK Blend", v=1)
+    _ui["twist"] = cmds.checkBox(l="Twist Joints", v=1)
     _ui["dbg"]  = cmds.checkBox(l="Show Debug", v=0)
     cmds.setParent("..")
     cmds.rowLayout(nc=2, cw2=(130,100))
