@@ -35,23 +35,23 @@ class HandWalkCycleTool(AnimGeneratorBase):
         }
         self.scapula_ctrls = {'left': "FKScapula_L", 'right': "FKScapula_R"}
         self.scapula_params = {
-            'rotateZ': 5.0, 'rotateX': -10.0, 'rotateY': 0.0,
-            'offsetZ': 0.0, 'offsetX': 0.0, 'offsetY': 0.0,
+            'rotateY': 5.0, 'rotateX': -10.0, 'rotateZ': 0.0,
+            'offsetY': 0.0, 'offsetX': 0.0, 'offsetZ': 0.0,
         }
         self.head_ctrls = {'neck': "FKNeck_M", 'head': "FKHead_M"}
         self.neck_params = {
-            'counter_rotateX': -3.0, 'counter_rotateY': -3.0, 'counter_rotateZ': 2.0,
-            'bounce_tx': 0.0, 'bob_ty': 0.5, 'sway_tz': 0.5, 'offsetZ': 0.0,
+            'counter_rotateZ': -3.0, 'counter_rotateX': -3.0, 'counter_rotateY': 2.0,
+            'bounce_tx': 0.0, 'bob_ty': 0.5, 'sway_tz': 0.5, 'offsetY': 0.0,
         }
         self.head_params = {
-            'counter_rotateX': -5.0, 'counter_rotateY': -5.0, 'counter_rotateZ': 3.0,
-            'bounce_tx': 0.0, 'bob_ty': 0.8, 'sway_tz': 0.8, 'offsetZ': 0.0,
+            'counter_rotateZ': -5.0, 'counter_rotateX': -5.0, 'counter_rotateY': 3.0,
+            'bounce_tx': 0.0, 'bob_ty': 0.8, 'sway_tz': 0.8, 'offsetY': 0.0,
         }
         self.spine_ctrl_candidates = ["FKSpine_M", "FKSpine1_M"]
         self.chest_ctrl = "FKChest_M"
-        self.spine_params = {'swing_rx': 5.0, 'rock_rz': 3.0, 'sway_ry': 3.0, 'offsetZ': 0.0}
-        self.chest_params = {'swing_rx': 6.0, 'rock_rz': 4.0, 'sway_ry': 4.0, 'offsetZ': 0.0}
-        self.legs_fk_params = {'fkik_blend': 0.0, 'hip_rz': 0.0, 'knee_rz': 0.0, 'foot_rz': 0.0, 'toe_rz': 0.0}
+        self.spine_params = {'swing_rz': 5.0, 'rock_ry': 3.0, 'sway_rx': 3.0, 'offsetY': 0.0}
+        self.chest_params = {'swing_rz': 6.0, 'rock_ry': 4.0, 'sway_rx': 4.0, 'offsetY': 0.0}
+        self.legs_fk_params = {'fkik_blend': 0.0, 'hip_ry': 0.0, 'knee_ry': 0.0, 'foot_ry': 0.0, 'toe_ry': 0.0}
         self.fkik_nodes = {'right': 'FKIKLeg_R', 'left': 'FKIKLeg_L'}
         self.frames_stride_halved = []
         self.quarter = 0; self.three_quarter = 0
@@ -179,16 +179,16 @@ class HandWalkCycleTool(AnimGeneratorBase):
         def apply_joint(ctrl, p):
             if not ctrl:
                 return
-            rx = self.pattern_thirds(p['swing_rx'])
-            ry = self.pattern_thirds(p['sway_ry'])
-            rz = self.pattern_fifths(p['rock_rz'])
-            offZ = float(p.get('offsetZ', 0.0))
+            rz = self.pattern_thirds(p['swing_rz'])
+            rx = self.pattern_thirds(p['sway_rx'])
+            ry = self.pattern_fifths(p['rock_ry'])
+            offY = float(p.get('offsetY', 0.0))
+            for t, v in zip(t3, rz):
+                self.set_key(ctrl, 'rotateZ', t, v)
+            for t, v in zip(t5, ry):
+                self.set_key(ctrl, 'rotateY', t, v + offY)
             for t, v in zip(t3, rx):
                 self.set_key(ctrl, 'rotateX', t, v)
-            for t, v in zip(t5, rz):
-                self.set_key(ctrl, 'rotateZ', t, v + offZ)
-            for t, v in zip(t3, ry):
-                self.set_key(ctrl, 'rotateY', t, v)
         spine = self.resolve_first_existing(self.spine_ctrl_candidates)
         chest = self.chest_ctrl if cmds.objExists(self.chest_ctrl) else None
         apply_joint(spine, self.spine_params)
@@ -240,32 +240,32 @@ class HandWalkCycleTool(AnimGeneratorBase):
     def set_scapula_keys(self):
         times = [f[0] for f in self.frames_stride_halved]
         sp = self.scapula_params
-        offZ = float(sp.get('offsetZ', 0.0)); offX = float(sp.get('offsetX', 0.0))
-        offY = float(sp.get('offsetY', 0.0))
+        offY = float(sp.get('offsetY', 0.0)); offX = float(sp.get('offsetX', 0.0))
+        offZ = float(sp.get('offsetZ', 0.0))
         for side in ['left', 'right']:
             ctrl = self.scapula_ctrls[side]; sign = 1 if side == 'left' else -1
-            z_vals = [sign * sp['rotateZ'], -sign * sp['rotateZ'], sign * sp['rotateZ']]
-            x_vals = [sp['rotateX'], -sp['rotateX'], sp['rotateX']]
             y_vals = [sign * sp['rotateY'], -sign * sp['rotateY'], sign * sp['rotateY']]
-            for t, z, x, y in zip(times, z_vals, x_vals, y_vals):
-                self.set_key(ctrl, 'rotateZ', t, z + offZ)
-                self.set_key(ctrl, 'rotateX', t, x + offX)
+            x_vals = [sp['rotateX'], -sp['rotateX'], sp['rotateX']]
+            z_vals = [sign * sp['rotateZ'], -sign * sp['rotateZ'], sign * sp['rotateZ']]
+            for t, y, x, z in zip(times, y_vals, x_vals, z_vals):
                 self.set_key(ctrl, 'rotateY', t, y + offY)
+                self.set_key(ctrl, 'rotateX', t, x + offX)
+                self.set_key(ctrl, 'rotateZ', t, z + offZ)
 
     def set_head_and_neck_keys(self):
         start, mid, end = [f[0] for f in self.frames_stride_halved]
         t3 = [start, mid, end]; t5 = [start, self.quarter, mid, self.three_quarter, end]
         def apply_joint(ctrl, p):
+            rz = self.pattern_thirds(p['counter_rotateZ'])
             rx = self.pattern_thirds(p['counter_rotateX'])
-            ry = self.pattern_thirds(p['counter_rotateY'])
-            rz = self.pattern_fifths(p['counter_rotateZ'])
-            offZ = float(p.get('offsetZ', 0.0))
+            ry = self.pattern_fifths(p['counter_rotateY'])
+            offY = float(p.get('offsetY', 0.0))
+            for t, v in zip(t3, rz):
+                self.set_key(ctrl, 'rotateZ', t, v)
             for t, v in zip(t3, rx):
                 self.set_key(ctrl, 'rotateX', t, v)
-            for t, v in zip(t3, ry):
-                self.set_key(ctrl, 'rotateY', t, v)
-            for t, v in zip(t5, rz):
-                self.set_key(ctrl, 'rotateZ', t, v + offZ)
+            for t, v in zip(t5, ry):
+                self.set_key(ctrl, 'rotateY', t, v + offY)
             tx = self.pattern_fifths(p['bounce_tx']); ty = self.pattern_fifths(p['bob_ty'])
             tz = self.pattern_thirds(p['sway_tz'])
             for t, v in zip(t5, tx):
@@ -290,16 +290,16 @@ class HandWalkCycleTool(AnimGeneratorBase):
                         self.set_key(node, 'FKIKBlend', t, blend)
                     except Exception:
                         pass
-        pairs = [('FKHip_R', 'FKHip_L', self.legs_fk_params['hip_rz']),
-                 ('FKKnee_R', 'FKKnee_L', self.legs_fk_params['knee_rz']),
-                 ('FKFoot_R', 'FKFoot_L', self.legs_fk_params['foot_rz']),
-                 ('FKToe_R', 'FKToe_L', self.legs_fk_params['toe_rz'])]
+        pairs = [('FKHip_R', 'FKHip_L', self.legs_fk_params['hip_ry']),
+                 ('FKKnee_R', 'FKKnee_L', self.legs_fk_params['knee_ry']),
+                 ('FKFoot_R', 'FKFoot_L', self.legs_fk_params['foot_ry']),
+                 ('FKToe_R', 'FKToe_L', self.legs_fk_params['toe_ry'])]
         for r_n, l_n, val in pairs:
             for node in (r_n, l_n):
-                if cmds.objExists(node) and cmds.attributeQuery('rotateZ', node=node, exists=True):
+                if cmds.objExists(node) and cmds.attributeQuery('rotateY', node=node, exists=True):
                     for t in (start, end):
                         try:
-                            self.set_key(node, 'rotateZ', t, float(val))
+                            self.set_key(node, 'rotateY', t, float(val))
                         except Exception:
                             pass
 
@@ -401,14 +401,14 @@ class HandWalkCycleTool(AnimGeneratorBase):
         self.root_params['shift_x'] = cmds.floatField(self.root_shift_x_field, q=True, v=True)
         self.root_params['swing_z'] = cmds.floatField(self.root_swing_z_field, q=True, v=True)
         self.root_params['bounce_z'] = cmds.floatField(self.root_bounce_z_field, q=True, v=True)
-        self.spine_params['swing_rx'] = cmds.floatField(self.spine_rx_field, q=True, v=True)
-        self.spine_params['rock_rz'] = cmds.floatField(self.spine_rz_field, q=True, v=True)
-        self.spine_params['sway_ry'] = cmds.floatField(self.spine_ry_field, q=True, v=True)
-        self.spine_params['offsetZ'] = cmds.floatField(self.spine_rz_offset_field, q=True, v=True)
-        self.chest_params['swing_rx'] = cmds.floatField(self.chest_rx_field, q=True, v=True)
-        self.chest_params['rock_rz'] = cmds.floatField(self.chest_rz_field, q=True, v=True)
-        self.chest_params['sway_ry'] = cmds.floatField(self.chest_ry_field, q=True, v=True)
-        self.chest_params['offsetZ'] = cmds.floatField(self.chest_rz_offset_field, q=True, v=True)
+        self.spine_params['swing_rz'] = cmds.floatField(self.spine_rz_field, q=True, v=True)
+        self.spine_params['rock_ry'] = cmds.floatField(self.spine_ry_field, q=True, v=True)
+        self.spine_params['sway_rx'] = cmds.floatField(self.spine_rx_field, q=True, v=True)
+        self.spine_params['offsetY'] = cmds.floatField(self.spine_ry_offset_field, q=True, v=True)
+        self.chest_params['swing_rz'] = cmds.floatField(self.chest_rz_field, q=True, v=True)
+        self.chest_params['rock_ry'] = cmds.floatField(self.chest_ry_field, q=True, v=True)
+        self.chest_params['sway_rx'] = cmds.floatField(self.chest_rx_field, q=True, v=True)
+        self.chest_params['offsetY'] = cmds.floatField(self.chest_ry_offset_field, q=True, v=True)
         self.hip_params['swing'] = cmds.floatField(self.hip_swing_field, q=True, v=True)
         self.hip_params['sway'] = cmds.floatField(self.hip_sway_field, q=True, v=True)
         self.feet_follow['moveFeetWithRoot'] = cmds.floatSlider(self.move_feet_slider, q=True, v=True)
@@ -424,10 +424,10 @@ class HandWalkCycleTool(AnimGeneratorBase):
         self.scapula_params['offsetX'] = cmds.floatField(self.scapula_offset_x_field, q=True, v=True)
         self.scapula_params['offsetY'] = cmds.floatField(self.scapula_offset_y_field, q=True, v=True)
         self.legs_fk_params['fkik_blend'] = cmds.floatSlider(self.fkik_slider, q=True, v=True)
-        self.legs_fk_params['hip_rz'] = cmds.floatField(self.fk_hip_rz_field, q=True, v=True)
-        self.legs_fk_params['knee_rz'] = cmds.floatField(self.fk_knee_rz_field, q=True, v=True)
-        self.legs_fk_params['foot_rz'] = cmds.floatField(self.fk_foot_rz_field, q=True, v=True)
-        self.legs_fk_params['toe_rz'] = cmds.floatField(self.fk_toe_rz_field, q=True, v=True)
+        self.legs_fk_params['hip_ry'] = cmds.floatField(self.fk_hip_ry_field, q=True, v=True)
+        self.legs_fk_params['knee_ry'] = cmds.floatField(self.fk_knee_ry_field, q=True, v=True)
+        self.legs_fk_params['foot_ry'] = cmds.floatField(self.fk_foot_ry_field, q=True, v=True)
+        self.legs_fk_params['toe_ry'] = cmds.floatField(self.fk_toe_ry_field, q=True, v=True)
         for p, prefix in [(self.neck_params, 'neck'), (self.head_params, 'head')]:
             p['counter_rotateX'] = cmds.floatField(getattr(self, f'{prefix}_rx_field'), q=True, v=True)
             p['counter_rotateY'] = cmds.floatField(getattr(self, f'{prefix}_ry_field'), q=True, v=True)
@@ -435,7 +435,7 @@ class HandWalkCycleTool(AnimGeneratorBase):
             p['bounce_tx'] = cmds.floatField(getattr(self, f'{prefix}_tx_field'), q=True, v=True)
             p['bob_ty'] = cmds.floatField(getattr(self, f'{prefix}_ty_field'), q=True, v=True)
             p['sway_tz'] = cmds.floatField(getattr(self, f'{prefix}_tz_field'), q=True, v=True)
-            p['offsetZ'] = cmds.floatField(getattr(self, f'{prefix}_rz_off_field'), q=True, v=True)
+            p['offsetY'] = cmds.floatField(getattr(self, f'{prefix}_ry_off_field'), q=True, v=True)
         self.groundHeight = cmds.floatField(self.ground_height_field, q=True, v=True)
         self.clamp_hands_to_ground = cmds.checkBox(self.clamp_checkbox, q=True, v=True)
         self.elbow_params['offset']['x'] = cmds.floatField(self.elbow_off_x, q=True, v=True)
@@ -482,9 +482,9 @@ class HandWalkCycleTool(AnimGeneratorBase):
         self.neck_params.update(settings.get('neck', {}))
         self.head_params.update(settings.get('head', {}))
         self._coerce(self.neck_params, ['counter_rotateX', 'counter_rotateY', 'counter_rotateZ',
-                                        'bounce_tx', 'bob_ty', 'sway_tz', 'offsetZ'])
+                                        'bounce_tx', 'bob_ty', 'sway_tz', 'offsetY'])
         self._coerce(self.head_params, ['counter_rotateX', 'counter_rotateY', 'counter_rotateZ',
-                                        'bounce_tx', 'bob_ty', 'sway_tz', 'offsetZ'])
+                                        'bounce_tx', 'bob_ty', 'sway_tz', 'offsetY'])
         if 'head' in settings and 'neck' not in settings:
             self.neck_params.update({k: settings['head'].get(k, self.neck_params[k]) for k in self.neck_params})
         self.groundHeight = settings.get('groundHeight', self.groundHeight)
@@ -496,10 +496,10 @@ class HandWalkCycleTool(AnimGeneratorBase):
                 pass
         self.spine_params.update(settings.get('spine', {}))
         self.chest_params.update(settings.get('chest', {}))
-        self._coerce(self.spine_params, ['swing_rx', 'rock_rz', 'sway_ry', 'offsetZ'])
-        self._coerce(self.chest_params, ['swing_rx', 'rock_rz', 'sway_ry', 'offsetZ'])
+        self._coerce(self.spine_params, ['swing_rz', 'rock_ry', 'sway_rx', 'offsetY'])
+        self._coerce(self.chest_params, ['swing_rz', 'rock_ry', 'sway_rx', 'offsetY'])
         self.legs_fk_params.update(settings.get('legs_fk', {}))
-        self._coerce(self.legs_fk_params, ['fkik_blend', 'hip_rz', 'knee_rz', 'foot_rz', 'toe_rz'])
+        self._coerce(self.legs_fk_params, ['fkik_blend', 'hip_ry', 'knee_ry', 'foot_ry', 'toe_ry'])
         ep = settings.get('elbow')
         if ep:
             for k in ('out', 'up', 'forward'):
@@ -556,9 +556,9 @@ class HandWalkCycleTool(AnimGeneratorBase):
             if hasattr(self, fld):
                 _sf(getattr(self, fld), self.scapula_params.get(a, 0.0))
         for prefix, params in [('neck', self.neck_params), ('head', self.head_params)]:
-            for k, fld_suffix in [('counter_rotateX', 'rx'), ('counter_rotateY', 'ry'),
-                                  ('counter_rotateZ', 'rz'), ('bounce_tx', 'tx'),
-                                  ('bob_ty', 'ty'), ('sway_tz', 'tz'), ('offsetZ', 'rz_off')]:
+            for k, fld_suffix in [('counter_rotateZ', 'rz'), ('counter_rotateX', 'rx'),
+                                  ('counter_rotateY', 'ry'), ('bounce_tx', 'tx'),
+                                  ('bob_ty', 'ty'), ('sway_tz', 'tz'), ('offsetY', 'ry_off')]:
                 fld = f'{prefix}_{fld_suffix}_field'
                 if hasattr(self, fld):
                     _sf(getattr(self, fld), params.get(k, 0.0))
@@ -581,15 +581,15 @@ class HandWalkCycleTool(AnimGeneratorBase):
                 cmds.floatSlider(self.fkik_slider, e=True, value=self.legs_fk_params['fkik_blend'])
             except Exception:
                 pass
-        for fld, key in [(getattr(self, 'fk_hip_rz_field', None), 'hip_rz'),
-                         (getattr(self, 'fk_knee_rz_field', None), 'knee_rz'),
-                         (getattr(self, 'fk_foot_rz_field', None), 'foot_rz'),
-                         (getattr(self, 'fk_toe_rz_field', None), 'toe_rz')]:
+        for fld, key in [(getattr(self, 'fk_hip_ry_field', None), 'hip_ry'),
+                         (getattr(self, 'fk_knee_ry_field', None), 'knee_ry'),
+                         (getattr(self, 'fk_foot_ry_field', None), 'foot_ry'),
+                         (getattr(self, 'fk_toe_ry_field', None), 'toe_ry')]:
             if fld:
                 _sf(fld, self.legs_fk_params[key])
-        for a in ('swing_rx', 'rock_rz', 'sway_ry', 'offsetZ'):
-            s_fld = f'spine_{"rz_offset" if a == "offsetZ" else a.split("_")[1]}_field'
-            c_fld = f'chest_{"rz_offset" if a == "offsetZ" else a.split("_")[1]}_field'
+        for a in ('swing_rz', 'rock_ry', 'sway_rx', 'offsetY'):
+            s_fld = f'spine_{"ry_offset" if a == "offsetY" else a.split("_")[1]}_field'
+            c_fld = f'chest_{"ry_offset" if a == "offsetY" else a.split("_")[1]}_field'
             if hasattr(self, s_fld):
                 _sf(getattr(self, s_fld), self.spine_params.get(a, 0.0))
             if hasattr(self, c_fld):
@@ -618,62 +618,62 @@ class HandWalkCycleTool(AnimGeneratorBase):
 
         cmds.frameLayout(label="Stride Settings", collapsable=True, marginWidth=10, marginHeight=5)
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
-        cmds.text(label="Stride Length"); self.stride_field = cmds.floatField(value=self.stride)
-        cmds.text(label="Stride Width (X)"); self.stride_width_field = cmds.floatField(value=self.stride_width)
-        cmds.text(label="Stride Height (Y)"); self.stride_height_field = cmds.floatField(value=self.stride_height)
+        cmds.text(label="Stride Length"); self.stride_field = cmds.floatField(value=self.stride, bgc=self.COLOR_Z)
+        cmds.text(label="Stride Width (X)"); self.stride_width_field = cmds.floatField(value=self.stride_width, bgc=self.COLOR_X)
+        cmds.text(label="Stride Height (Y)"); self.stride_height_field = cmds.floatField(value=self.stride_height, bgc=self.COLOR_Y)
         cmds.setParent('..'); cmds.setParent('..')
 
         cmds.frameLayout(label="Root Controls (RootX_M)", collapsable=True, marginWidth=10, marginHeight=5)
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
-        cmds.text(label="Offset Y"); self.root_offset_y_field = cmds.floatField(value=self.root_params['offset_y'])
-        cmds.text(label="Offset Z"); self.root_offset_z_field = cmds.floatField(value=self.root_params['offset_z'])
-        cmds.text(label="Offset Rock (rotateX)"); self.root_offset_rx_field = cmds.floatField(value=self.root_params['offset_rx'])
-        cmds.text(label="Bounce (translateY)"); self.root_bounce_field = cmds.floatField(value=self.root_params['bounce'])
-        cmds.text(label="Side Sway (rotateY)"); self.root_sway_field = cmds.floatField(value=self.root_params['sway'])
-        cmds.text(label="Rock (rotateX)"); self.root_rock_field = cmds.floatField(value=self.root_params['rock'])
-        cmds.text(label="Shift (translateX)"); self.root_shift_x_field = cmds.floatField(value=self.root_params['shift_x'])
-        cmds.text(label="Swing (rotateZ)"); self.root_swing_z_field = cmds.floatField(value=self.root_params['swing_z'])
-        cmds.text(label="Bounce Fwd (translateZ)"); self.root_bounce_z_field = cmds.floatField(value=self.root_params.get('bounce_z', 0.0))
+        cmds.text(label="Offset Y"); self.root_offset_y_field = cmds.floatField(value=self.root_params['offset_y'], bgc=self.COLOR_Y)
+        cmds.text(label="Offset Z"); self.root_offset_z_field = cmds.floatField(value=self.root_params['offset_z'], bgc=self.COLOR_Z)
+        cmds.text(label="Offset Rock (rotateX)"); self.root_offset_rx_field = cmds.floatField(value=self.root_params['offset_rx'], bgc=self.COLOR_X)
+        cmds.text(label="Bounce (translateY)"); self.root_bounce_field = cmds.floatField(value=self.root_params['bounce'], bgc=self.COLOR_Y)
+        cmds.text(label="Side Sway (rotateY)"); self.root_sway_field = cmds.floatField(value=self.root_params['sway'], bgc=self.COLOR_Y)
+        cmds.text(label="Rock (rotateX)"); self.root_rock_field = cmds.floatField(value=self.root_params['rock'], bgc=self.COLOR_X)
+        cmds.text(label="Shift (translateX)"); self.root_shift_x_field = cmds.floatField(value=self.root_params['shift_x'], bgc=self.COLOR_X)
+        cmds.text(label="Swing (rotateZ)"); self.root_swing_z_field = cmds.floatField(value=self.root_params['swing_z'], bgc=self.COLOR_Z)
+        cmds.text(label="Bounce Fwd (translateZ)"); self.root_bounce_z_field = cmds.floatField(value=self.root_params.get('bounce_z', 0.0), bgc=self.COLOR_Z)
         cmds.setParent('..'); cmds.setParent('..')
 
         cmds.frameLayout(label="Spine & Chest", collapsable=True, marginWidth=10, marginHeight=5)
         cmds.text(label="SPINE", align='left')
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
-        cmds.text(label="Swing rotateX"); self.spine_rx_field = cmds.floatField(value=self.spine_params['swing_rx'])
-        cmds.text(label="Offset Z (add)"); self.spine_rz_offset_field = cmds.floatField(value=self.spine_params['offsetZ'])
-        cmds.text(label="Rock rotateZ"); self.spine_rz_field = cmds.floatField(value=self.spine_params['rock_rz'])
-        cmds.text(label="Sway rotateY"); self.spine_ry_field = cmds.floatField(value=self.spine_params['sway_ry'])
+        cmds.text(label="Swing rotateZ"); self.spine_rz_field = cmds.floatField(value=self.spine_params['swing_rz'], bgc=self.COLOR_Z)
+        cmds.text(label="Offset Y (add)"); self.spine_ry_offset_field = cmds.floatField(value=self.spine_params['offsetY'], bgc=self.COLOR_Y)
+        cmds.text(label="Rock rotateY"); self.spine_ry_field = cmds.floatField(value=self.spine_params['rock_ry'], bgc=self.COLOR_Y)
+        cmds.text(label="Sway rotateX"); self.spine_rx_field = cmds.floatField(value=self.spine_params['sway_rx'], bgc=self.COLOR_X)
         cmds.setParent('..')
         cmds.separator(height=8, style='in')
         cmds.text(label="CHEST", align='left')
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
-        cmds.text(label="Swing rotateX"); self.chest_rx_field = cmds.floatField(value=self.chest_params['swing_rx'])
-        cmds.text(label="Offset Z (add)"); self.chest_rz_offset_field = cmds.floatField(value=self.chest_params['offsetZ'])
-        cmds.text(label="Rock rotateZ"); self.chest_rz_field = cmds.floatField(value=self.chest_params['rock_rz'])
-        cmds.text(label="Sway rotateY"); self.chest_ry_field = cmds.floatField(value=self.chest_params['sway_ry'])
+        cmds.text(label="Swing rotateZ"); self.chest_rz_field = cmds.floatField(value=self.chest_params['swing_rz'], bgc=self.COLOR_Z)
+        cmds.text(label="Offset Y (add)"); self.chest_ry_offset_field = cmds.floatField(value=self.chest_params['offsetY'], bgc=self.COLOR_Y)
+        cmds.text(label="Rock rotateY"); self.chest_ry_field = cmds.floatField(value=self.chest_params['rock_ry'], bgc=self.COLOR_Y)
+        cmds.text(label="Sway rotateX"); self.chest_rx_field = cmds.floatField(value=self.chest_params['sway_rx'], bgc=self.COLOR_X)
         cmds.setParent('..'); cmds.setParent('..')
 
         cmds.frameLayout(label="Scapula Movement", collapsable=True, marginWidth=10, marginHeight=5)
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
-        cmds.text(label="Rotate Z"); self.scapula_z_field = cmds.floatField(value=self.scapula_params['rotateZ'])
-        cmds.text(label="Offset Z (add)"); self.scapula_offset_z_field = cmds.floatField(value=self.scapula_params.get('offsetZ', 0.0))
-        cmds.text(label="Rotate X"); self.scapula_x_field = cmds.floatField(value=self.scapula_params['rotateX'])
-        cmds.text(label="Offset X (add)"); self.scapula_offset_x_field = cmds.floatField(value=self.scapula_params.get('offsetX', 0.0))
-        cmds.text(label="Rotate Y"); self.scapula_y_field = cmds.floatField(value=self.scapula_params['rotateY'])
-        cmds.text(label="Offset Y (add)"); self.scapula_offset_y_field = cmds.floatField(value=self.scapula_params.get('offsetY', 0.0))
+        cmds.text(label="Rotate Y"); self.scapula_y_field = cmds.floatField(value=self.scapula_params['rotateY'], bgc=self.COLOR_Y)
+        cmds.text(label="Offset Y (add)"); self.scapula_offset_y_field = cmds.floatField(value=self.scapula_params.get('offsetY', 0.0), bgc=self.COLOR_Y)
+        cmds.text(label="Rotate X"); self.scapula_x_field = cmds.floatField(value=self.scapula_params['rotateX'], bgc=self.COLOR_X)
+        cmds.text(label="Offset X (add)"); self.scapula_offset_x_field = cmds.floatField(value=self.scapula_params.get('offsetX', 0.0), bgc=self.COLOR_X)
+        cmds.text(label="Rotate Z"); self.scapula_z_field = cmds.floatField(value=self.scapula_params['rotateZ'], bgc=self.COLOR_Z)
+        cmds.text(label="Offset Z (add)"); self.scapula_offset_z_field = cmds.floatField(value=self.scapula_params.get('offsetZ', 0.0), bgc=self.COLOR_Z)
         cmds.setParent('..'); cmds.setParent('..')
 
         cmds.frameLayout(label="Neck & Head Motion", collapsable=True, marginWidth=10, marginHeight=5)
         for prefix, params, label in [('neck', self.neck_params, 'NECK'), ('head', self.head_params, 'HEAD')]:
             cmds.text(label=label, align='left')
             cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
-            cmds.text(label="Counter Rotate X"); setattr(self, f'{prefix}_rx_field', cmds.floatField(value=params['counter_rotateX']))
-            cmds.text(label="Counter Rotate Y"); setattr(self, f'{prefix}_ry_field', cmds.floatField(value=params['counter_rotateY']))
-            cmds.text(label="Counter Rotate Z"); setattr(self, f'{prefix}_rz_field', cmds.floatField(value=params['counter_rotateZ']))
-            cmds.text(label="Offset Z (add)"); setattr(self, f'{prefix}_rz_off_field', cmds.floatField(value=params.get('offsetZ', 0.0)))
-            cmds.text(label="Bounce X tx"); setattr(self, f'{prefix}_tx_field', cmds.floatField(value=params['bounce_tx']))
-            cmds.text(label="Bob Y ty"); setattr(self, f'{prefix}_ty_field', cmds.floatField(value=params['bob_ty']))
-            cmds.text(label="Sway Z tz"); setattr(self, f'{prefix}_tz_field', cmds.floatField(value=params['sway_tz']))
+            cmds.text(label="Counter Rotate Z"); setattr(self, f'{prefix}_rz_field', cmds.floatField(value=params['counter_rotateZ'], bgc=self.COLOR_Z))
+            cmds.text(label="Counter Rotate X"); setattr(self, f'{prefix}_rx_field', cmds.floatField(value=params['counter_rotateX'], bgc=self.COLOR_X))
+            cmds.text(label="Counter Rotate Y"); setattr(self, f'{prefix}_ry_field', cmds.floatField(value=params['counter_rotateY'], bgc=self.COLOR_Y))
+            cmds.text(label="Offset Y (add)"); setattr(self, f'{prefix}_ry_off_field', cmds.floatField(value=params.get('offsetY', 0.0), bgc=self.COLOR_Y))
+            cmds.text(label="Bounce X tx"); setattr(self, f'{prefix}_tx_field', cmds.floatField(value=params['bounce_tx'], bgc=self.COLOR_X))
+            cmds.text(label="Bob Y ty"); setattr(self, f'{prefix}_ty_field', cmds.floatField(value=params['bob_ty'], bgc=self.COLOR_Y))
+            cmds.text(label="Sway Z tz"); setattr(self, f'{prefix}_tz_field', cmds.floatField(value=params['sway_tz'], bgc=self.COLOR_Z))
             cmds.setParent('..')
             if prefix == 'neck':
                 cmds.separator(height=8, style='in')
@@ -688,33 +688,33 @@ class HandWalkCycleTool(AnimGeneratorBase):
         cmds.frameLayout(label="Elbow Poles", collapsable=True, marginWidth=10, marginHeight=5)
         cmds.text(label="Offsets (X mirrored on LEFT)", align='left')
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
-        cmds.text(label="Offset X"); self.elbow_off_x = cmds.floatField(value=self.elbow_params['offset']['x'])
-        cmds.text(label="Offset Y"); self.elbow_off_y = cmds.floatField(value=self.elbow_params['offset']['y'])
-        cmds.text(label="Offset Z"); self.elbow_off_z = cmds.floatField(value=self.elbow_params['offset']['z'])
+        cmds.text(label="Offset X"); self.elbow_off_x = cmds.floatField(value=self.elbow_params['offset']['x'], bgc=self.COLOR_X)
+        cmds.text(label="Offset Y"); self.elbow_off_y = cmds.floatField(value=self.elbow_params['offset']['y'], bgc=self.COLOR_Y)
+        cmds.text(label="Offset Z"); self.elbow_off_z = cmds.floatField(value=self.elbow_params['offset']['z'], bgc=self.COLOR_Z)
         cmds.setParent('..')
         cmds.separator(height=6, style='in')
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
-        cmds.text(label="Out (translate X)"); self.elbow_out_field = cmds.floatField(value=self.elbow_params['out'])
-        cmds.text(label="Up (translate Y)"); self.elbow_up_field = cmds.floatField(value=self.elbow_params['up'])
-        cmds.text(label="Forward (translate Z)"); self.elbow_forward_field = cmds.floatField(value=self.elbow_params['forward'])
+        cmds.text(label="Out (translate X)"); self.elbow_out_field = cmds.floatField(value=self.elbow_params['out'], bgc=self.COLOR_X)
+        cmds.text(label="Up (translate Y)"); self.elbow_up_field = cmds.floatField(value=self.elbow_params['up'], bgc=self.COLOR_Y)
+        cmds.text(label="Forward (translate Z)"); self.elbow_forward_field = cmds.floatField(value=self.elbow_params['forward'], bgc=self.COLOR_Z)
         cmds.setParent('..'); cmds.setParent('..')
 
         cmds.frameLayout(label="Hip Controls", collapsable=True, marginWidth=10, marginHeight=5)
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
-        cmds.text(label="Hip Swing (rotateX)"); self.hip_swing_field = cmds.floatField(value=self.hip_params['swing'])
-        cmds.text(label="Hip Sway (rotateY)"); self.hip_sway_field = cmds.floatField(value=self.hip_params['sway'])
+        cmds.text(label="Hip Swing (rotateX)"); self.hip_swing_field = cmds.floatField(value=self.hip_params['swing'], bgc=self.COLOR_X)
+        cmds.text(label="Hip Sway (rotateY)"); self.hip_sway_field = cmds.floatField(value=self.hip_params['sway'], bgc=self.COLOR_Y)
         cmds.setParent('..'); cmds.setParent('..')
 
         cmds.frameLayout(label="Feet Follow Settings", collapsable=True, marginWidth=10, marginHeight=5)
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
         cmds.text(label="Move Feet With Root"); self.move_feet_slider = cmds.floatSlider(min=0, max=1, value=self.feet_follow['moveFeetWithRoot'], step=0.01)
-        cmds.text(label="Offset X (mirrored)"); self.feet_offset_x_field = cmds.floatField(value=self.feet_follow['offset_x'])
-        cmds.text(label="Swing X (no mirror)"); self.feet_swing_x_field = cmds.floatField(value=self.feet_follow.get('swing_x', 0.0))
-        cmds.text(label="Offset Y"); self.feet_offset_y_field = cmds.floatField(value=self.feet_follow['offset_y'])
-        cmds.text(label="Bounce Y"); self.feet_bounce_y_field = cmds.floatField(value=self.feet_follow.get('bounce_y', 0.0))
-        cmds.text(label="Offset Z"); self.feet_offset_z_field = cmds.floatField(value=self.feet_follow['offset_z'])
-        cmds.text(label="Back/Forth Z"); self.feet_backforth_z_field = cmds.floatField(value=self.feet_follow.get('back_forth_z', 0.0))
-        cmds.text(label="Rotate X"); self.feet_rotate_x_field = cmds.floatField(value=self.feet_follow['rotate_x'])
+        cmds.text(label="Offset X (mirrored)"); self.feet_offset_x_field = cmds.floatField(value=self.feet_follow['offset_x'], bgc=self.COLOR_X)
+        cmds.text(label="Swing X (no mirror)"); self.feet_swing_x_field = cmds.floatField(value=self.feet_follow.get('swing_x', 0.0), bgc=self.COLOR_X)
+        cmds.text(label="Offset Y"); self.feet_offset_y_field = cmds.floatField(value=self.feet_follow['offset_y'], bgc=self.COLOR_Y)
+        cmds.text(label="Bounce Y"); self.feet_bounce_y_field = cmds.floatField(value=self.feet_follow.get('bounce_y', 0.0), bgc=self.COLOR_Y)
+        cmds.text(label="Offset Z"); self.feet_offset_z_field = cmds.floatField(value=self.feet_follow['offset_z'], bgc=self.COLOR_Z)
+        cmds.text(label="Back/Forth Z"); self.feet_backforth_z_field = cmds.floatField(value=self.feet_follow.get('back_forth_z', 0.0), bgc=self.COLOR_Z)
+        cmds.text(label="Rotate X"); self.feet_rotate_x_field = cmds.floatField(value=self.feet_follow['rotate_x'], bgc=self.COLOR_X)
         cmds.setParent('..'); cmds.setParent('..')
 
         cmds.frameLayout(label="Legs Forward Kinematics", collapsable=True, marginWidth=10, marginHeight=5)
@@ -723,23 +723,23 @@ class HandWalkCycleTool(AnimGeneratorBase):
         self.fkik_slider = cmds.floatSlider(min=0, max=10, value=self.legs_fk_params['fkik_blend'], step=0.1)
         cmds.setParent('..')
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 170), (2, 180)])
-        cmds.text(label="Hip rotate Z"); self.fk_hip_rz_field = cmds.floatField(value=self.legs_fk_params['hip_rz'])
-        cmds.text(label="Knee rotate Z"); self.fk_knee_rz_field = cmds.floatField(value=self.legs_fk_params['knee_rz'])
-        cmds.text(label="Foot rotate Z"); self.fk_foot_rz_field = cmds.floatField(value=self.legs_fk_params['foot_rz'])
-        cmds.text(label="Toe rotate Z"); self.fk_toe_rz_field = cmds.floatField(value=self.legs_fk_params['toe_rz'])
+        cmds.text(label="Hip rotate Y"); self.fk_hip_ry_field = cmds.floatField(value=self.legs_fk_params['hip_ry'], bgc=self.COLOR_Y)
+        cmds.text(label="Knee rotate Y"); self.fk_knee_ry_field = cmds.floatField(value=self.legs_fk_params['knee_ry'], bgc=self.COLOR_Y)
+        cmds.text(label="Foot rotate Y"); self.fk_foot_ry_field = cmds.floatField(value=self.legs_fk_params['foot_ry'], bgc=self.COLOR_Y)
+        cmds.text(label="Toe rotate Y"); self.fk_toe_ry_field = cmds.floatField(value=self.legs_fk_params['toe_ry'], bgc=self.COLOR_Y)
         cmds.setParent('..'); cmds.setParent('..')
 
         cmds.frameLayout(label="Hand Position Offsets", collapsable=True, marginWidth=10, marginHeight=5)
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
-        cmds.text(label="Offset X"); self.offset_x_field = cmds.floatField(value=self.hand_offsets['offset_x'])
-        cmds.text(label="Offset Y"); self.offset_y_field = cmds.floatField(value=self.hand_offsets['offset_y'])
-        cmds.text(label="Offset Z"); self.offset_z_field = cmds.floatField(value=self.hand_offsets['offset_z'])
-        cmds.text(label="Rotate Y"); self.rotate_y_field = cmds.floatField(value=self.hand_offsets['rotation_y'])
+        cmds.text(label="Offset X"); self.offset_x_field = cmds.floatField(value=self.hand_offsets['offset_x'], bgc=self.COLOR_X)
+        cmds.text(label="Offset Y"); self.offset_y_field = cmds.floatField(value=self.hand_offsets['offset_y'], bgc=self.COLOR_Y)
+        cmds.text(label="Offset Z"); self.offset_z_field = cmds.floatField(value=self.hand_offsets['offset_z'], bgc=self.COLOR_Z)
+        cmds.text(label="Rotate Y"); self.rotate_y_field = cmds.floatField(value=self.hand_offsets['rotation_y'], bgc=self.COLOR_Y)
         cmds.setParent('..'); cmds.setParent('..')
 
         cmds.frameLayout(label="Ground Clamp", collapsable=True, marginWidth=10, marginHeight=5)
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 150), (2, 150)])
-        cmds.text(label="Ground Height (Y)"); self.ground_height_field = cmds.floatField(value=self.groundHeight)
+        cmds.text(label="Ground Height (Y)"); self.ground_height_field = cmds.floatField(value=self.groundHeight, bgc=self.COLOR_Y)
         cmds.text(label="Clamp Hands"); self.clamp_checkbox = cmds.checkBox(value=self.clamp_hands_to_ground)
         cmds.text(label="Stretch Arms (0-10)"); self.stretch_slider = cmds.floatSlider(min=0, max=10, value=self.stretch_arms, step=0.1)
         cmds.setParent('..'); cmds.setParent('..')

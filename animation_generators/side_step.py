@@ -84,11 +84,11 @@ class SideStepGenerator(AnimGeneratorBase):
         d = self._dir(); s = self.scapula_swing * d
         addY = float(self.down_scapula_y); addZ = float(self.bent_scapula_z); addX = float(self.twist_scapula_x)
         for node, sign in [(self.scapula_l, +1), (self.scapula_r, -1)]:
-            self.set_key(node, 'rotateY', start, sign * s + addY)
-            self.set_key(node, 'rotateY', mid, -sign * s + addY)
-            self.set_key(node, 'rotateY', end, sign * s + addY)
+            self.set_key(node, 'rotateZ', start, sign * s + addY)
+            self.set_key(node, 'rotateZ', mid, -sign * s + addY)
+            self.set_key(node, 'rotateZ', end, sign * s + addY)
             for t in (start, mid, end):
-                self.set_key(node, 'rotateZ', t, addZ)
+                self.set_key(node, 'rotateY', t, addZ)
                 self.set_key(node, 'rotateX', t, addX)
 
     def set_shoulder_elbow_keys(self):
@@ -101,21 +101,21 @@ class SideStepGenerator(AnimGeneratorBase):
             (self.shoulder_l, self.elbow_l, self.wrist_l, +1),
             (self.shoulder_r, self.elbow_r, self.wrist_r, -1),
         ]:
-            self.set_key(shoulder, 'rotateZ', start, sign * shZ + addZ_sh)
-            self.set_key(shoulder, 'rotateZ', mid, -sign * shZ + addZ_sh)
-            self.set_key(shoulder, 'rotateZ', end, sign * shZ + addZ_sh)
+            self.set_key(shoulder, 'rotateY', start, sign * shZ + addZ_sh)
+            self.set_key(shoulder, 'rotateY', mid, -sign * shZ + addZ_sh)
+            self.set_key(shoulder, 'rotateY', end, sign * shZ + addZ_sh)
             for t in (start, mid, end):
-                self.set_key(shoulder, 'rotateY', t, addY_sh)
+                self.set_key(shoulder, 'rotateZ', t, addY_sh)
                 self.set_key(shoulder, 'rotateX', t, addX_sh)
-            self.set_key(elbow, 'rotateZ', start, sign * elZ + addZ_el)
-            self.set_key(elbow, 'rotateZ', mid, -sign * elZ + addZ_el)
-            self.set_key(elbow, 'rotateZ', end, sign * elZ + addZ_el)
+            self.set_key(elbow, 'rotateY', start, sign * elZ + addZ_el)
+            self.set_key(elbow, 'rotateY', mid, -sign * elZ + addZ_el)
+            self.set_key(elbow, 'rotateY', end, sign * elZ + addZ_el)
             for t in (start, mid, end):
-                self.set_key(elbow, 'rotateY', t, addY_el)
+                self.set_key(elbow, 'rotateZ', t, addY_el)
                 self.set_key(elbow, 'rotateX', t, addX_el)
             for t in (start, mid, end):
-                self.set_key(wrist, 'rotateY', t, addY_wr)
-                self.set_key(wrist, 'rotateZ', t, addZ_wr)
+                self.set_key(wrist, 'rotateZ', t, addY_wr)
+                self.set_key(wrist, 'rotateY', t, addZ_wr)
                 self.set_key(wrist, 'rotateX', t, addX_wr)
 
     def set_sidewhip_keys(self):
@@ -125,11 +125,11 @@ class SideStepGenerator(AnimGeneratorBase):
                              (self.chest, self.chest_sway), (self.neck, self.neck_sway),
                              (self.head, self.head_sway)]:
             a = d * amount
-            self.set_key(ctrl, 'rotateY', start, 0)
-            self.set_key(ctrl, 'rotateY', quarter, a)
-            self.set_key(ctrl, 'rotateY', mid, 0)
-            self.set_key(ctrl, 'rotateY', three_quarter, -a)
-            self.set_key(ctrl, 'rotateY', end, 0)
+            self.set_key(ctrl, 'rotateX', start, 0)
+            self.set_key(ctrl, 'rotateX', quarter, a)
+            self.set_key(ctrl, 'rotateX', mid, 0)
+            self.set_key(ctrl, 'rotateX', three_quarter, -a)
+            self.set_key(ctrl, 'rotateX', end, 0)
 
     def generate(self):
         self.clear_keys(); self.compute_frames()
@@ -183,52 +183,52 @@ class SideStepGenerator(AnimGeneratorBase):
         cmds.setParent('..'); cmds.setParent('..')
 
         cmds.frameLayout(label="Step Settings", collapsable=True, marginWidth=10)
-        self.two_col_row("Step Width (X):", lambda: setattr(self, 'step_width_field', cmds.floatField(value=self.step_width)),
-                         "Step Height (Y):", lambda: setattr(self, 'step_height_field', cmds.floatField(value=self.step_height)))
+        self.two_col_row("Step Width (X):", lambda: setattr(self, 'step_width_field', cmds.floatField(value=self.step_width, bgc=self.COLOR_X)),
+                         "Step Height (Y):", lambda: setattr(self, 'step_height_field', cmds.floatField(value=self.step_height, bgc=self.COLOR_Y)))
         cmds.setParent('..')
 
         cmds.frameLayout(label="Root Settings", collapsable=True, marginWidth=10)
-        self.two_col_row("Root Tilt (rotateZ):", lambda: setattr(self, 'root_tilt_field', cmds.floatField(value=self.root_tilt)),
-                         "Root Bounce (translateY):", lambda: setattr(self, 'root_bounce_field', cmds.floatField(value=self.root_bounce)))
+        self.two_col_row("Root Tilt (rotateZ):", lambda: setattr(self, 'root_tilt_field', cmds.floatField(value=self.root_tilt, bgc=self.COLOR_Z)),
+                         "Root Bounce (translateY):", lambda: setattr(self, 'root_bounce_field', cmds.floatField(value=self.root_bounce, bgc=self.COLOR_Y)))
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(180, 100))
-        cmds.text(label="Root Offset (translateY):"); self.root_offset_y_field = cmds.floatField(value=self.root_offset_y)
+        cmds.text(label="Root Offset (translateY):"); self.root_offset_y_field = cmds.floatField(value=self.root_offset_y, bgc=self.COLOR_Y)
         cmds.setParent('..'); cmds.setParent('..')
 
         cmds.frameLayout(label="Arm / Scapula Animation", collapsable=True, marginWidth=10)
-        self.two_col_row("Scapula Swing (rotateY):", lambda: setattr(self, 'scapula_swing_field', cmds.floatField(value=self.scapula_swing)),
-                         "Shoulder Swing (rotateZ):", lambda: setattr(self, 'shoulder_swing_field', cmds.floatField(value=self.shoulder_swing)))
+        self.two_col_row("Scapula Swing (rotateZ):", lambda: setattr(self, 'scapula_swing_field', cmds.floatField(value=self.scapula_swing, bgc=self.COLOR_Z)),
+                         "Shoulder Swing (rotateY):", lambda: setattr(self, 'shoulder_swing_field', cmds.floatField(value=self.shoulder_swing, bgc=self.COLOR_Y)))
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(180, 100))
-        cmds.text(label="Elbow Bend (rotateZ):"); self.elbow_swing_field = cmds.floatField(value=self.elbow_swing)
+        cmds.text(label="Elbow Bend (rotateY):"); self.elbow_swing_field = cmds.floatField(value=self.elbow_swing, bgc=self.COLOR_Y)
         cmds.setParent('..'); cmds.setParent('..')
 
         cmds.frameLayout(label="SideWhip (Torso)", collapsable=True, marginWidth=10)
-        self.two_col_row("Hip Sway (rotateY):", lambda: setattr(self, 'hip_sway_field', cmds.floatField(value=self.hip_sway)),
-                         "Spine Sway (rotateY):", lambda: setattr(self, 'spine_sway_field', cmds.floatField(value=self.spine_sway)))
-        self.two_col_row("Chest Sway (rotateY):", lambda: setattr(self, 'chest_sway_field', cmds.floatField(value=self.chest_sway)),
-                         "Neck Sway (rotateY):", lambda: setattr(self, 'neck_sway_field', cmds.floatField(value=self.neck_sway)))
+        self.two_col_row("Hip Sway (rotateX):", lambda: setattr(self, 'hip_sway_field', cmds.floatField(value=self.hip_sway, bgc=self.COLOR_X)),
+                         "Spine Sway (rotateX):", lambda: setattr(self, 'spine_sway_field', cmds.floatField(value=self.spine_sway, bgc=self.COLOR_X)))
+        self.two_col_row("Chest Sway (rotateX):", lambda: setattr(self, 'chest_sway_field', cmds.floatField(value=self.chest_sway, bgc=self.COLOR_X)),
+                         "Neck Sway (rotateX):", lambda: setattr(self, 'neck_sway_field', cmds.floatField(value=self.neck_sway, bgc=self.COLOR_X)))
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(180, 100))
-        cmds.text(label="Head Sway (rotateY):"); self.head_sway_field = cmds.floatField(value=self.head_sway)
+        cmds.text(label="Head Sway (rotateX):"); self.head_sway_field = cmds.floatField(value=self.head_sway, bgc=self.COLOR_X)
         cmds.setParent('..'); cmds.setParent('..')
 
-        cmds.frameLayout(label="Arms Down (rotateY, both arms)", collapsable=True, marginWidth=10)
-        self.two_col_row("Scapula Down (Y):", lambda: setattr(self, 'down_scapula_y_field', cmds.floatField(value=self.down_scapula_y)),
-                         "Shoulder Down (Y):", lambda: setattr(self, 'down_shoulder_y_field', cmds.floatField(value=self.down_shoulder_y)))
-        self.two_col_row("Elbow Down (Y):", lambda: setattr(self, 'down_elbow_y_field', cmds.floatField(value=self.down_elbow_y)),
-                         "Wrist Down (Y):", lambda: setattr(self, 'down_wrist_y_field', cmds.floatField(value=self.down_wrist_y)))
+        cmds.frameLayout(label="Arms Down (rotateZ, both arms)", collapsable=True, marginWidth=10)
+        self.two_col_row("Scapula Down (Z):", lambda: setattr(self, 'down_scapula_y_field', cmds.floatField(value=self.down_scapula_y, bgc=self.COLOR_Z)),
+                         "Shoulder Down (Z):", lambda: setattr(self, 'down_shoulder_y_field', cmds.floatField(value=self.down_shoulder_y, bgc=self.COLOR_Z)))
+        self.two_col_row("Elbow Down (Z):", lambda: setattr(self, 'down_elbow_y_field', cmds.floatField(value=self.down_elbow_y, bgc=self.COLOR_Z)),
+                         "Wrist Down (Z):", lambda: setattr(self, 'down_wrist_y_field', cmds.floatField(value=self.down_wrist_y, bgc=self.COLOR_Z)))
         cmds.setParent('..')
 
-        cmds.frameLayout(label="Arms Bent (rotateZ, both arms)", collapsable=True, marginWidth=10)
-        self.two_col_row("Scapula Bent (Z):", lambda: setattr(self, 'bent_scapula_z_field', cmds.floatField(value=self.bent_scapula_z)),
-                         "Shoulder Bent (Z):", lambda: setattr(self, 'bent_shoulder_z_field', cmds.floatField(value=self.bent_shoulder_z)))
-        self.two_col_row("Elbow Bent (Z):", lambda: setattr(self, 'bent_elbow_z_field', cmds.floatField(value=self.bent_elbow_z)),
-                         "Wrist Bent (Z):", lambda: setattr(self, 'bent_wrist_z_field', cmds.floatField(value=self.bent_wrist_z)))
+        cmds.frameLayout(label="Arms Bent (rotateY, both arms)", collapsable=True, marginWidth=10)
+        self.two_col_row("Scapula Bent (Y):", lambda: setattr(self, 'bent_scapula_z_field', cmds.floatField(value=self.bent_scapula_z, bgc=self.COLOR_Y)),
+                         "Shoulder Bent (Y):", lambda: setattr(self, 'bent_shoulder_z_field', cmds.floatField(value=self.bent_shoulder_z, bgc=self.COLOR_Y)))
+        self.two_col_row("Elbow Bent (Y):", lambda: setattr(self, 'bent_elbow_z_field', cmds.floatField(value=self.bent_elbow_z, bgc=self.COLOR_Y)),
+                         "Wrist Bent (Y):", lambda: setattr(self, 'bent_wrist_z_field', cmds.floatField(value=self.bent_wrist_z, bgc=self.COLOR_Y)))
         cmds.setParent('..')
 
         cmds.frameLayout(label="Arms Twist (rotateX, both arms)", collapsable=True, marginWidth=10)
-        self.two_col_row("Scapula Twist (X):", lambda: setattr(self, 'twist_scapula_x_field', cmds.floatField(value=self.twist_scapula_x)),
-                         "Shoulder Twist (X):", lambda: setattr(self, 'twist_shoulder_x_field', cmds.floatField(value=self.twist_shoulder_x)))
-        self.two_col_row("Elbow Twist (X):", lambda: setattr(self, 'twist_elbow_x_field', cmds.floatField(value=self.twist_elbow_x)),
-                         "Wrist Twist (X):", lambda: setattr(self, 'twist_wrist_x_field', cmds.floatField(value=self.twist_wrist_x)))
+        self.two_col_row("Scapula Twist (X):", lambda: setattr(self, 'twist_scapula_x_field', cmds.floatField(value=self.twist_scapula_x, bgc=self.COLOR_X)),
+                         "Shoulder Twist (X):", lambda: setattr(self, 'twist_shoulder_x_field', cmds.floatField(value=self.twist_shoulder_x, bgc=self.COLOR_X)))
+        self.two_col_row("Elbow Twist (X):", lambda: setattr(self, 'twist_elbow_x_field', cmds.floatField(value=self.twist_elbow_x, bgc=self.COLOR_X)),
+                         "Wrist Twist (X):", lambda: setattr(self, 'twist_wrist_x_field', cmds.floatField(value=self.twist_wrist_x, bgc=self.COLOR_X)))
         cmds.setParent('..')
 
         cmds.separator(height=10, style='in')

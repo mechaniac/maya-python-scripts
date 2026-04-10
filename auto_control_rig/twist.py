@@ -2,21 +2,17 @@ import maya.cmds as cmds
 
 
 def setup_twist_joints(builder):
-    root_ctrl = "RootX_M"
-    if not cmds.objExists(root_ctrl):
-        return
-
     twist_segs = [
-        ("shoulder", "elbow", "UpperArm"),
-        ("elbow", "wrist", "LowerArm"),
-        ("hip", "knee", "UpperLeg"),
-        ("knee", "foot", "LowerLeg"),
+        ("shoulder", "elbow", "UpperArm", "Arm"),
+        ("elbow", "wrist", "LowerArm", "Arm"),
+        ("hip", "knee", "UpperLeg", "Leg"),
+        ("knee", "foot", "LowerLeg", "Leg"),
     ]
 
-    has_sep = False
+    sep_added = set()
     for s in ("l", "r"):
         S = s.upper()
-        for parent_base, child_base, label in twist_segs:
+        for parent_base, child_base, label, limb in twist_segs:
             parent_slot = parent_base + "_" + s
             child_slot = child_base + "_" + s
             skin_par = builder.m.get(parent_slot, "")
@@ -31,11 +27,20 @@ def setup_twist_joints(builder):
             if not twist_jnts:
                 continue
 
-            if not has_sep:
-                cmds.addAttr(root_ctrl, ln="__twist__", nn="--- Twist ---",
+            # Put twist attrs on the limb's FKIK controller, fall back to RootX_M
+            fkik_ctrl = "FKIK{}_{}".format(limb, S)
+            if cmds.objExists(fkik_ctrl):
+                host = fkik_ctrl
+            else:
+                host = "RootX_M"
+                if not cmds.objExists(host):
+                    continue
+
+            if host not in sep_added:
+                cmds.addAttr(host, ln="__twist__", nn="--- Twist ---",
                              at="enum", en=" ", k=1)
-                cmds.setAttr(root_ctrl + ".__twist__", l=1)
-                has_sep = True
+                cmds.setAttr(host + ".__twist__", l=1)
+                sep_added.add(host)
 
             is_upper = (parent_base in ("shoulder", "hip"))
 
@@ -70,7 +75,7 @@ def setup_twist_joints(builder):
                 }
 
                 attr_name = "twist{}_{}{}".format(label, S, i)
-                cmds.addAttr(root_ctrl, ln=attr_name, at="float",
+                cmds.addAttr(host, ln=attr_name, at="float",
                              min=0, max=1, dv=frac, k=1)
 
                 md = cmds.createNode("multiplyDivide",
@@ -81,12 +86,12 @@ def setup_twist_joints(builder):
                     pma = cmds.createNode("plusMinusAverage",
                                           n="twistSub_{}_{}{}".format(label, S, i))
                     cmds.setAttr(pma + ".operation", 2)
-                    cmds.connectAttr(root_ctrl + "." + attr_name, pma + ".input1D[0]")
+                    cmds.connectAttr(host + "." + attr_name, pma + ".input1D[0]")
                     cmds.setAttr(pma + ".input1D[1]", 1.0)
                     cmds.connectAttr(pma + ".output1D", md + ".input2X")
                     builder.twist_nodes.append(pma)
                 else:
-                    cmds.connectAttr(root_ctrl + "." + attr_name, md + ".input2X")
+                    cmds.connectAttr(host + "." + attr_name, md + ".input2X")
 
                 add = cmds.createNode("plusMinusAverage",
                                       n="twistAdd_{}_{}{}".format(label, S, i))

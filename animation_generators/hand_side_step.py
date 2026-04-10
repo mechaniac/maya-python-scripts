@@ -27,8 +27,8 @@ class HandSideStepGenerator(AnimGeneratorBase):
         self.fk_toe_r = "FKToe_R"; self.fk_toe_l = "FKToe_L"
 
         self.leg_fkik_blend = 10.0
-        self.fk_hip_rz = 0.0; self.fk_knee_rz = 0.0
-        self.fk_foot_rz = 0.0; self.fk_toe_rz = 0.0
+        self.fk_hip_ry = 0.0; self.fk_knee_ry = 0.0
+        self.fk_foot_ry = 0.0; self.fk_toe_ry = 0.0
 
         self.step_width = 5.0; self.step_height = 2.0
         self.ground_height = 0.0; self.step_narrowness = 0.0
@@ -36,7 +36,7 @@ class HandSideStepGenerator(AnimGeneratorBase):
         self.scapula_swing = 0.0
         self.hip_sway = 3.0; self.spine_sway = 2.0; self.chest_sway = 1.5
         self.neck_sway = 1.0; self.head_sway = 0.5
-        self.down_scapula_y = 0.0; self.bent_scapula_z = 0.0; self.twist_scapula_x = 0.0
+        self.down_scapula_z = 0.0; self.bent_scapula_y = 0.0; self.twist_scapula_x = 0.0
 
     def _dir(self):
         return -1 if self.mirror else 1
@@ -64,14 +64,14 @@ class HandSideStepGenerator(AnimGeneratorBase):
     def set_leg_fk_pose_keys(self):
         start, end = self.frames[0], self.frames[4]
         pairs = [
-            (self.fk_hip_l, self.fk_hip_r, self.fk_hip_rz),
-            (self.fk_knee_l, self.fk_knee_r, self.fk_knee_rz),
-            (self.fk_foot_l, self.fk_foot_r, self.fk_foot_rz),
-            (self.fk_toe_l, self.fk_toe_r, self.fk_toe_rz),
+            (self.fk_hip_l, self.fk_hip_r, self.fk_hip_ry),
+            (self.fk_knee_l, self.fk_knee_r, self.fk_knee_ry),
+            (self.fk_foot_l, self.fk_foot_r, self.fk_foot_ry),
+            (self.fk_toe_l, self.fk_toe_r, self.fk_toe_ry),
         ]
         for L, R, v in pairs:
-            self.set_key(L, 'rotateZ', start, v); self.set_key(R, 'rotateZ', start, v)
-            self.set_key(L, 'rotateZ', end, v); self.set_key(R, 'rotateZ', end, v)
+            self.set_key(L, 'rotateY', start, v); self.set_key(R, 'rotateY', start, v)
+            self.set_key(L, 'rotateY', end, v); self.set_key(R, 'rotateY', end, v)
 
     def set_stretch_keys(self):
         if not self.stretch_arms:
@@ -143,29 +143,37 @@ class HandSideStepGenerator(AnimGeneratorBase):
     def set_scapula_keys(self):
         start, mid, end = self.frames[0], self.frames[2], self.frames[4]
         d = self._dir(); s = self.scapula_swing * d
-        addY = abs(float(self.down_scapula_y))
-        addZ = abs(float(self.bent_scapula_z))
+        addZ = abs(float(self.down_scapula_z))
+        addY = abs(float(self.bent_scapula_y))
         addX = abs(float(self.twist_scapula_x))
         for node, sign in [(self.scapula_l, +1), (self.scapula_r, -1)]:
-            self.set_key(node, 'rotateY', start, sign * s + addY)
-            self.set_key(node, 'rotateY', mid, -sign * s + addY)
-            self.set_key(node, 'rotateY', end, sign * s + addY)
+            self.set_key(node, 'rotateZ', start, sign * s + addZ)
+            self.set_key(node, 'rotateZ', mid, -sign * s + addZ)
+            self.set_key(node, 'rotateZ', end, sign * s + addZ)
             for t in (start, mid, end):
-                self.set_key(node, 'rotateZ', t, addZ)
+                self.set_key(node, 'rotateY', t, addY)
                 self.set_key(node, 'rotateX', t, addX)
 
     def set_sidewhip_keys(self):
         start, quarter, mid, three_quarter, end = self.frames
         d = self._dir()
-        for ctrl, amount in [(self.hip, self.hip_sway), (self.spine, self.spine_sway),
+        # HipSwinger stays world-aligned: rotateY unchanged
+        a = d * self.hip_sway
+        self.set_key(self.hip, 'rotateY', start, 0)
+        self.set_key(self.hip, 'rotateY', quarter, a)
+        self.set_key(self.hip, 'rotateY', mid, 0)
+        self.set_key(self.hip, 'rotateY', three_quarter, -a)
+        self.set_key(self.hip, 'rotateY', end, 0)
+        # Spine/chest/neck/head FK: rotateY -> rotateX
+        for ctrl, amount in [(self.spine, self.spine_sway),
                              (self.chest, self.chest_sway), (self.neck, self.neck_sway),
                              (self.head, self.head_sway)]:
             a = d * amount
-            self.set_key(ctrl, 'rotateY', start, 0)
-            self.set_key(ctrl, 'rotateY', quarter, a)
-            self.set_key(ctrl, 'rotateY', mid, 0)
-            self.set_key(ctrl, 'rotateY', three_quarter, -a)
-            self.set_key(ctrl, 'rotateY', end, 0)
+            self.set_key(ctrl, 'rotateX', start, 0)
+            self.set_key(ctrl, 'rotateX', quarter, a)
+            self.set_key(ctrl, 'rotateX', mid, 0)
+            self.set_key(ctrl, 'rotateX', three_quarter, -a)
+            self.set_key(ctrl, 'rotateX', end, 0)
 
     def generate(self):
         self.clear_keys(); self.compute_frames()
@@ -180,9 +188,9 @@ class HandSideStepGenerator(AnimGeneratorBase):
             'mirror', 'stretch_arms', 'step_width', 'step_height',
             'step_narrowness', 'ground_height', 'root_tilt', 'root_bounce',
             'root_offset_y', 'scapula_swing', 'hip_sway', 'spine_sway',
-            'chest_sway', 'neck_sway', 'head_sway', 'down_scapula_y',
-            'bent_scapula_z', 'twist_scapula_x', 'leg_fkik_blend',
-            'fk_hip_rz', 'fk_knee_rz', 'fk_foot_rz', 'fk_toe_rz',
+            'chest_sway', 'neck_sway', 'head_sway', 'down_scapula_z',
+            'bent_scapula_y', 'twist_scapula_x', 'leg_fkik_blend',
+            'fk_hip_ry', 'fk_knee_ry', 'fk_foot_ry', 'fk_toe_ry',
         ]}
 
     def print_settings(self, *args):
@@ -204,8 +212,8 @@ class HandSideStepGenerator(AnimGeneratorBase):
             'step_width', 'step_height', 'step_narrowness', 'ground_height',
             'root_tilt', 'root_bounce', 'root_offset_y', 'scapula_swing',
             'hip_sway', 'spine_sway', 'chest_sway', 'neck_sway', 'head_sway',
-            'down_scapula_y', 'bent_scapula_z', 'twist_scapula_x',
-            'leg_fkik_blend', 'fk_hip_rz', 'fk_knee_rz', 'fk_foot_rz', 'fk_toe_rz',
+            'down_scapula_z', 'bent_scapula_y', 'twist_scapula_x',
+            'leg_fkik_blend', 'fk_hip_ry', 'fk_knee_ry', 'fk_foot_ry', 'fk_toe_ry',
         ]
         for k in float_keys:
             if k in settings:
@@ -224,8 +232,8 @@ class HandSideStepGenerator(AnimGeneratorBase):
         for attr in ['step_width', 'step_height', 'step_narrowness', 'ground_height',
                       'root_tilt', 'root_bounce', 'root_offset_y', 'scapula_swing',
                       'hip_sway', 'spine_sway', 'chest_sway', 'neck_sway', 'head_sway',
-                      'down_scapula_y', 'bent_scapula_z', 'twist_scapula_x',
-                      'fk_hip_rz', 'fk_knee_rz', 'fk_foot_rz', 'fk_toe_rz']:
+                      'down_scapula_z', 'bent_scapula_y', 'twist_scapula_x',
+                      'fk_hip_ry', 'fk_knee_ry', 'fk_foot_ry', 'fk_toe_ry']:
             setattr(self, attr, cmds.floatField(getattr(self, attr + '_field'), q=True, v=True))
         self.leg_fkik_blend = cmds.floatSlider(self.leg_fkik_blend_slider, q=True, value=True)
         self.generate()
@@ -252,46 +260,46 @@ class HandSideStepGenerator(AnimGeneratorBase):
         # Step Settings (Hands)
         cmds.frameLayout(label="Step Settings (Hands)", collapsable=True, marginWidth=10)
         self.two_col_row(
-            "Step Width (X):", lambda: setattr(self, 'step_width_field', cmds.floatField(value=self.step_width)),
-            "Step Height (Y):", lambda: setattr(self, 'step_height_field', cmds.floatField(value=self.step_height)))
+            "Step Width (X):", lambda: setattr(self, 'step_width_field', cmds.floatField(value=self.step_width, bgc=self.COLOR_X)),
+            "Step Height (Y):", lambda: setattr(self, 'step_height_field', cmds.floatField(value=self.step_height, bgc=self.COLOR_Y)))
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(180, 100))
-        cmds.text(label="Ground Height (Y):"); self.ground_height_field = cmds.floatField(value=self.ground_height)
+        cmds.text(label="Ground Height (Y):"); self.ground_height_field = cmds.floatField(value=self.ground_height, bgc=self.COLOR_Y)
         cmds.setParent('..')
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(180, 100))
-        cmds.text(label="Step Narrowness (X):"); self.step_narrowness_field = cmds.floatField(value=self.step_narrowness)
+        cmds.text(label="Step Narrowness (X):"); self.step_narrowness_field = cmds.floatField(value=self.step_narrowness, bgc=self.COLOR_X)
         cmds.setParent('..'); cmds.setParent('..')
 
         # Root
         cmds.frameLayout(label="Root Settings", collapsable=True, marginWidth=10)
         self.two_col_row(
-            "Root Tilt (rotateZ):", lambda: setattr(self, 'root_tilt_field', cmds.floatField(value=self.root_tilt)),
-            "Root Bounce (translateY):", lambda: setattr(self, 'root_bounce_field', cmds.floatField(value=self.root_bounce)))
+            "Root Tilt (rotateZ):", lambda: setattr(self, 'root_tilt_field', cmds.floatField(value=self.root_tilt, bgc=self.COLOR_Z)),
+            "Root Bounce (translateY):", lambda: setattr(self, 'root_bounce_field', cmds.floatField(value=self.root_bounce, bgc=self.COLOR_Y)))
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(200, 100))
-        cmds.text(label="Root Offset (translateY, signed):"); self.root_offset_y_field = cmds.floatField(value=self.root_offset_y)
+        cmds.text(label="Root Offset (translateY, signed):"); self.root_offset_y_field = cmds.floatField(value=self.root_offset_y, bgc=self.COLOR_Y)
         cmds.setParent('..'); cmds.setParent('..')
 
         # Scapula
         cmds.frameLayout(label="Scapula Animation", collapsable=True, marginWidth=10)
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(180, 100))
-        cmds.text(label="Scapula Swing (rotateY):"); self.scapula_swing_field = cmds.floatField(value=self.scapula_swing)
+        cmds.text(label="Scapula Swing (rotateZ):"); self.scapula_swing_field = cmds.floatField(value=self.scapula_swing, bgc=self.COLOR_Z)
         cmds.setParent('..')
         self.two_col_row(
-            "Scapula Down (Y, add |v|):", lambda: setattr(self, 'down_scapula_y_field', cmds.floatField(value=self.down_scapula_y)),
-            "Scapula Bent (Z, add |v|):", lambda: setattr(self, 'bent_scapula_z_field', cmds.floatField(value=self.bent_scapula_z)))
+            "Scapula Down (Z, add |v|):", lambda: setattr(self, 'down_scapula_z_field', cmds.floatField(value=self.down_scapula_z, bgc=self.COLOR_Z)),
+            "Scapula Bent (Y, add |v|):", lambda: setattr(self, 'bent_scapula_y_field', cmds.floatField(value=self.bent_scapula_y, bgc=self.COLOR_Y)))
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(180, 100))
-        cmds.text(label="Scapula Twist (X, add |v|):"); self.twist_scapula_x_field = cmds.floatField(value=self.twist_scapula_x)
+        cmds.text(label="Scapula Twist (X, add |v|):"); self.twist_scapula_x_field = cmds.floatField(value=self.twist_scapula_x, bgc=self.COLOR_X)
         cmds.setParent('..'); cmds.setParent('..')
 
         # SideWhip
         cmds.frameLayout(label="SideWhip (Torso)", collapsable=True, marginWidth=10)
         self.two_col_row(
-            "Hip Sway (rotateY):", lambda: setattr(self, 'hip_sway_field', cmds.floatField(value=self.hip_sway)),
-            "Spine Sway (rotateY):", lambda: setattr(self, 'spine_sway_field', cmds.floatField(value=self.spine_sway)))
+            "Hip Sway (rotateY):", lambda: setattr(self, 'hip_sway_field', cmds.floatField(value=self.hip_sway, bgc=self.COLOR_Y)),
+            "Spine Sway (rotateX):", lambda: setattr(self, 'spine_sway_field', cmds.floatField(value=self.spine_sway, bgc=self.COLOR_X)))
         self.two_col_row(
-            "Chest Sway (rotateY):", lambda: setattr(self, 'chest_sway_field', cmds.floatField(value=self.chest_sway)),
-            "Neck Sway (rotateY):", lambda: setattr(self, 'neck_sway_field', cmds.floatField(value=self.neck_sway)))
+            "Chest Sway (rotateX):", lambda: setattr(self, 'chest_sway_field', cmds.floatField(value=self.chest_sway, bgc=self.COLOR_X)),
+            "Neck Sway (rotateX):", lambda: setattr(self, 'neck_sway_field', cmds.floatField(value=self.neck_sway, bgc=self.COLOR_X)))
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(180, 100))
-        cmds.text(label="Head Sway (rotateY):"); self.head_sway_field = cmds.floatField(value=self.head_sway)
+        cmds.text(label="Head Sway (rotateX):"); self.head_sway_field = cmds.floatField(value=self.head_sway, bgc=self.COLOR_X)
         cmds.setParent('..'); cmds.setParent('..')
 
         # Legs FK
@@ -301,11 +309,11 @@ class HandSideStepGenerator(AnimGeneratorBase):
         self.leg_fkik_blend_slider = cmds.floatSlider(min=0, max=10, value=self.leg_fkik_blend, step=0.1)
         cmds.setParent('..')
         self.two_col_row(
-            "Hip rotateZ:", lambda: setattr(self, 'fk_hip_rz_field', cmds.floatField(value=self.fk_hip_rz)),
-            "Knee rotateZ:", lambda: setattr(self, 'fk_knee_rz_field', cmds.floatField(value=self.fk_knee_rz)))
+            "Hip rotateY:", lambda: setattr(self, 'fk_hip_ry_field', cmds.floatField(value=self.fk_hip_ry, bgc=self.COLOR_Y)),
+            "Knee rotateY:", lambda: setattr(self, 'fk_knee_ry_field', cmds.floatField(value=self.fk_knee_ry, bgc=self.COLOR_Y)))
         self.two_col_row(
-            "Foot rotateZ:", lambda: setattr(self, 'fk_foot_rz_field', cmds.floatField(value=self.fk_foot_rz)),
-            "Toe rotateZ:", lambda: setattr(self, 'fk_toe_rz_field', cmds.floatField(value=self.fk_toe_rz)))
+            "Foot rotateY:", lambda: setattr(self, 'fk_foot_ry_field', cmds.floatField(value=self.fk_foot_ry, bgc=self.COLOR_Y)),
+            "Toe rotateY:", lambda: setattr(self, 'fk_toe_ry_field', cmds.floatField(value=self.fk_toe_ry, bgc=self.COLOR_Y)))
         cmds.setParent('..')
 
         # Buttons

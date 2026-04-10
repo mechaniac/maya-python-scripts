@@ -35,14 +35,49 @@ def orient_ik_chain(start, mid, end, bend_dir):
     cmds.xform(end, ws=1, t=end_pos)
 
 
-def _drv(builder, slot, parent, copy_orient=False):
+def _copy_skin_orient(builder, dj, slot):
+    """Copy the world rotation of the skin joint onto the driver joint
+    and bake it into jointOrient."""
+    skin = builder.m.get(slot, "")
+    if skin and cmds.objExists(skin):
+        cmds.xform(dj, ws=1, ro=cmds.xform(skin, q=1, ws=1, ro=1))
+        cmds.makeIdentity(dj, a=1, r=1)
+
+
+def set_preferred_angle(start, mid, end, bend_dir):
+    """Set IK preferred angle by finding which local-axis rotation
+    displaces *end* toward *bend_dir*.  Works with any joint orient."""
+    end_rest = pos(end)
+    saved_ro = cmds.getAttr(mid + ".rotate")[0]
+
+    best_axis = 0
+    best_score = 0
+    for ax in range(3):
+        ro = [0, 0, 0]
+        ro[ax] = 5
+        cmds.xform(mid, r=1, ro=ro, os=1)
+        end_p = pos(end)
+        cmds.setAttr(mid + ".rotate", *saved_ro)
+
+        delta = [end_p[i] - end_rest[i] for i in range(3)]
+        score = sum(delta[i] * bend_dir[i] for i in range(3))
+        if abs(score) > abs(best_score):
+            best_score = score
+            best_axis = ax
+
+    ro = [0, 0, 0]
+    ro[best_axis] = 2 if best_score > 0 else -2
+    cmds.xform(mid, r=1, ro=ro, os=1)
+    cmds.joint(mid, e=1, spa=1)
+    cmds.xform(end, ws=1, t=end_rest)
+
+
+def _drv(builder, slot, parent):
     skin = builder.m.get(slot, "")
     if not skin or not cmds.objExists(skin):
         return
     dj = make_driver_joint(skin, "drv_" + slot, parent)
-    if copy_orient:
-        cmds.xform(dj, ws=1, ro=cmds.xform(skin, q=1, ws=1, ro=1))
-        cmds.makeIdentity(dj, a=1, r=1)
+    _copy_skin_orient(builder, dj, slot)
     builder.dj[slot] = dj
 
 
@@ -56,11 +91,7 @@ def _driver_arm(builder, s, S):
 
     arm = [builder.dj[k] for k in ["shoulder_" + s, "elbow_" + s, "wrist_" + s] if k in builder.dj]
     if len(arm) == 3:
-        orient_ik_chain(arm[0], arm[1], arm[2], bend_dir=(0, 0, -1))
-
-    sc = builder.dj.get("scapula_" + s)
-    if sc and arm:
-        cmds.joint(sc, e=1, oj="xyz", sao="yup", zso=1)
+        set_preferred_angle(arm[0], arm[1], arm[2], bend_dir=(0, 0, -1))
 
 
 def _driver_leg(builder, s, S):
@@ -71,27 +102,20 @@ def _driver_leg(builder, s, S):
 
     leg = [builder.dj[k] for k in ["hip_" + s, "knee_" + s, "foot_" + s] if k in builder.dj]
     if len(leg) == 3:
-        orient_ik_chain(leg[0], leg[1], leg[2], bend_dir=(0, 0, 1))
+        set_preferred_angle(leg[0], leg[1], leg[2], bend_dir=(0, 0, 1))
 
     foot_drv = builder.dj.get("foot_" + s, root)
     _drv(builder, "toe_" + s, foot_drv)
-    toe = builder.dj.get("toe_" + s)
-    if toe and len(leg) == 3:
-        fo = cmds.getAttr(leg[2] + ".jointOrient")[0]
-        cmds.setAttr(toe + ".jointOrient", *fo)
 
 
 def build_driver_skeleton(builder):
-    _drv(builder, "root", builder.drv_grp, copy_orient=True)
+    _drv(builder, "root", builder.drv_grp)
 
     spine = ["spine", "chest", "neck", "head"]
     par = builder.dj.get("root", builder.drv_grp)
     for sl in spine:
         _drv(builder, sl, par)
         par = builder.dj.get(sl, par)
-    chain = [builder.dj[s] for s in spine if s in builder.dj]
-    if chain:
-        orient_chain(chain)
 
     for s in ("l", "r"):
         S = s.upper()

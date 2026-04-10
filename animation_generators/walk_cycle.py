@@ -160,24 +160,24 @@ class WalkCycleTool(AnimGeneratorBase):
         fifths = [start, q, mid, tq, end]
         for key, data in self.upper_body_params.items():
             ctrl = data['name']
-            self.apply_keyframe_pattern((ctrl, 'rotateX'), [data['rx'], -data['rx'], data['rx']])
-            self.apply_keyframe_pattern((ctrl, 'rotateY'), [data['ry'], -data['ry'], data['ry']])
+            self.apply_keyframe_pattern((ctrl, 'rotateZ'), [data['rx'], -data['rx'], data['rx']])
+            self.apply_keyframe_pattern((ctrl, 'rotateX'), [data['ry'], -data['ry'], data['ry']])
             rz = data['rz']; offset = data.get('rz_offset', 0)
             rz_vals = [rz + offset, -rz + offset, rz + offset, -rz + offset, rz + offset]
             for t, v in zip(fifths, rz_vals):
-                self.set_key(ctrl, 'rotateZ', t, v)
+                self.set_key(ctrl, 'rotateY', t, v)
 
     def set_right_arm_keys(self):
         start, mid, end = [f[0] for f in self.frames_stride_halved]
         static_ry = self.arm_params['shoulder_down_y']
-        cmds.setAttr(f"{self.arm_ctrls['shoulder']}.rotateY", static_ry)
-        self.set_key(self.arm_ctrls['shoulder'], 'rotateY', start, static_ry)
-        self.set_key(self.arm_ctrls['shoulder'], 'rotateY', end, static_ry)
+        cmds.setAttr(f"{self.arm_ctrls['shoulder']}.rotateZ", static_ry)
+        self.set_key(self.arm_ctrls['shoulder'], 'rotateZ', start, static_ry)
+        self.set_key(self.arm_ctrls['shoulder'], 'rotateZ', end, static_ry)
 
         sc = self.arm_ctrls['scapula']
         sd = self.arm_params['scapula_down']
-        cmds.setAttr(f"{sc}.rotateY", sd)
-        self.set_key(sc, 'rotateY', start, sd); self.set_key(sc, 'rotateY', end, sd)
+        cmds.setAttr(f"{sc}.rotateZ", sd)
+        self.set_key(sc, 'rotateZ', start, sd); self.set_key(sc, 'rotateZ', end, sd)
 
         x_vals = [self.arm_params['shoulder_x'], -self.arm_params['shoulder_x'], self.arm_params['shoulder_x']]
         self.apply_keyframe_pattern((self.arm_ctrls['shoulder'], 'rotateX'), x_vals)
@@ -186,19 +186,19 @@ class WalkCycleTool(AnimGeneratorBase):
                              ['scapula', 'shoulder', 'elbow', 'wrist']):
             val = self.arm_params[key]
             values = [0, val, 0] if key == 'elbow_z' else [val, -val, val]
-            self.apply_keyframe_pattern((self.arm_ctrls[ctrl], 'rotateZ'), values)
+            self.apply_keyframe_pattern((self.arm_ctrls[ctrl], 'rotateY'), values)
 
     def set_left_arm_keys(self):
         start, mid, end = [f[0] for f in self.frames_stride_halved]
         static_ry = self.arm_params['shoulder_down_y']
         l_sh = self.arm_ctrls['shoulder'].replace('_R', '_L')
-        cmds.setAttr(f"{l_sh}.rotateY", static_ry)
-        self.set_key(l_sh, 'rotateY', start, static_ry); self.set_key(l_sh, 'rotateY', end, static_ry)
+        cmds.setAttr(f"{l_sh}.rotateZ", static_ry)
+        self.set_key(l_sh, 'rotateZ', start, static_ry); self.set_key(l_sh, 'rotateZ', end, static_ry)
 
         l_sc = self.arm_ctrls['scapula'].replace('_R', '_L')
         sd = self.arm_params['scapula_down']
-        cmds.setAttr(f"{l_sc}.rotateY", sd)
-        self.set_key(l_sc, 'rotateY', start, sd); self.set_key(l_sc, 'rotateY', end, sd)
+        cmds.setAttr(f"{l_sc}.rotateZ", sd)
+        self.set_key(l_sc, 'rotateZ', start, sd); self.set_key(l_sc, 'rotateZ', end, sd)
 
         x_vals = [-self.arm_params['shoulder_x'], self.arm_params['shoulder_x'], -self.arm_params['shoulder_x']]
         self.apply_keyframe_pattern((l_sh, 'rotateX'), x_vals)
@@ -208,7 +208,7 @@ class WalkCycleTool(AnimGeneratorBase):
             val = self.arm_params[key]
             l_ctrl = self.arm_ctrls[ctrl].replace('_R', '_L')
             values = [val, 0, val] if key == 'elbow_z' else [-val, val, -val]
-            self.apply_keyframe_pattern((l_ctrl, 'rotateZ'), values)
+            self.apply_keyframe_pattern((l_ctrl, 'rotateY'), values)
 
     # ---------- generate ----------
     def create_walk_cycle(self, *args):
@@ -310,27 +310,27 @@ class WalkCycleTool(AnimGeneratorBase):
         # Global Settings
         cmds.frameLayout(label="Global Settings", collapsable=True, marginWidth=10, marginHeight=5)
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 200), (2, 200)])
-        cmds.text(label="Stride Length"); self.stride_field = cmds.floatField(value=self.stride)
-        cmds.text(label="Stride Width (X)"); self.stride_width_field = cmds.floatField(value=self.stride_width)
-        cmds.text(label="Stride Height (Y)"); self.stride_height_field = cmds.floatField(value=self.stride_height)
-        cmds.text(label="Hip Swing (rotateX)"); self.swing_field = cmds.floatField(value=self.swing_extend)
-        cmds.text(label="Hip Sway (rotateY)"); self.hip_sway_field = cmds.floatField(value=self.hip_sway_lr)
-        cmds.text(label="Foot Raise (rotateX)"); self.foot_raise_field = cmds.floatField(value=self.foot_raise)
+        cmds.text(label="Stride Length"); self.stride_field = cmds.floatField(value=self.stride, bgc=self.COLOR_Z)
+        cmds.text(label="Stride Width (X)"); self.stride_width_field = cmds.floatField(value=self.stride_width, bgc=self.COLOR_X)
+        cmds.text(label="Stride Height (Y)"); self.stride_height_field = cmds.floatField(value=self.stride_height, bgc=self.COLOR_Y)
+        cmds.text(label="Hip Swing (rotateX)"); self.swing_field = cmds.floatField(value=self.swing_extend, bgc=self.COLOR_X)
+        cmds.text(label="Hip Sway (rotateY)"); self.hip_sway_field = cmds.floatField(value=self.hip_sway_lr, bgc=self.COLOR_Y)
+        cmds.text(label="Foot Raise (rotateX)"); self.foot_raise_field = cmds.floatField(value=self.foot_raise, bgc=self.COLOR_X)
         cmds.rowLayout(numberOfColumns=2)
-        cmds.text(label="Bounce Offset (Y):"); self.root_bounce_offset_field = cmds.floatField(value=self.root_bounce_offset)
+        cmds.text(label="Bounce Offset (Y):"); self.root_bounce_offset_field = cmds.floatField(value=self.root_bounce_offset, bgc=self.COLOR_Y)
         cmds.setParent('..')
         cmds.setParent('..'); cmds.setParent('..')
 
         # Root
         cmds.frameLayout(label="Root Controls (RootX_M)", collapsable=True, marginWidth=10, marginHeight=5)
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 200), (2, 200)])
-        cmds.text(label="Bounce (translateY)"); self.root_bounce_field = cmds.floatField(value=self.root_bounce)
-        cmds.text(label="Side Sway (rotateY)"); self.root_sway_field = cmds.floatField(value=self.root_sway)
-        cmds.text(label="Rock (rotateX)"); self.root_rock_field = cmds.floatField(value=self.root_rock)
-        cmds.text(label="Rock Offset (rotateX)"); self.root_rock_offset_field = cmds.floatField(value=self.root_rock_offset)
-        cmds.text(label="Twist (rotateZ)"); self.root_twist_field = cmds.floatField(value=self.root_twist)
-        cmds.text(label="LeftRight (translateX)"); self.root_leftright_field = cmds.floatField(value=self.root_leftright)
-        cmds.text(label="BackForth (translateZ)"); self.root_backforth_field = cmds.floatField(value=self.root_backforth)
+        cmds.text(label="Bounce (translateY)"); self.root_bounce_field = cmds.floatField(value=self.root_bounce, bgc=self.COLOR_Y)
+        cmds.text(label="Side Sway (rotateY)"); self.root_sway_field = cmds.floatField(value=self.root_sway, bgc=self.COLOR_Y)
+        cmds.text(label="Rock (rotateX)"); self.root_rock_field = cmds.floatField(value=self.root_rock, bgc=self.COLOR_X)
+        cmds.text(label="Rock Offset (rotateX)"); self.root_rock_offset_field = cmds.floatField(value=self.root_rock_offset, bgc=self.COLOR_X)
+        cmds.text(label="Twist (rotateZ)"); self.root_twist_field = cmds.floatField(value=self.root_twist, bgc=self.COLOR_Z)
+        cmds.text(label="LeftRight (translateX)"); self.root_leftright_field = cmds.floatField(value=self.root_leftright, bgc=self.COLOR_X)
+        cmds.text(label="BackForth (translateZ)"); self.root_backforth_field = cmds.floatField(value=self.root_backforth, bgc=self.COLOR_Z)
         cmds.setParent('..'); cmds.setParent('..')
 
         # Leg Stretch
@@ -347,30 +347,30 @@ class WalkCycleTool(AnimGeneratorBase):
         for key in self.upper_body_params:
             cmds.text(label=key.capitalize(), align='left')
             cmds.rowColumnLayout(numberOfColumns=6, columnWidth=[(1, 60), (2, 90), (3, 60), (4, 90), (5, 60), (6, 90)])
-            cmds.text(label="Rotate X:")
-            self.upper_body_params[key]['rx_field'] = cmds.floatField(value=self.upper_body_params[key]['rx'])
-            cmds.text(label="Rotate Y:")
-            self.upper_body_params[key]['ry_field'] = cmds.floatField(value=self.upper_body_params[key]['ry'])
             cmds.text(label="Rotate Z:")
-            self.upper_body_params[key]['rz_field'] = cmds.floatField(value=self.upper_body_params[key]['rz'])
-            cmds.text(label="Offset Z:")
-            self.upper_body_params[key]['rz_offset_field'] = cmds.floatField(value=self.upper_body_params[key]['rz_offset'])
+            self.upper_body_params[key]['rx_field'] = cmds.floatField(value=self.upper_body_params[key]['rx'], bgc=self.COLOR_Z)
+            cmds.text(label="Rotate X:")
+            self.upper_body_params[key]['ry_field'] = cmds.floatField(value=self.upper_body_params[key]['ry'], bgc=self.COLOR_X)
+            cmds.text(label="Rotate Y:")
+            self.upper_body_params[key]['rz_field'] = cmds.floatField(value=self.upper_body_params[key]['rz'], bgc=self.COLOR_Y)
+            cmds.text(label="Offset Y:")
+            self.upper_body_params[key]['rz_offset_field'] = cmds.floatField(value=self.upper_body_params[key]['rz_offset'], bgc=self.COLOR_Y)
             cmds.setParent('..')
         cmds.setParent('..')
 
         # Right Arm Swing
         cmds.frameLayout(label="Right Arm Swing", collapsable=True, marginWidth=10, marginHeight=5)
         cmds.rowColumnLayout(numberOfColumns=2, columnWidth=[(1, 200), (2, 200)])
-        cmds.text(label="Shoulder Down (rotateY):")
-        self.arm_params['shoulder_down_y_field'] = cmds.floatField(value=self.arm_params['shoulder_down_y'])
-        cmds.text(label="Scapula Down (rotateY):")
-        self.arm_params['scapula_down_field'] = cmds.floatField(value=self.arm_params['scapula_down'])
+        cmds.text(label="Shoulder Down (rotateZ):")
+        self.arm_params['shoulder_down_y_field'] = cmds.floatField(value=self.arm_params['shoulder_down_y'], bgc=self.COLOR_Z)
+        cmds.text(label="Scapula Down (rotateZ):")
+        self.arm_params['scapula_down_field'] = cmds.floatField(value=self.arm_params['scapula_down'], bgc=self.COLOR_Z)
         cmds.text(label="Shoulder X (rotateX):")
-        self.arm_params['shoulder_x_field'] = cmds.floatField(value=self.arm_params['shoulder_x'])
-        for label, key in [('Scapula Z', 'scapula_z'), ('Shoulder Z', 'shoulder_z'),
-                           ('Elbow Z', 'elbow_z'), ('Wrist Z', 'wrist_z')]:
+        self.arm_params['shoulder_x_field'] = cmds.floatField(value=self.arm_params['shoulder_x'], bgc=self.COLOR_X)
+        for label, key in [('Scapula Y', 'scapula_z'), ('Shoulder Y', 'shoulder_z'),
+                           ('Elbow Y', 'elbow_z'), ('Wrist Y', 'wrist_z')]:
             cmds.text(label=label)
-            self.arm_params[key + '_field'] = cmds.floatField(value=self.arm_params[key])
+            self.arm_params[key + '_field'] = cmds.floatField(value=self.arm_params[key], bgc=self.COLOR_Y)
         cmds.setParent('..'); cmds.setParent('..')
 
         # Action Buttons

@@ -1,8 +1,8 @@
 import maya.cmds as cmds
 import math
 
-from .constants import SLOT_TO_CTRL, COL_M, COL_IK, COL_R, COL_POLE
-from .utils import pos, color, side_color, circle, box, diamond, snap, offset, shift_cvs, pole_pos
+from .constants import SLOT_TO_CTRL, COL_M, COL_IK, COL_R
+from .utils import pos, color, side_color, circle, box, cross, diamond, snap, offset, shift_cvs, pole_pos
 
 
 # ---------------------------------------------------------------------------
@@ -38,10 +38,9 @@ def build_fk_spine(builder):
         dj = builder.dj.get(slot)
         if not dj:
             continue
-        c = circle(SLOT_TO_CTRL[slot], r=builder.sz * 8)
+        c = circle(SLOT_TO_CTRL[slot], r=builder.sz * 8, n=(1, 0, 0))
         snap(c, dj)
         color(c, COL_M)
-        cmds.xform(c, ws=1, ro=(0, 0, 0))
         o = offset(c)
         cmds.parent(o, par if cmds.objExists(par) else builder.ctrl_grp)
         cmds.orientConstraint(c, dj, mo=1)
@@ -124,7 +123,7 @@ def build_ik_leg(builder, side):
     if not all([hip, knee, foot]):
         return
 
-    c = box("IKLeg_" + side, sz=builder.sz * 4)
+    c = box("IKLeg_" + side, sz=builder.sz * 6)
     cmds.xform(c, ws=1, t=pos(foot))
     cmds.xform(c, ws=1, ro=(0, 0, 0))
     foot_y = pos(foot)[1]
@@ -227,9 +226,9 @@ def build_ik_leg(builder, side):
                 cmds.setAttr("{}.{}".format(fc_foot, w[0]), 0)
                 cmds.setAttr("{}.{}".format(fc_foot, w[1]), 1)
 
-    pole = cmds.spaceLocator(n="PoleLeg_" + side)[0]
+    pole = cross("PoleLeg_" + side, sz=builder.sz * 3)
     cmds.xform(pole, ws=1, t=pole_pos(knee, builder.sz * 20, (0, 0, 1)))
-    color(pole, COL_POLE)
+    color(pole, side_color(side))
     po = offset(pole)
     cmds.parent(po, builder.ctrl_grp)
     builder.ik_offsets[ik_key].append(po)
@@ -247,20 +246,18 @@ def build_ik_arm(builder, side):
 
     wri_rest_ro = cmds.xform(wri, q=1, ws=1, ro=1)
 
-    c = box("IKArm_" + side, sz=builder.sz * 5)
+    box_sz = builder.sz * 5
+    c = box("IKArm_" + side, sz=box_sz)
     cmds.xform(c, ws=1, t=pos(wri))
-    sho_p, elb_p, wri_p = pos(sho), pos(elb), pos(wri)
-    arm = [wri_p[i] - sho_p[i] for i in range(3)]
-    se = [elb_p[i] - sho_p[i] for i in range(3)]
-    up = [arm[1] * se[2] - arm[2] * se[1],
-          arm[2] * se[0] - arm[0] * se[2],
-          arm[0] * se[1] - arm[1] * se[0]]
-    _tmp = cmds.spaceLocator()[0]
-    cmds.xform(_tmp, ws=1, t=sho_p)
-    _ac = cmds.aimConstraint(_tmp, c, aim=(0, 1, 0), u=(0, 0, 1),
-                             wut="vector", wu=up)[0]
-    cmds.delete(_ac, _tmp)
-    shift_cvs(c, dy=-builder.sz * 5)
+    # Orient along forearm (match wrist skin joint orientation)
+    skin_wri = builder.m.get("wrist_" + s)
+    if skin_wri and cmds.objExists(skin_wri):
+        cmds.xform(c, ws=1, ro=cmds.xform(skin_wri, q=1, ws=1, ro=1))
+    else:
+        cmds.xform(c, ws=1, ro=wri_rest_ro)
+    # Center box on pivot, then shift half-width toward hand (along bone +X)
+    half = box_sz * 0.5
+    shift_cvs(c, dx=half, dy=-half)
     color(c, COL_IK if side == "L" else COL_R)
     o = offset(c)
     cmds.parent(o, builder.ctrl_grp)
@@ -271,9 +268,9 @@ def build_ik_arm(builder, side):
     cmds.parent(ikh, builder.ik_grp)
     cmds.pointConstraint(c, ikh)
 
-    pole = cmds.spaceLocator(n="PoleArm_" + side)[0]
+    pole = cross("PoleArm_" + side, sz=builder.sz * 3)
     cmds.xform(pole, ws=1, t=pole_pos(elb, builder.sz * 20, (0, 0, -1)))
-    color(pole, COL_POLE)
+    color(pole, side_color(side))
     po = offset(pole)
     cmds.parent(po, builder.ctrl_grp)
     builder.ik_offsets[ik_key].append(po)
@@ -305,7 +302,15 @@ def build_fkik(builder, limb, side):
     ref_p = pos(ref)
     sign = 1 if ref_p[0] > 0 else -1
     if limb == "Leg":
-        cmds.xform(c, ws=1, t=(ref_p[0] + builder.sz * 4 * sign, ref_p[1], ref_p[2]))
+        knee = builder.dj.get("knee_" + s)
+        hip = builder.dj.get("hip_" + s)
+        if knee and hip:
+            knee_p = pos(knee)
+            hip_p = pos(hip)
+            mid_y = (hip_p[1] + knee_p[1]) * 0.5
+            cmds.xform(c, ws=1, t=(knee_p[0] + builder.sz * 6 * sign, mid_y, knee_p[2]))
+        else:
+            cmds.xform(c, ws=1, t=(ref_p[0] + builder.sz * 6 * sign, ref_p[1], ref_p[2]))
     else:
         sho = builder.dj.get("shoulder_" + s)
         sho_p = pos(sho) if sho else ref_p

@@ -9,6 +9,11 @@ class AnimGeneratorBase:
     WINDOW_TITLE = ""
     WINDOW_SIZE = (600, 400)
 
+    # Axis color-coding for UI float fields (RGB = XYZ)
+    COLOR_X = (0.45, 0.18, 0.18)  # Red
+    COLOR_Y = (0.18, 0.45, 0.18)  # Green
+    COLOR_Z = (0.18, 0.18, 0.45)  # Blue
+
     def __init__(self):
         self.window = self.WINDOW_NAME
         self.frames = []

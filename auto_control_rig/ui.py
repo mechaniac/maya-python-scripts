@@ -5,6 +5,7 @@ from .constants import SLOT_DEFS
 from .builder import AutoControlRigBuilder
 from .operations import remove_control_rig, reset_to_bind_pose, create_foot_roll_locators
 from .mapping import get_hierarchy_joints, auto_map_joints, save_mapping, load_mapping
+from .debug import log_joint_axes
 
 
 _ui = {"win": "AutoCtrlRigWin", "joints": [], "fields": {}, "labels": {}, "root": None}
@@ -74,6 +75,24 @@ def _fill_menus():
 def _read_map():
     return {k: ("" if cmds.optionMenu(m, q=1, v=1) == "(none)" else cmds.optionMenu(m, q=1, v=1))
             for k, m in _ui["fields"].items()}
+
+
+def _on_select_all_controls(*a):
+    grp = "Ctrl_GRP"
+    if not cmds.objExists(grp):
+        cmds.warning("Ctrl_GRP not found. Build the control rig first.")
+        return
+    all_nodes = cmds.listRelatives(grp, allDescendents=True, type="transform", fullPath=True) or []
+    ctrls = [n for n in all_nodes if not n.rsplit("|", 1)[-1].endswith("_offset")]
+    if not ctrls:
+        cmds.warning("No controls found under Ctrl_GRP.")
+        return
+    cmds.select(ctrls, r=True)
+    print("// Selected {} controls".format(len(ctrls)))
+
+
+def _on_log_axes(*a):
+    log_joint_axes()
 
 
 def _on_build(*a):
@@ -172,7 +191,7 @@ def show_window():
     cmds.setParent("..")
     cmds.rowLayout(nc=2, cw2=(130, 100))
     cmds.text(l="Control Size:")
-    _ui["sz"] = cmds.floatField(v=1, min=0.1, max=100)
+    _ui["sz"] = cmds.floatField(v=3, min=0.1, max=100)
     cmds.setParent("..")
     cmds.rowLayout(nc=2, cw2=(130, 100))
     cmds.text(l="Scale Taper:")
@@ -197,8 +216,12 @@ def show_window():
     cmds.separator(h=10, st="in")
 
     cmds.frameLayout(l="Post Rig", cll=1, mw=10, mh=5)
+    cmds.button(l="Select All Controls", h=32, bgc=(0.7, 0.85, 1.0),
+                c=_on_select_all_controls)
     cmds.button(l="Return to Bind Pose", h=32, bgc=(0.5, 0.7, 1.0),
                 c=lambda *a: reset_to_bind_pose())
+    cmds.button(l="Log Joint Axes (Selection)", h=28,
+                c=lambda *a: _on_log_axes())
     cmds.setParent("..")
 
     cmds.showWindow(w)

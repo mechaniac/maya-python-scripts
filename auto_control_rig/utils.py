@@ -22,6 +22,13 @@ def circle(name, r=1, n=(0, 1, 0)):
     return cmds.circle(n=name, r=r, nr=n, ch=0)[0]
 
 
+def cross(name, sz=1):
+    s = sz
+    pts = [(s, 0, 0), (-s, 0, 0), (0, 0, 0), (0, s, 0), (0, -s, 0),
+           (0, 0, 0), (0, 0, s), (0, 0, -s)]
+    return cmds.curve(n=name, d=1, p=pts)
+
+
 def box(name, sz=1):
     h = sz
     s = sz * 0.5

@@ -94,16 +94,16 @@ class FlightGenerator(AnimGeneratorBase):
             (self.ik_arm_r, ["translateZ", "rotateX", "rotateY", "translateX", "translateY"]),
             (self.fkik_l,   ["FKIKBlend"]),
             (self.fkik_r,   ["FKIKBlend"]),
-            (self.spine, ["rotateZ"]),
-            (self.chest, ["rotateZ"]),
-            (self.neck,  ["rotateZ"]),
-            (self.head,  ["rotateZ"]),
+            (self.spine, ["rotateY"]),
+            (self.chest, ["rotateY"]),
+            (self.neck,  ["rotateY"]),
+            (self.head,  ["rotateY"]),
             (self.root,  ["translateY"]),
             (self.leg_l, ["translateX", "translateY", "translateZ", "rotateX"]),
             (self.leg_r, ["translateX", "translateY", "translateZ", "rotateX"]),
             (self.root,  ["translateZ", "rotateX"]),
-            (self.scap_l, ["rotateZ", "rotateY", "rotateX"]),
-            (self.scap_r, ["rotateZ", "rotateY", "rotateX"]),
+            (self.scap_l, ["rotateY", "rotateZ", "rotateX"]),
+            (self.scap_r, ["rotateY", "rotateZ", "rotateX"]),
             (self.pole_l, ["translateX", "translateY", "translateZ"]),
             (self.pole_r, ["translateX", "translateY", "translateZ"]),
         ]:
@@ -159,10 +159,10 @@ class FlightGenerator(AnimGeneratorBase):
         two_thirds  = start + 2.0 * (end - start) / 3.0
 
         def do(node, off, v1, v2):
-            self.set_key(node, "rotateZ", start,      float(off))
-            self.set_key(node, "rotateZ", third,      float(off) + float(v1))
-            self.set_key(node, "rotateZ", two_thirds, float(off) + float(v2))
-            self.set_key(node, "rotateZ", end,        float(off))
+            self.set_key(node, "rotateY", start,      float(off))
+            self.set_key(node, "rotateY", third,      float(off) + float(v1))
+            self.set_key(node, "rotateY", two_thirds, float(off) + float(v2))
+            self.set_key(node, "rotateY", end,        float(off))
 
         do(self.spine, self.spine_off, self.spine_1_3, self.spine_2_3)
         do(self.chest, self.chest_off, self.chest_1_3, self.chest_2_3)
@@ -239,14 +239,14 @@ class FlightGenerator(AnimGeneratorBase):
         ry_off = float(self.scap_ry_off); ry_b = float(self.scap_ry_base); ry_m = float(self.scap_ry_mid)
 
         for node in [self.scap_l, self.scap_r]:
-            self.set_key(node, "rotateZ", start,         rz_off)
-            self.set_key(node, "rotateZ", quarter,       rz_off + rz_b)
-            self.set_key(node, "rotateZ", three_quarter, rz_off + rz_m)
-            self.set_key(node, "rotateZ", end,           rz_off)
-            self.set_key(node, "rotateY", start,         ry_off)
-            self.set_key(node, "rotateY", quarter,       ry_off + ry_b)
-            self.set_key(node, "rotateY", three_quarter, ry_off + ry_m)
-            self.set_key(node, "rotateY", end,           ry_off)
+            self.set_key(node, "rotateY", start,         rz_off)
+            self.set_key(node, "rotateY", quarter,       rz_off + rz_b)
+            self.set_key(node, "rotateY", three_quarter, rz_off + rz_m)
+            self.set_key(node, "rotateY", end,           rz_off)
+            self.set_key(node, "rotateZ", start,         ry_off)
+            self.set_key(node, "rotateZ", quarter,       ry_off + ry_b)
+            self.set_key(node, "rotateZ", three_quarter, ry_off + ry_m)
+            self.set_key(node, "rotateZ", end,           ry_off)
             self.set_key(node, "rotateX", start,         rx_off)
             self.set_key(node, "rotateX", quarter,       rx_off + rx_b)
             self.set_key(node, "rotateX", three_quarter, rx_off + rx_m)
@@ -466,19 +466,19 @@ class FlightGenerator(AnimGeneratorBase):
         # -- IK Arms --
         cmds.frameLayout(label="IK Arms", collapsable=True, marginWidth=10)
         self.two_col_row(
-            "IK Arms down (Z @ 1/4):", lambda: setattr(self, 'ik_arms_down_field', cmds.floatField(value=self.ik_arms_down)),
-            "IK Arms up (Z @ 3/4):",   lambda: setattr(self, 'ik_arms_up_field',   cmds.floatField(value=self.ik_arms_up)),
+            "IK Arms down (Z @ 1/4):", lambda: setattr(self, 'ik_arms_down_field', cmds.floatField(value=self.ik_arms_down, bgc=self.COLOR_Z)),
+            "IK Arms up (Z @ 3/4):",   lambda: setattr(self, 'ik_arms_up_field',   cmds.floatField(value=self.ik_arms_up, bgc=self.COLOR_Z)),
             widths=(320, 100, 320, 100))
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(320, 100))
         cmds.text(label="IK Arms rotateX (start=end):")
-        self.arm_rotateX_field = cmds.floatField(value=self.arm_rotateX_value)
+        self.arm_rotateX_field = cmds.floatField(value=self.arm_rotateX_value, bgc=self.COLOR_X)
         cmds.setParent('..'); cmds.setParent('..')
 
         # -- Hand Flap --
         cmds.frameLayout(label="Hand Flap (IK rotateY, L/R oppose)", collapsable=True, marginWidth=10)
         self.two_col_row(
-            "Hand Flap down (1/4):", lambda: setattr(self, 'hand_flap_down_field', cmds.floatField(value=self.hand_flap_down)),
-            "Hand Flap up (3/4):",   lambda: setattr(self, 'hand_flap_up_field',   cmds.floatField(value=self.hand_flap_up)),
+            "Hand Flap down (1/4):", lambda: setattr(self, 'hand_flap_down_field', cmds.floatField(value=self.hand_flap_down, bgc=self.COLOR_Y)),
+            "Hand Flap up (3/4):",   lambda: setattr(self, 'hand_flap_up_field',   cmds.floatField(value=self.hand_flap_up, bgc=self.COLOR_Y)),
             widths=(320, 100, 320, 100))
         cmds.setParent('..')
 
@@ -487,33 +487,33 @@ class FlightGenerator(AnimGeneratorBase):
         row = cmds.rowLayout(numberOfColumns=8, adjustableColumn=8)
         for i, w in [(1,120),(2,80),(3,120),(4,80),(5,120),(6,80),(7,120),(8,80)]:
             cmds.rowLayout(row, e=True, columnWidth=(i, w))
-        cmds.text(label="Base X (L=+, R=-):");  self.hands_base_x_field = cmds.floatField(value=self.hands_base_x)
-        cmds.text(label="X @ 1/4:");            self.hands_x_q_field    = cmds.floatField(value=self.hands_x_q)
-        cmds.text(label="X @ 1/2:");            self.hands_x_mid_field  = cmds.floatField(value=self.hands_x_mid)
-        cmds.text(label="X @ 3/4:");            self.hands_x_3q_field   = cmds.floatField(value=self.hands_x_3q)
+        cmds.text(label="Base X (L=+, R=-):");  self.hands_base_x_field = cmds.floatField(value=self.hands_base_x, bgc=self.COLOR_X)
+        cmds.text(label="X @ 1/4:");            self.hands_x_q_field    = cmds.floatField(value=self.hands_x_q, bgc=self.COLOR_X)
+        cmds.text(label="X @ 1/2:");            self.hands_x_mid_field  = cmds.floatField(value=self.hands_x_mid, bgc=self.COLOR_X)
+        cmds.text(label="X @ 3/4:");            self.hands_x_3q_field   = cmds.floatField(value=self.hands_x_3q, bgc=self.COLOR_X)
         cmds.setParent('..')
         cmds.rowLayout(numberOfColumns=4, columnWidth4=(160, 100, 140, 100), adjustableColumn=4)
-        cmds.text(label="Base Y:"); self.hands_base_y_field = cmds.floatField(value=self.hands_base_y)
-        cmds.text(label="Flap (Y @ 1/4):"); self.hands_flap_field = cmds.floatField(value=self.hands_flap)
+        cmds.text(label="Base Y:"); self.hands_base_y_field = cmds.floatField(value=self.hands_base_y, bgc=self.COLOR_Y)
+        cmds.text(label="Flap (Y @ 1/4):"); self.hands_flap_field = cmds.floatField(value=self.hands_flap, bgc=self.COLOR_Y)
         cmds.setParent('..'); cmds.setParent('..')
 
         # -- Root Movement --
         cmds.frameLayout(label="Root Movement (RootX_M)", collapsable=True, marginWidth=10)
         self.two_col_row(
-            "Up/Down Base (translateZ):", lambda: setattr(self, 'root_updown_base_field', cmds.floatField(value=self.root_updown_base)),
-            "Up/Down Mid (translateZ):",  lambda: setattr(self, 'root_updown_mid_field',  cmds.floatField(value=self.root_updown_mid)),
+            "Up/Down Base (translateZ):", lambda: setattr(self, 'root_updown_base_field', cmds.floatField(value=self.root_updown_base, bgc=self.COLOR_Z)),
+            "Up/Down Mid (translateZ):",  lambda: setattr(self, 'root_updown_mid_field',  cmds.floatField(value=self.root_updown_mid, bgc=self.COLOR_Z)),
             widths=(320, 100, 320, 100))
         self.two_col_row(
-            "Back/Forth Base (rotateX):", lambda: setattr(self, 'root_backforth_base_field', cmds.floatField(value=self.root_backforth_base)),
-            "Back/Forth Mid (rotateX):",  lambda: setattr(self, 'root_backforth_mid_field',  cmds.floatField(value=self.root_backforth_mid)),
+            "Back/Forth Base (rotateX):", lambda: setattr(self, 'root_backforth_base_field', cmds.floatField(value=self.root_backforth_base, bgc=self.COLOR_X)),
+            "Back/Forth Mid (rotateX):",  lambda: setattr(self, 'root_backforth_mid_field',  cmds.floatField(value=self.root_backforth_mid, bgc=self.COLOR_X)),
             widths=(320, 100, 320, 100))
         row = cmds.rowLayout(numberOfColumns=8, adjustableColumn=8)
         for i, w in [(1,160),(2,90),(3,120),(4,90),(5,120),(6,90),(7,140),(8,90)]:
             cmds.rowLayout(row, e=True, columnWidth=(i, w))
-        cmds.text(label="Back/Forth Y Offset:"); self.root_bf_off_field = cmds.floatField(value=self.root_bf_off)
-        cmds.text(label="Y @ 1/4:");             self.root_bf_q_field   = cmds.floatField(value=self.root_bf_q)
-        cmds.text(label="Y @ 1/2:");             self.root_bf_mid_field = cmds.floatField(value=self.root_bf_mid)
-        cmds.text(label="Y @ 3/4:");             self.root_bf_3q_field  = cmds.floatField(value=self.root_bf_3q)
+        cmds.text(label="Back/Forth Y Offset:"); self.root_bf_off_field = cmds.floatField(value=self.root_bf_off, bgc=self.COLOR_Y)
+        cmds.text(label="Y @ 1/4:");             self.root_bf_q_field   = cmds.floatField(value=self.root_bf_q, bgc=self.COLOR_Y)
+        cmds.text(label="Y @ 1/2:");             self.root_bf_mid_field = cmds.floatField(value=self.root_bf_mid, bgc=self.COLOR_Y)
+        cmds.text(label="Y @ 3/4:");             self.root_bf_3q_field  = cmds.floatField(value=self.root_bf_3q, bgc=self.COLOR_Y)
         cmds.setParent('..'); cmds.setParent('..')
 
         # -- Stretch & Bend Posture --
@@ -523,11 +523,11 @@ class FlightGenerator(AnimGeneratorBase):
             for i, w in [(1,140),(2,80),(3,90),(4,80),(5,90),(6,80)]:
                 cmds.rowLayout(row, e=True, columnWidth=(i, w))
             cmds.text(label=title + " Off:")
-            setattr(self, off_attr, cmds.floatField(value=getattr(self, off_attr.replace('_field', ''))))
+            setattr(self, off_attr, cmds.floatField(value=getattr(self, off_attr.replace('_field', '')), bgc=self.COLOR_Y))
             cmds.text(label="1/3:")
-            setattr(self, one_attr, cmds.floatField(value=getattr(self, one_attr.replace('_field', ''))))
+            setattr(self, one_attr, cmds.floatField(value=getattr(self, one_attr.replace('_field', '')), bgc=self.COLOR_Y))
             cmds.text(label="2/3:")
-            setattr(self, two_attr, cmds.floatField(value=getattr(self, two_attr.replace('_field', ''))))
+            setattr(self, two_attr, cmds.floatField(value=getattr(self, two_attr.replace('_field', '')), bgc=self.COLOR_Y))
             cmds.setParent('..')
         posture_row("Spine", 'spine_off_field', 'spine_1_3_field', 'spine_2_3_field')
         posture_row("Chest", 'chest_off_field', 'chest_1_3_field', 'chest_2_3_field')
@@ -538,47 +538,48 @@ class FlightGenerator(AnimGeneratorBase):
         # -- Scapula --
         cmds.frameLayout(label="Scapula Rotations", collapsable=True, marginWidth=10)
         def scap_row(axis_label, off_attr, base_attr, mid_attr):
+            _c = getattr(self, 'COLOR_' + axis_label)
             row = cmds.rowLayout(numberOfColumns=6, adjustableColumn=6)
             for i, w in [(1,140),(2,90),(3,120),(4,90),(5,100),(6,90)]:
                 cmds.rowLayout(row, e=True, columnWidth=(i, w))
             cmds.text(label=axis_label + " Offset:")
-            setattr(self, off_attr,  cmds.floatField(value=getattr(self, off_attr.replace('_field', ''))))
+            setattr(self, off_attr,  cmds.floatField(value=getattr(self, off_attr.replace('_field', '')), bgc=_c))
             cmds.text(label=axis_label + " @ 1/4:")
-            setattr(self, base_attr, cmds.floatField(value=getattr(self, base_attr.replace('_field', ''))))
+            setattr(self, base_attr, cmds.floatField(value=getattr(self, base_attr.replace('_field', '')), bgc=_c))
             cmds.text(label=axis_label + " @ 3/4:")
-            setattr(self, mid_attr,  cmds.floatField(value=getattr(self, mid_attr.replace('_field', ''))))
+            setattr(self, mid_attr,  cmds.floatField(value=getattr(self, mid_attr.replace('_field', '')), bgc=_c))
             cmds.setParent('..')
-        scap_row("Z", 'scap_rz_off_field', 'scap_flap_base_field', 'scap_flap_mid_field')
-        scap_row("Y", 'scap_ry_off_field', 'scap_ry_base_field',  'scap_ry_mid_field')
+        scap_row("Y", 'scap_rz_off_field', 'scap_flap_base_field', 'scap_flap_mid_field')
+        scap_row("Z", 'scap_ry_off_field', 'scap_ry_base_field',  'scap_ry_mid_field')
         scap_row("X", 'scap_rx_off_field', 'scap_rx_base_field',  'scap_rx_mid_field')
         cmds.setParent('..')
 
         # -- IK Legs --
         cmds.frameLayout(label="IK Legs (Feet)", collapsable=True, marginWidth=10)
-        def legs_row(title, base_attr, q_attr, mid_attr, q3_attr, hint=""):
+        def legs_row(title, base_attr, q_attr, mid_attr, q3_attr, hint="", color=None):
             row = cmds.rowLayout(numberOfColumns=8, adjustableColumn=8)
             for i, w in [(1,160),(2,90),(3,110),(4,90),(5,110),(6,90),(7,130),(8,90)]:
                 cmds.rowLayout(row, e=True, columnWidth=(i, w))
             cmds.text(label=title + (" " + hint if hint else ""))
-            setattr(self, base_attr, cmds.floatField(value=getattr(self, base_attr.replace('_field', ''))))
+            setattr(self, base_attr, cmds.floatField(value=getattr(self, base_attr.replace('_field', '')), bgc=color))
             cmds.text(label="@ 1/4:")
-            setattr(self, q_attr, cmds.floatField(value=getattr(self, q_attr.replace('_field', ''))))
+            setattr(self, q_attr, cmds.floatField(value=getattr(self, q_attr.replace('_field', '')), bgc=color))
             cmds.text(label="@ 1/2:")
-            setattr(self, mid_attr, cmds.floatField(value=getattr(self, mid_attr.replace('_field', ''))))
+            setattr(self, mid_attr, cmds.floatField(value=getattr(self, mid_attr.replace('_field', '')), bgc=color))
             cmds.text(label="@ 3/4:")
-            setattr(self, q3_attr, cmds.floatField(value=getattr(self, q3_attr.replace('_field', ''))))
+            setattr(self, q3_attr, cmds.floatField(value=getattr(self, q3_attr.replace('_field', '')), bgc=color))
             cmds.setParent('..')
-        legs_row("Feet Translate X (Base)", 'leg_tx_base_field', 'leg_tx_q_field', 'leg_tx_mid_field', 'leg_tx_3q_field', "(L=+, R=-)")
-        legs_row("Feet Translate Y (Base)", 'leg_ty_base_field', 'leg_ty_q_field', 'leg_ty_mid_field', 'leg_ty_3q_field')
-        legs_row("Feet Translate Z (Base)", 'leg_tz_base_field', 'leg_tz_q_field', 'leg_tz_mid_field', 'leg_tz_3q_field')
+        legs_row("Feet Translate X (Base)", 'leg_tx_base_field', 'leg_tx_q_field', 'leg_tx_mid_field', 'leg_tx_3q_field', "(L=+, R=-)", color=self.COLOR_X)
+        legs_row("Feet Translate Y (Base)", 'leg_ty_base_field', 'leg_ty_q_field', 'leg_ty_mid_field', 'leg_ty_3q_field', color=self.COLOR_Y)
+        legs_row("Feet Translate Z (Base)", 'leg_tz_base_field', 'leg_tz_q_field', 'leg_tz_mid_field', 'leg_tz_3q_field', color=self.COLOR_Z)
         row = cmds.rowLayout(numberOfColumns=8, adjustableColumn=8)
         for i, w in [(1,160),(2,90),(3,110),(4,90),(5,110),(6,90),(7,130),(8,90)]:
             cmds.rowLayout(row, e=True, columnWidth=(i, w))
         cmds.text(label="Feet Rotate X Offset:")
-        self.leg_rx_off_field = cmds.floatField(value=self.leg_rx_off)
-        cmds.text(label="@ 1/4:"); self.leg_rx_q_field   = cmds.floatField(value=self.leg_rx_q)
-        cmds.text(label="@ 1/2:"); self.leg_rx_mid_field = cmds.floatField(value=self.leg_rx_mid)
-        cmds.text(label="@ 3/4:"); self.leg_rx_3q_field  = cmds.floatField(value=self.leg_rx_3q)
+        self.leg_rx_off_field = cmds.floatField(value=self.leg_rx_off, bgc=self.COLOR_X)
+        cmds.text(label="@ 1/4:"); self.leg_rx_q_field   = cmds.floatField(value=self.leg_rx_q, bgc=self.COLOR_X)
+        cmds.text(label="@ 1/2:"); self.leg_rx_mid_field = cmds.floatField(value=self.leg_rx_mid, bgc=self.COLOR_X)
+        cmds.text(label="@ 3/4:"); self.leg_rx_3q_field  = cmds.floatField(value=self.leg_rx_3q, bgc=self.COLOR_X)
         cmds.setParent('..'); cmds.setParent('..')
 
         # -- Elbow Poles --
@@ -590,17 +591,17 @@ class FlightGenerator(AnimGeneratorBase):
             cmds.text(label=l3); fn3()
             cmds.setParent('..')
         three_col_row("X Offset (L=+, R=- mirrored):",
-            lambda: setattr(self, 'pole_off_x_field',  cmds.floatField(value=self.pole_off_x)),
-            "X Base:", lambda: setattr(self, 'pole_base_x_field', cmds.floatField(value=self.pole_base_x)),
-            "X Mid:",  lambda: setattr(self, 'pole_mid_x_field',  cmds.floatField(value=self.pole_mid_x)))
+            lambda: setattr(self, 'pole_off_x_field',  cmds.floatField(value=self.pole_off_x, bgc=self.COLOR_X)),
+            "X Base:", lambda: setattr(self, 'pole_base_x_field', cmds.floatField(value=self.pole_base_x, bgc=self.COLOR_X)),
+            "X Mid:",  lambda: setattr(self, 'pole_mid_x_field',  cmds.floatField(value=self.pole_mid_x, bgc=self.COLOR_X)))
         three_col_row("Y Offset:",
-            lambda: setattr(self, 'pole_off_y_field',  cmds.floatField(value=self.pole_off_y)),
-            "Y Base:", lambda: setattr(self, 'pole_base_y_field', cmds.floatField(value=self.pole_base_y)),
-            "Y Mid:",  lambda: setattr(self, 'pole_mid_y_field',  cmds.floatField(value=self.pole_mid_y)))
+            lambda: setattr(self, 'pole_off_y_field',  cmds.floatField(value=self.pole_off_y, bgc=self.COLOR_Y)),
+            "Y Base:", lambda: setattr(self, 'pole_base_y_field', cmds.floatField(value=self.pole_base_y, bgc=self.COLOR_Y)),
+            "Y Mid:",  lambda: setattr(self, 'pole_mid_y_field',  cmds.floatField(value=self.pole_mid_y, bgc=self.COLOR_Y)))
         three_col_row("Z Offset:",
-            lambda: setattr(self, 'pole_off_z_field',  cmds.floatField(value=self.pole_off_z)),
-            "Z Base:", lambda: setattr(self, 'pole_base_z_field', cmds.floatField(value=self.pole_base_z)),
-            "Z Mid:",  lambda: setattr(self, 'pole_mid_z_field',  cmds.floatField(value=self.pole_mid_z)))
+            lambda: setattr(self, 'pole_off_z_field',  cmds.floatField(value=self.pole_off_z, bgc=self.COLOR_Z)),
+            "Z Base:", lambda: setattr(self, 'pole_base_z_field', cmds.floatField(value=self.pole_base_z, bgc=self.COLOR_Z)),
+            "Z Mid:",  lambda: setattr(self, 'pole_mid_z_field',  cmds.floatField(value=self.pole_mid_z, bgc=self.COLOR_Z)))
         cmds.setParent('..')
 
         # -- FK IK Blend --
