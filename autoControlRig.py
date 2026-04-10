@@ -136,6 +136,8 @@ def _orient_chain(joints):
 def _orient_ik_chain(start, mid, end, bend_dir):
     """Orient a 3-joint chain and inject a tiny pre-bend toward bend_dir."""
     _orient_chain([start, mid, end])
+    # Save end joint position before pre-bend (bend shifts children)
+    end_pos = _pos(end)
     # Small bend to break collinearity
     cmds.xform(mid, r=1, ro=(0, 0, 2), os=1)
     # Check direction — flip if wrong
@@ -146,6 +148,8 @@ def _orient_ik_chain(start, mid, end, bend_dir):
     if dot < 0:
         cmds.xform(mid, r=1, ro=(0, 0, -4), os=1)
     cmds.joint(mid, e=1, spa=1)
+    # Restore end joint to exact skin position (pre-bend displaced it)
+    cmds.xform(end, ws=1, t=end_pos)
 
 
 def _pole_pos(j_mid, dist, direction):
@@ -246,6 +250,9 @@ class AutoControlRigBuilder:
                     self._ctrl_fkik("Arm", s)
         # 3) Bind skin joints to driver
         self._bind_skin()
+        # 3.5) Debug visualization
+        if self.opts.get("show_debug", False):
+            self._create_debug_vis()
         # 4) Store data for clean removal
         cmds.addAttr(self.top, ln="skin_constraints", dt="string")
         cmds.setAttr(self.top+".skin_constraints",
@@ -335,6 +342,33 @@ class AutoControlRigBuilder:
                 }
                 c = cmds.parentConstraint(dj, skin, mo=1)[0]
                 self.skin_constraints.append(c)
+
+    # ----- debug visualization ---------------------------------------------
+    def _create_debug_vis(self):
+        dbg = cmds.group(em=1, n="Debug_GRP", p=self.top)
+        lsz = self.sz * 3
+        for slot, dj in self.dj.items():
+            loc = cmds.spaceLocator(n="dbg_"+slot)[0]
+            for ax in ("X","Y","Z"):
+                cmds.setAttr(loc+".localScale"+ax, lsz)
+            cmds.parentConstraint(dj, loc, mo=0)
+            cmds.parent(loc, dbg)
+        # Foot roll pivot locators (heel, ball, toetip)
+        for side in ("L","R"):
+            roll_pivots = [
+                ("heelPiv_"+side,   "dbg_heelPiv_"+side,   COL_IK),
+                ("ballPiv_"+side,   "dbg_ballPiv_"+side,   COL_M),
+                ("toetipPiv_"+side, "dbg_toetipPiv_"+side, COL_POLE),
+            ]
+            for grp_name, loc_name, col in roll_pivots:
+                if not cmds.objExists(grp_name):
+                    continue
+                loc = cmds.spaceLocator(n=loc_name)[0]
+                for ax in ("X","Y","Z"):
+                    cmds.setAttr(loc+".localScale"+ax, lsz)
+                _color(loc, col)
+                cmds.parentConstraint(grp_name, loc, mo=0)
+                cmds.parent(loc, dbg)
 
     # ----- Root / Hip controls ---------------------------------------------
     def _ctrl_root(self):
@@ -440,7 +474,6 @@ class AutoControlRigBuilder:
 
         # --- Reverse Foot Roll ---
         toe_dj = self.dj.get("toe_"+s)
-        rev_grps = None
         if toe_dj:
             foot_p = _pos(foot)
             toe_p  = _pos(toe_dj)
@@ -451,8 +484,13 @@ class AutoControlRigBuilder:
             toetip_p = _pos(toetip_loc) if cmds.objExists(toetip_loc) else [toe_p[0],  0, toe_p[2]  + self.sz*5]
             ball_p   = [toe_p[0], 0, toe_p[2]]
 
+            # Follow group — tracks IK control position + rotation
+            foot_follow = cmds.group(em=1, n="footFollow_"+side, p=self.ik_grp)
+            cmds.xform(foot_follow, ws=1, t=_pos(foot))
+            cmds.parentConstraint(c, foot_follow, mo=1)
+
             # Reverse hierarchy: heel → toetip → ball → [ik handle]
-            heel_grp   = cmds.group(em=1, n="heelPiv_"+side,   p=self.ik_grp)
+            heel_grp   = cmds.group(em=1, n="heelPiv_"+side,   p=foot_follow)
             cmds.xform(heel_grp, ws=1, t=heel_p)
             toetip_grp = cmds.group(em=1, n="toetipPiv_"+side, p=heel_grp)
             cmds.xform(toetip_grp, ws=1, t=toetip_p)
@@ -460,7 +498,22 @@ class AutoControlRigBuilder:
             cmds.xform(ball_grp, ws=1, t=ball_p)
 
             cmds.parent(ikh, ball_grp)
-            cmds.pointConstraint(c, heel_grp)
+            # Toe SC solver — keeps toe aimed forward during ball roll
+            ikh_toe, _ = cmds.ikHandle(n="ikh_Toe_"+side, sj=foot, ee=toe_dj, sol="ikSCsolver")
+            cmds.parent(ikh_toe, toetip_grp)
+
+            # Zero foot/toe FK constraints — SC solver handles orient in IK mode
+            for fk_slot in ["foot_"+s, "toe_"+s]:
+                fc = self.fk_con.get(fk_slot)
+                if fc and cmds.objExists(fc):
+                    w = cmds.orientConstraint(fc, q=1, wal=1)
+                    if w: cmds.setAttr("{}.{}".format(fc, w[0]), 0)
+
+            # Orient-constrain toe to toetip_grp so it stays flat during ball roll
+            toe_fc = self.fk_con.get("toe_"+s)
+            if toe_fc and cmds.objExists(toe_fc):
+                cmds.orientConstraint(toetip_grp, toe_dj, mo=1)
+                self.ik_con["toe_"+s] = toe_fc
 
             # Roll attributes
             start = self.opts.get("roll_start_angle", 30)
@@ -469,16 +522,45 @@ class AutoControlRigBuilder:
             cmds.addAttr(c, ln="RollStartAngle", at="float", dv=start, k=1)
             cmds.addAttr(c, ln="RollEndAngle",   at="float", dv=end,   k=1)
 
-            # Set Driven Keys — linear tangents
-            roll = c+".Roll"
-            _sdk(heel_grp+".rx",   roll, [(-90, -90), (0, 0)])
-            _sdk(ball_grp+".rx",   roll, [(0, 0), (start, start), (end, 0)])
-            _sdk(toetip_grp+".rx", roll, [(0, 0), (start, 0), (end, end-start)])
-
-            rev_grps = (heel_grp, toetip_grp, ball_grp)
+            # Expression-driven foot roll (respects dynamic RollStartAngle/RollEndAngle)
+            expr_str = (
+                "float $roll  = {c}.Roll;\n"
+                "float $start = {c}.RollStartAngle;\n"
+                "float $end   = {c}.RollEndAngle;\n"
+                "float $range = max(0.001, $end - $start);\n"
+                "\n"
+                "// Heel: negative roll\n"
+                "{heel}.rx = clamp(-90, 0, $roll);\n"
+                "\n"
+                "// Ball: ramp up 0->start, ramp down start->end\n"
+                "if ($roll <= 0)\n"
+                "    {ball}.rx = 0;\n"
+                "else if ($roll <= $start)\n"
+                "    {ball}.rx = $roll;\n"
+                "else if ($roll <= $end)\n"
+                "    {ball}.rx = $start * ($end - $roll) / $range;\n"
+                "else\n"
+                "    {ball}.rx = 0;\n"
+                "\n"
+                "// Toetip: flat until start, then ramp up\n"
+                "if ($roll <= $start)\n"
+                "    {toetip}.rx = 0;\n"
+                "else if ($roll <= $end)\n"
+                "    {toetip}.rx = $roll - $start;\n"
+                "else\n"
+                "    {toetip}.rx = $end - $start;\n"
+            ).format(c=c, heel=heel_grp, ball=ball_grp, toetip=toetip_grp)
+            cmds.expression(n="footRoll_expr_"+side, s=expr_str, ae=1)
         else:
             cmds.parent(ikh, self.ik_grp)
             cmds.pointConstraint(c, ikh)
+            # No SC solver — orient foot via FK control routing
+            fk_foot = SLOT_TO_CTRL.get("foot_"+s)
+            if fk_foot and cmds.objExists(fk_foot):
+                oc = cmds.orientConstraint(c, fk_foot, mo=1)[0]
+                w = cmds.orientConstraint(oc, q=1, wal=1)
+                if w: cmds.setAttr("{}.{}".format(oc, w[0]), 0)
+                self.ik_fk_oc["foot_"+s] = oc
 
         # Pole vector — knees forward (+Z)
         pole = cmds.spaceLocator(n="PoleLeg_"+side)[0]
@@ -487,24 +569,6 @@ class AutoControlRigBuilder:
         po = _offset(pole); cmds.parent(po, self.ctrl_grp)
         self.ik_offsets[ik_key].append(po)
         cmds.poleVectorConstraint(pole, ikh)
-
-        # IK control drives foot orientation via FK control
-        fk_foot = SLOT_TO_CTRL.get("foot_"+s)
-        if fk_foot and cmds.objExists(fk_foot):
-            oc = cmds.orientConstraint(c, fk_foot, mo=1)[0]
-            w = cmds.orientConstraint(oc, q=1, wal=1)
-            if w: cmds.setAttr("{}.{}".format(oc, w[0]), 0)
-            self.ik_fk_oc["foot_"+s] = oc
-            # Add reverse-foot roll to orient offset
-            if rev_grps:
-                heel_grp, toetip_grp, ball_grp = rev_grps
-                base_ox = cmds.getAttr(oc+".ox")
-                pma = cmds.createNode("plusMinusAverage", n="footRollOff_"+side)
-                cmds.setAttr(pma+".input1D[0]", base_ox)
-                cmds.connectAttr(heel_grp+".rx",   pma+".input1D[1]")
-                cmds.connectAttr(toetip_grp+".rx", pma+".input1D[2]")
-                cmds.connectAttr(ball_grp+".rx",   pma+".input1D[3]")
-                cmds.connectAttr(pma+".output1D",  oc+".ox", f=1)
 
     # ----- IK arm ----------------------------------------------------------
     def _ctrl_ik_arm(self, side):
@@ -581,18 +645,33 @@ class AutoControlRigBuilder:
         ikh = "ikh_{}_{}".format(limb, side)
         if cmds.objExists(ikh):
             cmds.connectAttr(norm+".outputX", ikh+".ikBlend")
-
-        # FK slots — chain joints only (end effector routed via FK ctrl)
         if limb == "Leg":
-            fk_slots = ["hip_"+s,"knee_"+s]
+            ikh_toe = "ikh_Toe_{}".format(side)
+            if cmds.objExists(ikh_toe):
+                cmds.connectAttr(norm+".outputX", ikh_toe+".ikBlend")
+
+        # FK slots — joints whose FK constraints need FKIK blending
+        if limb == "Leg":
+            fk_slots = ["hip_"+s, "knee_"+s]
+            # SC solver handles foot orient — blend foot/toe FK too
+            if "foot_"+s not in self.ik_fk_oc:
+                fk_slots.extend(["foot_"+s, "toe_"+s])
         else:
-            fk_slots = ["shoulder_"+s,"elbow_"+s]
+            fk_slots = ["shoulder_"+s, "elbow_"+s]
 
         for sl in fk_slots:
             fc = self.fk_con.get(sl)
             if not fc or not cmds.objExists(fc): continue
             w = cmds.orientConstraint(fc, q=1, wal=1)
             if w: cmds.connectAttr(rev+".outputX", "{}.{}".format(fc, w[0]))
+
+        # Drive IK orient weight for toe (toetip target keeps toe flat)
+        if limb == "Leg":
+            toe_oc = self.ik_con.get("toe_"+s)
+            if toe_oc and cmds.objExists(toe_oc):
+                w = cmds.orientConstraint(toe_oc, q=1, wal=1)
+                if len(w) >= 2:
+                    cmds.connectAttr(norm+".outputX", "{}.{}".format(toe_oc, w[-1]))
 
         # End effector: blend IK-drives-FK-control constraint
         end_slot = ("foot_" if limb=="Leg" else "wrist_") + s
@@ -813,6 +892,7 @@ def _on_build(*a):
         "create_fk_legs": cmds.checkBox(_ui["fk_l"], q=1, v=1),
         "create_fkik_blend": cmds.checkBox(_ui["fkik"], q=1, v=1),
         "scale_taper": cmds.floatField(_ui["taper"], q=1, v=1),
+        "show_debug": cmds.checkBox(_ui["dbg"], q=1, v=1),
         "roll_start_angle": cmds.floatField(_ui["roll_start"], q=1, v=1),
         "roll_end_angle": cmds.floatField(_ui["roll_end"], q=1, v=1),
     }
@@ -888,6 +968,7 @@ def show():
     _ui["fk_a"] = cmds.checkBox(l="FK Arms", v=1)
     _ui["fk_l"] = cmds.checkBox(l="FK Legs", v=1)
     _ui["fkik"] = cmds.checkBox(l="FK/IK Blend", v=1)
+    _ui["dbg"]  = cmds.checkBox(l="Show Debug", v=0)
     cmds.setParent("..")
     cmds.rowLayout(nc=2, cw2=(130,100))
     cmds.text(l="Control Size:")
