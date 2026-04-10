@@ -102,6 +102,14 @@ def _offset(ctrl):
     cmds.xform(ctrl, t=(0,0,0), ro=(0,0,0))
     return grp
 
+def _shift_cvs(ctrl, dx=0, dy=0, dz=0):
+    """Move all CVs of a curve control without moving its pivot."""
+    for shp in (cmds.listRelatives(ctrl, s=1, f=1) or []):
+        ncv = cmds.getAttr(shp+".cp", size=1)
+        for i in range(ncv):
+            p = cmds.getAttr("{}.cp[{}]".format(shp, i))[0]
+            cmds.setAttr("{}.cp[{}]".format(shp, i), p[0]+dx, p[1]+dy, p[2]+dz)
+
 
 # ---------------------------------------------------------------------------
 # Driver-skeleton utilities
@@ -145,6 +153,14 @@ def _pole_pos(j_mid, dist, direction):
     p = _pos(j_mid)
     ln = math.sqrt(sum(d*d for d in direction)) or 1
     return [p[i] + (direction[i]/ln)*dist for i in range(3)]
+
+def _sdk(driven_attr, driver_attr, keys):
+    """Set driven keys with linear tangents.  keys = [(driver_val, driven_val), ...]"""
+    for dv, v in keys:
+        cmds.setDrivenKeyframe(driven_attr, cd=driver_attr, dv=dv, v=v)
+    curves = cmds.listConnections(driven_attr, type="animCurveUU", s=1, d=0) or []
+    for crv in curves:
+        cmds.keyTangent(crv, itt="linear", ott="linear")
 
 
 # ---------------------------------------------------------------------------
@@ -409,10 +425,12 @@ class AutoControlRigBuilder:
         hip, knee, foot = [self.dj.get(k+"_"+s) for k in ("hip","knee","foot")]
         if not all([hip, knee, foot]): return
 
-        # IK control at DRIVER foot position (not skin) for zero-offset match
+        # IK control at DRIVER foot position
         c = _box("IKLeg_"+side, sz=self.sz*4)
         cmds.xform(c, ws=1, t=_pos(foot))
         cmds.xform(c, ws=1, ro=(0,0,0))
+        foot_y = _pos(foot)[1]
+        _shift_cvs(c, dy=-foot_y)
         _color(c, COL_IK if side=="L" else COL_R)
         o = _offset(c); cmds.parent(o, self.ctrl_grp)
         ik_key = "Leg_"+side
@@ -420,20 +438,47 @@ class AutoControlRigBuilder:
 
         ikh, _ = cmds.ikHandle(n="ikh_Leg_"+side, sj=hip, ee=foot, sol="ikRPsolver")
 
-        # Foot roll — ball-of-foot pivot
+        # --- Reverse Foot Roll ---
         toe_dj = self.dj.get("toe_"+s)
+        rev_grps = None
         if toe_dj:
-            follow = cmds.group(em=1, n="footFollow_"+side, p=self.ik_grp)
-            cmds.xform(follow, ws=1, t=_pos(foot))
-            cmds.pointConstraint(c, follow)  # zero offset — both at driver foot
-            ball_piv = cmds.group(em=1, n="ballPivot_"+side, p=follow)
-            cmds.xform(ball_piv, ws=1, t=_pos(toe_dj))
-            cmds.parent(ikh, ball_piv)
-            cmds.addAttr(c, ln="Roll", at="float", dv=0, k=1)
-            cmds.connectAttr(c+".Roll", ball_piv+".rx")
+            foot_p = _pos(foot)
+            toe_p  = _pos(toe_dj)
+            # Heel / toe-tip positions from locators or defaults
+            heel_loc   = "footRoll_heel_"+side
+            toetip_loc = "footRoll_toetip_"+side
+            heel_p   = _pos(heel_loc)   if cmds.objExists(heel_loc)   else [foot_p[0], 0, foot_p[2] - self.sz*5]
+            toetip_p = _pos(toetip_loc) if cmds.objExists(toetip_loc) else [toe_p[0],  0, toe_p[2]  + self.sz*5]
+            ball_p   = [toe_p[0], 0, toe_p[2]]
+
+            # Reverse hierarchy: heel → toetip → ball → [ik handle]
+            heel_grp   = cmds.group(em=1, n="heelPiv_"+side,   p=self.ik_grp)
+            cmds.xform(heel_grp, ws=1, t=heel_p)
+            toetip_grp = cmds.group(em=1, n="toetipPiv_"+side, p=heel_grp)
+            cmds.xform(toetip_grp, ws=1, t=toetip_p)
+            ball_grp   = cmds.group(em=1, n="ballPiv_"+side,   p=toetip_grp)
+            cmds.xform(ball_grp, ws=1, t=ball_p)
+
+            cmds.parent(ikh, ball_grp)
+            cmds.pointConstraint(c, heel_grp)
+
+            # Roll attributes
+            start = self.opts.get("roll_start_angle", 30)
+            end   = self.opts.get("roll_end_angle", 60)
+            cmds.addAttr(c, ln="Roll",           at="float", dv=0,     k=1)
+            cmds.addAttr(c, ln="RollStartAngle", at="float", dv=start, k=1)
+            cmds.addAttr(c, ln="RollEndAngle",   at="float", dv=end,   k=1)
+
+            # Set Driven Keys — linear tangents
+            roll = c+".Roll"
+            _sdk(heel_grp+".rx",   roll, [(-90, -90), (0, 0)])
+            _sdk(ball_grp+".rx",   roll, [(0, 0), (start, start), (end, 0)])
+            _sdk(toetip_grp+".rx", roll, [(0, 0), (start, 0), (end, end-start)])
+
+            rev_grps = (heel_grp, toetip_grp, ball_grp)
         else:
             cmds.parent(ikh, self.ik_grp)
-            cmds.pointConstraint(c, ikh)  # zero offset
+            cmds.pointConstraint(c, ikh)
 
         # Pole vector — knees forward (+Z)
         pole = cmds.spaceLocator(n="PoleLeg_"+side)[0]
@@ -450,6 +495,16 @@ class AutoControlRigBuilder:
             w = cmds.orientConstraint(oc, q=1, wal=1)
             if w: cmds.setAttr("{}.{}".format(oc, w[0]), 0)
             self.ik_fk_oc["foot_"+s] = oc
+            # Add reverse-foot roll to orient offset
+            if rev_grps:
+                heel_grp, toetip_grp, ball_grp = rev_grps
+                base_ox = cmds.getAttr(oc+".ox")
+                pma = cmds.createNode("plusMinusAverage", n="footRollOff_"+side)
+                cmds.setAttr(pma+".input1D[0]", base_ox)
+                cmds.connectAttr(heel_grp+".rx",   pma+".input1D[1]")
+                cmds.connectAttr(toetip_grp+".rx", pma+".input1D[2]")
+                cmds.connectAttr(ball_grp+".rx",   pma+".input1D[3]")
+                cmds.connectAttr(pma+".output1D",  oc+".ox", f=1)
 
     # ----- IK arm ----------------------------------------------------------
     def _ctrl_ik_arm(self, side):
@@ -460,6 +515,8 @@ class AutoControlRigBuilder:
         # IK control at DRIVER wrist position (not skin) for zero-offset match
         c = _box("IKArm_"+side, sz=self.sz*2.5)
         cmds.xform(c, ws=1, t=_pos(wri))
+        # Center box shape around pivot
+        _shift_cvs(c, dy=-self.sz*2.5*0.5)
         _color(c, COL_IK if side=="L" else COL_R)
         o = _offset(c); cmds.parent(o, self.ctrl_grp)
         ik_key = "Arm_"+side
@@ -493,9 +550,18 @@ class AutoControlRigBuilder:
         if not ref: return
 
         c = _diamond("FKIK{}_{}".format(limb, side), sz=self.sz*2)
-        _snap(c, ref)
-        p = cmds.xform(c, q=1, ws=1, t=1)
-        cmds.xform(c, ws=1, t=(p[0] + self.sz*10*(1 if side=="R" else -1), p[1], p[2]))
+        ref_p = _pos(ref)
+        sign = 1 if ref_p[0] > 0 else -1
+        if limb == "Leg":
+            # Position on the leg's own side, offset slightly outward from foot
+            cmds.xform(c, ws=1, t=(ref_p[0] + self.sz*4*sign, ref_p[1], ref_p[2]))
+        else:
+            # Position above the shoulder, offset outward
+            sho = self.dj.get("shoulder_"+s)
+            sho_p = _pos(sho) if sho else ref_p
+            sign = 1 if sho_p[0] > 0 else -1
+            cmds.xform(c, ws=1, t=(sho_p[0] + self.sz*5*sign,
+                                    sho_p[1] + self.sz*8, sho_p[2]))
         _color(c, _side_color(side))
         o = _offset(c); cmds.parent(o, self.ctrl_grp)
 
@@ -611,6 +677,78 @@ def remove_control_rig():
 
 
 # ---------------------------------------------------------------------------
+# Post-Rig utilities
+# ---------------------------------------------------------------------------
+def reset_to_bind_pose():
+    """Zero out all rig controls, returning the character to bind pose."""
+    if not cmds.objExists(RIG_GRP):
+        cmds.warning("No rig found."); return
+    ctrl_grp = "Ctrl_GRP"
+    if not cmds.objExists(ctrl_grp):
+        cmds.warning("Ctrl_GRP not found."); return
+    ctrls = cmds.listRelatives(ctrl_grp, ad=1, type="transform", f=1) or []
+    for c in ctrls:
+        # Skip offset groups (only reset actual controls with shapes or user attrs)
+        shapes = cmds.listRelatives(c, s=1) or []
+        if not shapes:
+            continue
+        for attr in ("tx","ty","tz","rx","ry","rz"):
+            try:
+                if not cmds.getAttr(c+"."+attr, l=1):
+                    cmds.setAttr(c+"."+attr, 0)
+            except Exception:
+                pass
+        for attr in ("sx","sy","sz"):
+            try:
+                if not cmds.getAttr(c+"."+attr, l=1):
+                    cmds.setAttr(c+"."+attr, 1)
+            except Exception:
+                pass
+        # Reset custom attrs (FKIKBlend, Roll) to default
+        ud = cmds.listAttr(c, ud=1, k=1) or []
+        for attr in ud:
+            try:
+                dv = cmds.addAttr(c+"."+attr, q=1, dv=1)
+                cmds.setAttr(c+"."+attr, dv)
+            except Exception:
+                pass
+    cmds.select(cl=1)
+    print("// All controls reset to bind pose.")
+
+
+def _create_foot_roll_locators(*a):
+    """Create heel / toe-tip locators at default positions for reverse foot setup."""
+    mapping = _read_map()
+    created = 0
+    for s, S in [("l","L"), ("r","R")]:
+        foot_jnt = mapping.get("foot_"+s, "")
+        toe_jnt  = mapping.get("toe_"+s, "")
+        if not foot_jnt or not cmds.objExists(foot_jnt):
+            continue
+        fp = _pos(foot_jnt)
+        heel_n = "footRoll_heel_"+S
+        if not cmds.objExists(heel_n):
+            h = cmds.spaceLocator(n=heel_n)[0]
+            cmds.xform(h, ws=1, t=[fp[0], 0, fp[2] - 5])
+            _color(h, _side_color(S))
+            created += 1
+        toetip_n = "footRoll_toetip_"+S
+        if not cmds.objExists(toetip_n):
+            t = cmds.spaceLocator(n=toetip_n)[0]
+            if toe_jnt and cmds.objExists(toe_jnt):
+                tp = _pos(toe_jnt)
+                cmds.xform(t, ws=1, t=[tp[0], 0, tp[2] + 5])
+            else:
+                cmds.xform(t, ws=1, t=[fp[0], 0, fp[2] + 15])
+            _color(t, _side_color(S))
+            created += 1
+    if created:
+        print("// Created {} foot roll locator(s). Adjust positions as needed.".format(created))
+    else:
+        print("// Foot roll locators already exist or no foot joints mapped.")
+
+
+# ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
 _ui = {"win":"AutoCtrlRigWin", "joints":[], "fields":{}, "labels":{}, "root":None}
@@ -675,6 +813,8 @@ def _on_build(*a):
         "create_fk_legs": cmds.checkBox(_ui["fk_l"], q=1, v=1),
         "create_fkik_blend": cmds.checkBox(_ui["fkik"], q=1, v=1),
         "scale_taper": cmds.floatField(_ui["taper"], q=1, v=1),
+        "roll_start_angle": cmds.floatField(_ui["roll_start"], q=1, v=1),
+        "roll_end_angle": cmds.floatField(_ui["roll_end"], q=1, v=1),
     }
     AutoControlRigBuilder(_read_map(), opts).build()
 
@@ -720,6 +860,10 @@ def show():
     _ui["root"] = cmds.textField(pht="Select root joint...")
     cmds.button(l="From Selection", c=_on_root)
     cmds.setParent(".."); cmds.button(l="Auto-Map", c=_on_auto, h=28)
+    cmds.rowLayout(nc=2, cw2=(200,200), adj=2)
+    cmds.button(l="Save Mapping", c=_on_save)
+    cmds.button(l="Load Mapping", c=_on_load)
+    cmds.setParent("..")
     cmds.setParent("..")
 
     cmds.frameLayout(l="Joint Mapping", cll=1, mw=10, mh=5)
@@ -732,6 +876,9 @@ def show():
         cmds.menuItem(l="(none)")
         cmds.button(l="< Sel", c=lambda x, k=key: _on_sel(k))
         cmds.setParent("..")
+    cmds.separator(h=6, st="in")
+    cmds.button(l="Create Foot Roll Locators", h=28, bgc=(0.6,0.6,0.8),
+                c=lambda *a: _create_foot_roll_locators())
     cmds.setParent("..")
 
     cmds.frameLayout(l="Options", cll=1, mw=10, mh=5)
@@ -749,17 +896,27 @@ def show():
     cmds.rowLayout(nc=2, cw2=(130,100))
     cmds.text(l="Scale Taper:")
     _ui["taper"] = cmds.floatField(v=1.3, min=1.0, max=3.0)
+    cmds.setParent("..")
+    cmds.separator(h=6, st="in")
+    cmds.text(l="IK Foot Roll:", fn="boldLabelFont")
+    cmds.rowLayout(nc=2, cw2=(130,100))
+    cmds.text(l="Roll Start Angle:")
+    _ui["roll_start"] = cmds.floatField(v=30, min=0, max=90)
+    cmds.setParent("..")
+    cmds.rowLayout(nc=2, cw2=(130,100))
+    cmds.text(l="Roll End Angle:")
+    _ui["roll_end"] = cmds.floatField(v=60, min=0, max=120)
     cmds.setParent(".."); cmds.setParent("..")
 
     cmds.separator(h=10, st="in")
     cmds.button(l="Build Control Rig", h=40, bgc=(0.4,0.8,0.4), c=_on_build)
     cmds.button(l="Remove Control Rig", h=32, bgc=(0.9,0.4,0.4), c=lambda *a: remove_control_rig())
     cmds.separator(h=10, st="in")
-    cmds.frameLayout(l="Presets", cll=1, mw=10, mh=5)
-    cmds.rowLayout(nc=2, cw2=(200,200), adj=2)
-    cmds.button(l="Save Mapping", c=_on_save)
-    cmds.button(l="Load Mapping", c=_on_load)
-    cmds.setParent(".."); cmds.setParent("..")
+
+    cmds.frameLayout(l="Post Rig", cll=1, mw=10, mh=5)
+    cmds.button(l="Return to Bind Pose", h=32, bgc=(0.5,0.7,1.0),
+                c=lambda *a: reset_to_bind_pose())
+    cmds.setParent("..")
 
     cmds.showWindow(w)
 
