@@ -379,35 +379,46 @@ class AutoControlRigBuilder:
 
     # ----- twist joint drivers ---------------------------------------------
     def _setup_twist_joints(self):
-        """Counter-rotate twist joints for smooth twist distribution.
+        """Distribute twist across twist joints using matrix decomposition.
 
-        Twist joints are children of skin joints and inherit 100% of the
-        parent's rotation.  To make twist_i sit at *fraction* of the full
-        twist we apply:  twist.rx = drv.rx * (fraction - 1.0)
-        Fraction attributes are exposed on RootX_M for runtime tuning.
+        Reads the SKIN joint world matrices (the final constrained result)
+        to extract the local twist (rotateX) of a child joint relative to
+        its parent.  This is immune to FK/IK blend artefacts because it
+        operates on the end result, not on intermediate driver joints.
+
+        For each segment pair (parent_skin, child_skin):
+            localMatrix = child.worldMatrix × parent.worldInverseMatrix
+            twist = decomposeMatrix(localMatrix).outputRotateX - rest_rx
+
+        Lower limb twist joints (children of parent): add fraction × twist
+        Upper limb twist joints (children of parent): add (fraction-1) × twist
         """
         root_ctrl = "RootX_M"
         if not cmds.objExists(root_ctrl):
             return
 
+        # (parent_slot, child_slot, label)
         twist_segs = [
-            ("shoulder", "UpperArm"),
-            ("elbow",    "LowerArm"),
-            ("hip",      "UpperLeg"),
-            ("knee",     "LowerLeg"),
+            ("shoulder", "elbow",  "UpperArm"),   # upper arm twist
+            ("elbow",    "wrist",  "LowerArm"),   # lower arm twist
+            ("hip",      "knee",   "UpperLeg"),    # upper leg twist
+            ("knee",     "foot",   "LowerLeg"),    # lower leg twist
         ]
 
         has_sep = False
         for s in ("l", "r"):
             S = s.upper()
-            for slot_base, label in twist_segs:
-                slot = slot_base + "_" + s
-                skin_jnt = self.m.get(slot, "")
-                drv_jnt = self.dj.get(slot)
-                if not skin_jnt or not drv_jnt or not cmds.objExists(skin_jnt):
+            for parent_base, child_base, label in twist_segs:
+                parent_slot = parent_base + "_" + s
+                child_slot  = child_base + "_" + s
+                skin_par = self.m.get(parent_slot, "")
+                skin_chi = self.m.get(child_slot, "")
+                if not skin_par or not skin_chi:
+                    continue
+                if not cmds.objExists(skin_par) or not cmds.objExists(skin_chi):
                     continue
 
-                children = cmds.listRelatives(skin_jnt, c=1, type="joint") or []
+                children = cmds.listRelatives(skin_par, c=1, type="joint") or []
                 twist_jnts = sorted([c for c in children if "twist" in c.lower()])
                 if not twist_jnts:
                     continue
@@ -418,35 +429,75 @@ class AutoControlRigBuilder:
                     cmds.setAttr(root_ctrl + ".__twist__", l=1)
                     has_sep = True
 
+                is_upper = (parent_base in ("shoulder", "hip"))
+
+                # Shared per segment: localMatrix + decompose
+                mm = cmds.createNode("multMatrix",
+                    n="twistMM_{}_{}_{}".format(parent_base, label, S))
+                cmds.connectAttr(skin_chi + ".worldMatrix[0]",
+                                 mm + ".matrixIn[0]")
+                cmds.connectAttr(skin_par + ".worldInverseMatrix[0]",
+                                 mm + ".matrixIn[1]")
+
+                dm = cmds.createNode("decomposeMatrix",
+                    n="twistDM_{}_{}_{}".format(parent_base, label, S))
+                cmds.connectAttr(mm + ".matrixSum", dm + ".inputMatrix")
+                self.twist_nodes.extend([mm, dm])
+
+                # Capture rest-pose local rotateX so we get a clean zero delta
+                rest_rx = cmds.getAttr(dm + ".outputRotateX")
+
+                ref = cmds.createNode("plusMinusAverage",
+                    n="twistRef_{}_{}_{}".format(parent_base, label, S))
+                cmds.setAttr(ref + ".operation", 2)  # subtract
+                cmds.connectAttr(dm + ".outputRotateX", ref + ".input1D[0]")
+                cmds.setAttr(ref + ".input1D[1]", rest_rx)
+                self.twist_nodes.append(ref)
+
                 n = len(twist_jnts)
                 for i, tj in enumerate(twist_jnts):
                     frac = (n - i) / float(n + 1)
 
-                    attr_name = "twist{}_{}{}".format(label, S, i)
-                    cmds.addAttr(root_ctrl, ln=attr_name, at="float",
-                                 min=0, max=1, dv=frac, k=1)
-
-                    # PMA: fraction - 1.0
-                    pma = cmds.createNode("plusMinusAverage",
-                        n="twistSub_{}_{}{}".format(label, S, i))
-                    cmds.setAttr(pma + ".operation", 2)  # subtract
-                    cmds.connectAttr(root_ctrl + "." + attr_name,
-                                     pma + ".input1D[0]")
-                    cmds.setAttr(pma + ".input1D[1]", 1.0)
-
-                    # MD: drv.rx * (fraction - 1) -> twist.rx
-                    md = cmds.createNode("multiplyDivide",
-                        n="twistMul_{}_{}{}".format(label, S, i))
-                    cmds.connectAttr(drv_jnt + ".rx", md + ".input1X")
-                    cmds.connectAttr(pma + ".output1D", md + ".input2X")
-                    cmds.connectAttr(md + ".outputX", tj + ".rx")
-
-                    self.twist_nodes.extend([pma, md])
+                    bind_rx = cmds.getAttr(tj + ".rx")
                     self.bind_pose[tj] = {
                         "t": list(cmds.getAttr(tj + ".t")[0]),
                         "r": list(cmds.getAttr(tj + ".r")[0]),
                         "s": list(cmds.getAttr(tj + ".s")[0]),
                     }
+
+                    attr_name = "twist{}_{}{}".format(label, S, i)
+                    cmds.addAttr(root_ctrl, ln=attr_name, at="float",
+                                 min=0, max=1, dv=frac, k=1)
+
+                    md = cmds.createNode("multiplyDivide",
+                        n="twistMul_{}_{}{}".format(label, S, i))
+                    cmds.connectAttr(ref + ".output1D", md + ".input1X")
+
+                    if is_upper:
+                        # Upper limb: twist joints inherit parent rotation,
+                        # counter-rotate by (fraction - 1.0).
+                        pma = cmds.createNode("plusMinusAverage",
+                            n="twistSub_{}_{}{}".format(label, S, i))
+                        cmds.setAttr(pma + ".operation", 2)
+                        cmds.connectAttr(root_ctrl + "." + attr_name,
+                                         pma + ".input1D[0]")
+                        cmds.setAttr(pma + ".input1D[1]", 1.0)
+                        cmds.connectAttr(pma + ".output1D", md + ".input2X")
+                        self.twist_nodes.append(pma)
+                    else:
+                        # Lower limb: twist joints don't inherit child
+                        # rotation, add fraction directly.
+                        cmds.connectAttr(root_ctrl + "." + attr_name,
+                                         md + ".input2X")
+
+                    # Additive: bind_rx + delta → twist.rx
+                    add = cmds.createNode("plusMinusAverage",
+                        n="twistAdd_{}_{}{}".format(label, S, i))
+                    cmds.setAttr(add + ".input1D[0]", bind_rx)
+                    cmds.connectAttr(md + ".outputX", add + ".input1D[1]")
+                    cmds.connectAttr(add + ".output1D", tj + ".rx")
+
+                    self.twist_nodes.extend([md, add])
 
     # ----- Root / Hip controls ---------------------------------------------
     def _ctrl_root(self):
@@ -482,7 +533,7 @@ class AutoControlRigBuilder:
     def _ctrl_fk_arm(self, side):
         s = side.lower(); col = _side_color(side)
         ik_too = self.opts.get("create_ik_arms", False)
-        ik_slots = {"shoulder_"+s, "elbow_"+s}
+        ik_slots = {"shoulder_"+s, "elbow_"+s, "wrist_"+s}
         par = "FKChest_M" if cmds.objExists("FKChest_M") else self.ctrl_grp
         chain = [("scapula_"+s, "FKScapula_"+side),
                  ("shoulder_"+s,"FKShoulder_"+side),
@@ -640,13 +691,15 @@ class AutoControlRigBuilder:
         else:
             cmds.parent(ikh, self.ik_grp)
             cmds.pointConstraint(c, ikh)
-            # No SC solver — orient foot via FK control routing
-            fk_foot = SLOT_TO_CTRL.get("foot_"+s)
-            if fk_foot and cmds.objExists(fk_foot):
-                oc = cmds.orientConstraint(c, fk_foot, mo=1)[0]
-                w = cmds.orientConstraint(oc, q=1, wal=1)
-                if w: cmds.setAttr("{}.{}".format(oc, w[0]), 0)
-                self.ik_fk_oc["foot_"+s] = oc
+            # IK control drives foot orientation via dual-target on driver joint
+            fc_foot = self.fk_con.get("foot_"+s)
+            foot_dj = self.dj.get("foot_"+s)
+            if fc_foot and foot_dj:
+                cmds.orientConstraint(c, foot_dj, e=1, mo=1)
+                w = cmds.orientConstraint(fc_foot, q=1, wal=1)
+                if len(w) >= 2:
+                    cmds.setAttr("{}.{}".format(fc_foot, w[0]), 0)   # FK off
+                    cmds.setAttr("{}.{}".format(fc_foot, w[1]), 1)   # IK on
 
         # Pole vector — knees forward (+Z)
         pole = cmds.spaceLocator(n="PoleLeg_"+side)[0]
@@ -661,6 +714,10 @@ class AutoControlRigBuilder:
         s = side.lower()
         sho, elb, wri = [self.dj.get(k+"_"+s) for k in ("shoulder","elbow","wrist")]
         if not all([sho, elb, wri]): return
+
+        # Capture drv_wrist world rotation BEFORE IK handle changes the chain.
+        # This must match the state when the FK constraint offset was computed.
+        wri_rest_ro = cmds.xform(wri, q=1, ws=1, ro=1)
 
         # IK control at DRIVER wrist position, oriented along the arm chain
         c = _box("IKArm_"+side, sz=self.sz*5)
@@ -696,13 +753,18 @@ class AutoControlRigBuilder:
         self.ik_offsets[ik_key].append(po)
         cmds.poleVectorConstraint(pole, ikh)
 
-        # IK control drives wrist orientation via FK control
-        fk_wrist = SLOT_TO_CTRL.get("wrist_"+s)
-        if fk_wrist and cmds.objExists(fk_wrist):
-            oc = cmds.orientConstraint(c, fk_wrist, mo=1)[0]
-            w = cmds.orientConstraint(oc, q=1, wal=1)
-            if w: cmds.setAttr("{}.{}".format(oc, w[0]), 0)
-            self.ik_fk_oc["wrist_"+s] = oc
+        # IK orient target — use pre-IK wrist rotation so it matches the FK
+        # constraint's offset (both computed against the same drv_wrist state).
+        ik_orient_wrist = cmds.group(em=1, n="ikOrientWrist_"+side, p=c)
+        cmds.xform(ik_orient_wrist, ws=1, ro=wri_rest_ro)
+
+        fc_wrist = self.fk_con.get("wrist_"+s)
+        if fc_wrist:
+            cmds.orientConstraint(ik_orient_wrist, wri, e=1, mo=1)
+            w = cmds.orientConstraint(fc_wrist, q=1, wal=1)
+            if len(w) >= 2:
+                cmds.setAttr("{}.{}".format(fc_wrist, w[0]), 0)   # FK off
+                cmds.setAttr("{}.{}".format(fc_wrist, w[1]), 1)   # IK on
 
     # ----- FK/IK blend switch ----------------------------------------------
     def _ctrl_fkik(self, limb, side):
@@ -755,25 +817,22 @@ class AutoControlRigBuilder:
             w = cmds.orientConstraint(fc, q=1, wal=1)
             if w: cmds.connectAttr(rev+".outputX", "{}.{}".format(fc, w[0]))
 
-        # Blend dual-target foot/toe orient constraints (FK vs IK orient groups)
+        # Blend dual-target orient constraints (FK vs IK targets on driver joint)
         if limb == "Leg":
-            for sl in ["foot_"+s, "toe_"+s]:
-                fc = self.fk_con.get(sl)
-                if not fc or not cmds.objExists(fc): continue
-                w = cmds.orientConstraint(fc, q=1, wal=1)
-                if len(w) >= 2:
-                    # w[0]=FK target, w[1]=IK orient target
-                    cmds.connectAttr(rev+".outputX", "{}.{}".format(fc, w[0]))
-                    cmds.connectAttr(norm+".outputX", "{}.{}".format(fc, w[1]))
-                elif w:
-                    cmds.connectAttr(rev+".outputX", "{}.{}".format(fc, w[0]))
+            dual_slots = ["foot_"+s, "toe_"+s]
+        else:
+            dual_slots = ["wrist_"+s]
 
-        # End effector: blend IK-drives-FK-control constraint
-        end_slot = ("foot_" if limb=="Leg" else "wrist_") + s
-        ik_fk_oc = self.ik_fk_oc.get(end_slot)
-        if ik_fk_oc and cmds.objExists(ik_fk_oc):
-            w = cmds.orientConstraint(ik_fk_oc, q=1, wal=1)
-            if w: cmds.connectAttr(norm+".outputX", "{}.{}".format(ik_fk_oc, w[0]))
+        for sl in dual_slots:
+            fc = self.fk_con.get(sl)
+            if not fc or not cmds.objExists(fc): continue
+            w = cmds.orientConstraint(fc, q=1, wal=1)
+            if len(w) >= 2:
+                # w[0]=FK target, w[1]=IK orient target
+                cmds.connectAttr(rev+".outputX", "{}.{}".format(fc, w[0]))
+                cmds.connectAttr(norm+".outputX", "{}.{}".format(fc, w[1]))
+            elif w:
+                cmds.connectAttr(rev+".outputX", "{}.{}".format(fc, w[0]))
 
         # --- Visibility: hide unused controls at slider extremes ---
         # FK visible when blend < 10 (norm < 1)
