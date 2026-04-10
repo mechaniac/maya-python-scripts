@@ -363,6 +363,47 @@ All debug locators are parent-constrained to their targets and track position + 
 - **Return to Bind Pose** — zeros all control transforms and resets custom attributes to defaults
 - **Remove Control Rig** — deletes all rig nodes, removes skin joint constraints, restores original bind pose transforms
 
+---
+
+## Roadmap — Planned Features & Ideas
+
+Informed by state-of-the-art rigging systems (AdvancedSkeleton, mGear, Rapid Rig, Houdini KineFX/APEX, Unreal Control Rig). Organized roughly by priority and complexity.
+
+### High Priority
+
+| Feature | Description |
+|---|---|
+| **Space Switching** | World / Local / COG / Custom parent-space options for IK hands, IK feet, and pole vectors. Enum attr on each IK control with blendable space transitions. Essential for animating characters interacting with environments. |
+| **IK/FK Snap Matching** | One-click buttons (on FKIK controller or UI) to match FK pose → current IK result and vice versa. Eliminates pose pops when blending. Standard in AdvancedSkeleton and mGear. |
+| **Stretchy IK Limbs** | Distance-based limb stretching via joint scale when IK target exceeds chain length. Soft-IK falloff to prevent pop at full extension. Toggle + stretch factor attr on each IK control. |
+| **Finger / Hand Controls** | FK chain per finger (index through pinky + thumb), with master curl, spread, and fist attributes on a single hand control. Reduces per-finger keyframing to a few high-level sliders. |
+| **Global Scale** | Master scale attribute on RootX_M that uniformly scales the entire rig (controls, IK, driver skeleton) without breaking constraints or IK solvers. |
+
+### Medium Priority
+
+| Feature | Description |
+|---|---|
+| **IK Spine (Spline IK)** | Spline IK from root to chest with hip/chest/mid controls. Provides volume-preserving bends and squash/stretch along the spine. Can coexist with FK spine via blend. |
+| **Head Aim / Look-At** | Aim constraint on head (or separate eye joints) with a world-space target locator. Auto look-at with adjustable blend to let animators mix aim and FK head rotation. |
+| **Prop / Object Attachment** | Pre-built parent-constraint slots on hand, head, and back joints so props (weapons, tools, hats) can be parented to the rig with one click. Space-switchable between hands. |
+| **Soft IK** | Smoothly ease into full extension instead of snapping. Node-based falloff curve before the IK chain reaches max length. Prevents the classic IK "pop" artifact. |
+| **Bendy / Ribbon Limbs** | Ribbon surface or spline-based intermediate deformation between main joints, giving volume-preserving bends at elbows and knees. Replaces or augments twist joints with smooth curvature. |
+
+### Lower Priority / Nice to Have
+
+| Feature | Description |
+|---|---|
+| **Animation Picker** | 2D visual picker panel (HTML or Qt-based) showing a character silhouette with clickable regions to select controls. Standard in most production rigs. |
+| **Mirror Pose / Flip Animation** | Mirror selected keyframes or current pose from L↔R. Copy arm/leg pose across sides with axis correction. |
+| **Secondary Dynamics / Jiggle** | Spring/jiggle solver on FK chains (hair, cloth, accessories) with damping and stiffness controls. Procedural overlap without simulation. |
+| **Corrective Blend Shapes** | Pose-space deformation driver: automatically activate corrective blend shape targets based on joint rotation thresholds (e.g. shoulder fix at 90° raise). |
+| **Volume Preservation** | Squash-and-stretch scaling perpendicular to joint compression. Applied to spine, limbs, and neck. Maintains silhouette during extreme poses. |
+| **Reverse Foot Improvements** | Toe tap, toe wiggle, bank (inner/outer edge roll), and heel swivel attributes. Side-roll pivot locators. Matches AdvancedSkeleton's full foot roll attribute set. |
+| **Control Shape Library** | Swappable control curve shapes (circle, square, arrow, sphere, cube, cross, etc.) per control, selectable at build time or post-build. |
+| **Rig Versioning / Update** | Rebuild the rig on an already-constrained skeleton without losing animation. Store animation on controls, remove rig, rebuild, reapply animation. |
+| **Proxy Geo Display** | Low-poly proxy geometry per limb segment that follows the rig, toggleable for fast viewport playback without the full mesh. |
+| **Animation Layer Support** | Additive animation layers on controls so base cycles (walk, run) can have layered adjustments (limp, carry weight) without destructive edits. |
+
 
 
 
