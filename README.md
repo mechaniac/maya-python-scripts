@@ -244,49 +244,125 @@ Character rigging preparation utilities:
 
 ---
 
-## Next Steps: Auto Control Rig for citizen_REF.fbx (s&box)
+## Auto Control Rig — `autoControlRig.py`
 
-The imported `citizen_REF.fbx` from s&box will have an existing joint hierarchy but **no AdvancedSkeleton controls**. To use these animation scripts, we need to create a control rig setup script that:
+Generates AdvancedSkeleton-compatible controls on **any joint hierarchy**, designed for use with the **s&box Citizen character rig** (`citizen_REF.fbx`) but works with any skeleton. A clean intermediate "driver" skeleton is built with proper orientations; IK/FK controls drive the driver joints, which in turn parent-constrain the original skin joints.
 
-1. **Maps the s&box skeleton joints** to the expected AdvancedSkeleton controller names
-2. **Creates the following control elements** on the imported rig:
+**Usage:**
+```python
+import autoControlRig; autoControlRig.show()
+```
 
-### Required Controls to Create
+### Architecture
 
-| Control Name | Type | Purpose | Minimum Channels |
+```
+Controls  ──►  Driver joints (clean orient, IK-friendly)
+                     │
+                parentConstraint (maintainOffset)
+                     ▼
+                Skin joints (untouched)
+```
+
+The original skeleton is never modified — only constrained. Removing the rig restores the exact bind pose.
+
+### s&box Citizen Integration
+
+The script auto-maps the s&box Citizen skeleton joints to rig slots via case-insensitive name matching. The default `SLOT_DEFS` hints cover the Citizen naming convention (`pelvis`, `spine_01`, `thigh_l`, `calf_l`, `foot_l`, `ball_l`, `clavicle_l`, `upperarm_l`, `lowerarm_l`, `hand_l`, etc.). Joint mappings can be saved/loaded as JSON presets for reuse across scenes.
+
+### UI Workflow
+
+1. **From Selection** — select the root joint, click to populate the hierarchy
+2. **Auto-Map** — automatically matches joints to rig slots by name hints
+3. **Create Foot Roll Locators** — (optional) place heel/toetip locators for precise reverse foot positions
+4. **Build Control Rig** — generates the full rig with selected options
+5. **Remove Control Rig** — cleanly deletes everything and restores bind pose
+
+### Joint Mapping Slots
+
+| Slot | Label | Side | Example Citizen Joint |
 |---|---|---|---|
-| `RootX_M` | NURBS Curve | Master root mover | tX, tY, tZ, rX, rY, rZ |
-| `HipSwinger_M` | NURBS Curve | Hip rotation | rX, rY |
-| `IKLeg_R` / `IKLeg_L` | IK + NURBS Curve | Foot placement | tX, tY, tZ, rX + `stretchy` attr |
-| `IKArm_R` / `IKArm_L` | IK + NURBS Curve | Hand placement | tX, tY, tZ, rX, rY + `stretchy` attr |
-| `FKSpine1_M` | NURBS Curve | Spine FK | rX, rY, rZ |
-| `FKChest_M` | NURBS Curve | Chest FK | rX, rY, rZ |
-| `FKNeck_M` | NURBS Curve | Neck FK | tX, tY, tZ, rX, rY, rZ |
-| `FKHead_M` | NURBS Curve | Head FK | tX, tY, tZ, rX, rY, rZ |
-| `FKScapula_R` / `_L` | NURBS Curve | Scapula FK | rX, rY, rZ |
-| `FKShoulder_R` / `_L` | NURBS Curve | Shoulder FK | rX, rY, rZ |
-| `FKElbow_R` / `_L` | NURBS Curve | Elbow FK | rZ |
-| `FKWrist_R` / `_L` | NURBS Curve | Wrist FK | rX, rY, rZ |
-| `FKHip_R` / `_L` | NURBS Curve | FK leg hip | rZ |
-| `FKKnee_R` / `_L` | NURBS Curve | FK leg knee | rZ |
-| `FKFoot_R` / `_L` | NURBS Curve | FK leg foot | rZ |
-| `FKToe_R` / `_L` | NURBS Curve | FK leg toe | rZ |
-| `PoleArm_R` / `_L` | Locator | Elbow pole vector | tX, tY, tZ |
-| `FKIKArm_R` / `_L` | Attr holder | Arm FK/IK switch | `FKIKBlend` (0..10) |
-| `FKIKLeg_R` / `_L` | Attr holder | Leg FK/IK switch | `FKIKBlend` (0..10) |
+| `root` | Root / Pelvis | M | `pelvis` |
+| `spine` | Spine | M | `spine_01` |
+| `chest` | Chest | M | `spine_02` |
+| `neck` | Neck | M | `neck` |
+| `head` | Head | M | `head` |
+| `scapula_l/r` | Scapula / Clavicle | L/R | `clavicle_l` |
+| `shoulder_l/r` | Upper Arm | L/R | `upperarm_l` |
+| `elbow_l/r` | Lower Arm | L/R | `lowerarm_l` |
+| `wrist_l/r` | Hand | L/R | `hand_l` |
+| `hip_l/r` | Upper Leg | L/R | `thigh_l` |
+| `knee_l/r` | Lower Leg | L/R | `calf_l` |
+| `foot_l/r` | Foot | L/R | `foot_l` |
+| `toe_l/r` | Toe | L/R | `ball_l` |
 
-### Mapping Strategy
+### Controls Created
 
-The auto-rig script will need to:
+| Control | Type | Purpose |
+|---|---|---|
+| `RootX_M` | NURBS Circle | Master root translation |
+| `HipSwinger_M` | NURBS Circle | Hip orientation (parented under RootX_M) |
+| `FKSpine1_M` | NURBS Circle | Spine FK orient |
+| `FKChest_M` | NURBS Circle | Chest FK orient |
+| `FKNeck_M` | NURBS Circle | Neck FK orient |
+| `FKHead_M` | NURBS Circle | Head FK orient |
+| `FKScapula_L/R` | NURBS Circle | Scapula FK orient |
+| `FKShoulder_L/R` | NURBS Circle | Upper arm FK orient |
+| `FKElbow_L/R` | NURBS Circle | Lower arm FK orient |
+| `FKWrist_L/R` | NURBS Circle | Hand FK orient |
+| `FKHip_L/R` | NURBS Circle | Upper leg FK orient |
+| `FKKnee_L/R` | NURBS Circle | Lower leg FK orient |
+| `FKFoot_L/R` | NURBS Circle | Foot FK orient |
+| `FKToe_L/R` | NURBS Circle | Toe FK orient |
+| `IKLeg_L/R` | Box Curve | IK foot placement (ikRPsolver) |
+| `IKArm_L/R` | Box Curve | IK hand placement (ikRPsolver) |
+| `PoleLeg_L/R` | Locator | Knee pole vector |
+| `PoleArm_L/R` | Locator | Elbow pole vector |
+| `FKIKLeg_L/R` | Diamond Curve | Leg FK/IK blend switch (`FKIKBlend` 0–10) |
+| `FKIKArm_L/R` | Diamond Curve | Arm FK/IK blend switch (`FKIKBlend` 0–10) |
 
-1. **Detect/map joints** from the FBX skeleton to AdvancedSkeleton naming
-2. **Create NURBS curve controls** at each joint position with proper orientation
-3. **Set up IK handles** for legs and arms (RP solvers)
-4. **Create pole vectors** for elbows and knees
-5. **Add custom attributes** (`stretchy`, `FKIKBlend`) on relevant controls
-6. **Parent-constrain or orient-constrain** the FK controls to drive the joints
-7. **Group controls** under a clean hierarchy (`Group|Main|...`)
+### Build Options
 
-> **Note**: All scripts include `resolve_node_case_insensitive()` which tries alias variants like `FKScapula1_L` ↔ `FKScapula_L` and `FKSpine1_M` ↔ `FKSpine_M`. The auto-rig can use either naming convention.
+| Option | Default | Description |
+|---|---|---|
+| IK Legs | On | Create IK leg controls with ikRPsolver |
+| IK Arms | On | Create IK arm controls with ikRPsolver |
+| FK Arms | On | Create FK arm chain controls |
+| FK Legs | On | Create FK leg chain controls |
+| FK/IK Blend | On | Create blend switches with visibility toggling |
+| Show Debug | Off | Create debug locators on all driver joints and foot roll pivots |
+| Control Size | 1.0 | Global scale for all generated controls |
+| Scale Taper | 1.3 | FK chain controls taper larger toward root |
+
+### IK Foot Roll (Reverse Foot)
+
+The IK leg setup includes a full **reverse foot roll** system:
+
+- **Reverse hierarchy**: `footFollow → heelPiv → toetipPiv → ballPiv → [IK handle]`
+- **SC solver** from foot to toe keeps the toe aimed forward during ball roll
+- **Orient constraint** on the toe driver targets `toetipPiv` to keep toes flat on the ground while the heel lifts
+- **Expression-driven** — `Roll`, `RollStartAngle`, and `RollEndAngle` are live attributes on the IK foot control that update in real time
+
+| Roll Range | Heel (rx) | Ball (rx) | Toetip (rx) |
+|---|---|---|---|
+| -90 → 0 | Ramps from -90 to 0 | 0 | 0 |
+| 0 → Start | 0 | Ramps 0 → Start | 0 |
+| Start → End | 0 | Ramps Start → 0 | Ramps 0 → (End - Start) |
+
+**Foot Roll Locators**: Optional pre-build locators (`footRoll_heel_L/R`, `footRoll_toetip_L/R`) can be positioned to customize heel and toe-tip pivot locations. If absent, default positions are computed from foot/toe joint locations.
+
+### Debug Visualization
+
+When **Show Debug** is enabled, locators are created for:
+- All driver joints (`dbg_root`, `dbg_spine`, `dbg_foot_l`, `dbg_toe_l`, etc.)
+- Foot roll pivots: `dbg_heelPiv_L/R` (yellow), `dbg_ballPiv_L/R` (yellow), `dbg_toetipPiv_L/R` (brown)
+
+All debug locators are parent-constrained to their targets and track position + rotation in real time.
+
+### Post-Rig Utilities
+
+- **Return to Bind Pose** — zeros all control transforms and resets custom attributes to defaults
+- **Remove Control Rig** — deletes all rig nodes, removes skin joint constraints, restores original bind pose transforms
+
+
 
 
