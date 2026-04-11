@@ -1,2 +1,6 @@
 *.pyc
 __pycache__/
+
+# Source 2 Importer — runtime artifacts
+source2_importer/vrf/
+*.generated.png
