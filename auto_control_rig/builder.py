@@ -6,6 +6,7 @@ from .utils import color
 from . import skeleton
 from . import controls
 from . import twist
+from . import helpers
 
 
 class AutoControlRigBuilder:
@@ -75,6 +76,9 @@ class AutoControlRigBuilder:
         # 3.25) Twist joint drivers
         if self.opts.get("create_twist_drivers", True):
             twist.setup_twist_joints(self)
+
+        # 3.35) Helper joint correctives (elbow/knee)
+        helpers.setup_helper_joints(self)
 
         # 3.5) Debug visualization
         if self.opts.get("show_debug", False):
