@@ -256,14 +256,17 @@ import autoControlRig; autoControlRig.show()
 ### Architecture
 
 ```
-Controls  ──►  Driver joints (clean orient, IK-friendly)
-                     │
-                parentConstraint (maintainOffset)
-                     ▼
-                Skin joints (untouched)
+                     ┌─ FK Controls ──► FK Driver joints ──┐
+Main_M ──► RootX_M ──┤                                     ├─ parentConstraint (blended) ──► Skin joints
+                     └─ IK Controls ──► IK Driver joints ──┘
 ```
 
-The original skeleton is never modified — only constrained. Removing the rig restores the exact bind pose.
+**Dual-chain FK/IK**: Each limb and the spine gets separate FK and IK driver joint chains. Skin joints receive a dual-target parentConstraint blended by the FKIK weight. The original skeleton is never modified — only constrained. Removing the rig restores the exact bind pose.
+
+- **Main_M** — World-space master controller at the origin. All rig groups (Ctrl_GRP, Driver_GRP, IK_GRP, Misc_GRP) parent under it. ScaleConstraint from Main_M to the root skin joint provides uniform global scaling.
+- **chestFollow_M** — Blends between FK and IK chest controls so neck, head, and arms always follow the active spine mode.
+- **Space switching** — IK legs: Main / Root. IK arms: Main / Root / Chest / Head. Enum attr on each IK control with condition-driven parentConstraint weights.
+- **Driver visibility** — Inactive driver joint chains are hidden via `drawStyle` toggling (Bone ↔ None) so only the active chain is visible.
 
 ### s&box Citizen Integration
 
@@ -283,7 +286,8 @@ The script auto-maps the s&box Citizen skeleton joints to rig slots via case-ins
 |---|---|---|---|
 | `root` | Root / Pelvis | M | `pelvis` |
 | `spine` | Spine | M | `spine_01` |
-| `chest` | Chest | M | `spine_02` |
+| `spine_1` | Spine 1 | M | `spine_02`, `spine2` |
+| `chest` | Chest | M | `spine_03`, `spine_2` |
 | `neck` | Neck | M | `neck` |
 | `head` | Head | M | `head` |
 | `scapula_l/r` | Scapula / Clavicle | L/R | `clavicle_l` |
@@ -299,9 +303,11 @@ The script auto-maps the s&box Citizen skeleton joints to rig slots via case-ins
 
 | Control | Type | Purpose |
 |---|---|---|
+| `Main_M` | NURBS Circle | World-space master controller, global scale |
 | `RootX_M` | NURBS Circle | Master root translation |
 | `HipSwinger_M` | NURBS Circle | Hip orientation (parented under RootX_M) |
 | `FKSpine1_M` | NURBS Circle | Spine FK orient |
+| `FKSpine2_M` | NURBS Circle | Spine 1 FK orient |
 | `FKChest_M` | NURBS Circle | Chest FK orient |
 | `FKNeck_M` | NURBS Circle | Neck FK orient |
 | `FKHead_M` | NURBS Circle | Head FK orient |
@@ -315,8 +321,12 @@ The script auto-maps the s&box Citizen skeleton joints to rig slots via case-ins
 | `FKToe_L/R` | NURBS Circle | Toe FK orient |
 | `IKLeg_L/R` | Box Curve | IK foot placement (ikRPsolver) |
 | `IKArm_L/R` | Box Curve | IK hand placement (ikRPsolver) |
-| `PoleLeg_L/R` | Locator | Knee pole vector |
-| `PoleArm_L/R` | Locator | Elbow pole vector |
+| `PoleLeg_L/R` | Cross Curve | Knee pole vector |
+| `PoleArm_L/R` | Cross Curve | Elbow pole vector |
+| `IKSpine_M` | NURBS Circle | IK spine bottom (hip-level, spline solver) |
+| `IKSpineMid_M` | NURBS Circle | IK spine mid (S-curve deformation) |
+| `IKChest_M` | NURBS Circle | IK spine top (chest-level, drives appendages) |
+| `FKIKSpine_M` | Diamond Curve | Spine FK/IK blend switch (`FKIKBlend` 0–10) |
 | `FKIKLeg_L/R` | Diamond Curve | Leg FK/IK blend switch (`FKIKBlend` 0–10) |
 | `FKIKArm_L/R` | Diamond Curve | Arm FK/IK blend switch (`FKIKBlend` 0–10) |
 
@@ -326,9 +336,11 @@ The script auto-maps the s&box Citizen skeleton joints to rig slots via case-ins
 |---|---|---|
 | IK Legs | On | Create IK leg controls with ikRPsolver |
 | IK Arms | On | Create IK arm controls with ikRPsolver |
+| IK Spine | On | Create IK spline spine with 3 controllers (bottom, mid, top) |
 | FK Arms | On | Create FK arm chain controls |
 | FK Legs | On | Create FK leg chain controls |
-| FK/IK Blend | On | Create blend switches with visibility toggling |
+| FK/IK Blend | On | Create blend switches with visibility toggling and driver chain hiding |
+| Twist Joints | On | Create twist joint drivers for upper/lower arm and leg segments |
 | Show Debug | Off | Create debug locators on all driver joints and foot roll pivots |
 | Control Size | 1.0 | Global scale for all generated controls |
 | Scale Taper | 1.3 | FK chain controls taper larger toward root |
@@ -358,9 +370,28 @@ When **Show Debug** is enabled, locators are created for:
 
 All debug locators are parent-constrained to their targets and track position + rotation in real time.
 
+### IK Spline Spine
+
+When **IK Spine** is enabled, a spline IK solver drives the spine with three controllers:
+
+- **IKSpine_M** — Bottom control at the hip/spine base. Drives first CV of the spline curve.
+- **IKSpineMid_M** — Mid control at the spine_1 level. Drives the middle CVs for S-curve deformation.
+- **IKChest_M** — Top control at the chest level. Drives last CV. Appendages (neck, head, arms) follow via `chestFollow_M`.
+
+Advanced twist uses object rotation up (start = IKSpine_M, end = IKChest_M). The spline curve has `inheritsTransform` disabled to prevent double transforms. All three IK spine offsets parent under `RootX_M` so they follow the root.
+
+### Twist Joints
+
+When **Twist Joints** is enabled, twist extraction joints are created for upper/lower arm and leg segments. These distribute forearm twist and upper-arm roll across multiple joints for smoother deformation.
+
+### Helper Joint Correctives
+
+Automatic corrective helper joints at elbows and knees that activate based on bend angle to maintain volume during extreme poses.
+
 ### Post-Rig Utilities
 
-- **Return to Bind Pose** — zeros all control transforms and resets custom attributes to defaults
+- **Select All Controls** — selects all NURBS curve controls in the rig (filters by nurbsCurve shapes)
+- **Return to Bind Pose** — zeros all control transforms and resets custom attributes to defaults (top-down order, includes Main_M)
 - **Remove Control Rig** — deletes all rig nodes, removes skin joint constraints, restores original bind pose transforms
 
 ---
@@ -371,38 +402,38 @@ Informed by state-of-the-art rigging systems (AdvancedSkeleton, mGear, Rapid Rig
 
 ### High Priority
 
-| Feature | Description |
-|---|---|
-| **Space Switching** | World / Local / COG / Custom parent-space options for IK hands, IK feet, and pole vectors. Enum attr on each IK control with blendable space transitions. Essential for animating characters interacting with environments. |
-| **IK/FK Snap Matching** | One-click buttons (on FKIK controller or UI) to match FK pose → current IK result and vice versa. Eliminates pose pops when blending. Standard in AdvancedSkeleton and mGear. |
-| **Stretchy IK Limbs** | Distance-based limb stretching via joint scale when IK target exceeds chain length. Soft-IK falloff to prevent pop at full extension. Toggle + stretch factor attr on each IK control. |
-| **Finger / Hand Controls** | FK chain per finger (index through pinky + thumb), with master curl, spread, and fist attributes on a single hand control. Reduces per-finger keyframing to a few high-level sliders. |
-| **Global Scale** | Master scale attribute on RootX_M that uniformly scales the entire rig (controls, IK, driver skeleton) without breaking constraints or IK solvers. |
+| Feature | Description | Status |
+|---|---|---|
+| **Space Switching** | IK legs: Main / Root. IK arms: Main / Root / Chest / Head. Enum attr with condition-driven parentConstraint weights. | ✅ Done |
+| **IK/FK Snap Matching** | One-click buttons to match FK pose → current IK result and vice versa. Eliminates pose pops when blending. | Planned |
+| **Stretchy IK Limbs** | Distance-based limb stretching via joint scale when IK target exceeds chain length. Soft-IK falloff to prevent pop at full extension. | Planned |
+| **Finger / Hand Controls** | FK chain per finger with master curl, spread, and fist attributes on a single hand control. | Planned |
+| **Global Scale** | ScaleConstraint from Main_M to root skin joint. Uniform scaling of rig + mesh. | ✅ Done |
 
 ### Medium Priority
 
-| Feature | Description |
-|---|---|
-| **IK Spine (Spline IK)** | Spline IK from root to chest with hip/chest/mid controls. Provides volume-preserving bends and squash/stretch along the spine. Can coexist with FK spine via blend. |
-| **Head Aim / Look-At** | Aim constraint on head (or separate eye joints) with a world-space target locator. Auto look-at with adjustable blend to let animators mix aim and FK head rotation. |
-| **Prop / Object Attachment** | Pre-built parent-constraint slots on hand, head, and back joints so props (weapons, tools, hats) can be parented to the rig with one click. Space-switchable between hands. |
-| **Soft IK** | Smoothly ease into full extension instead of snapping. Node-based falloff curve before the IK chain reaches max length. Prevents the classic IK "pop" artifact. |
-| **Bendy / Ribbon Limbs** | Ribbon surface or spline-based intermediate deformation between main joints, giving volume-preserving bends at elbows and knees. Replaces or augments twist joints with smooth curvature. |
+| Feature | Description | Status |
+|---|---|---|
+| **IK Spine (Spline IK)** | 3-controller IK spline (bottom/mid/top) with FK/IK blend, chest follow for appendages, advanced twist. | ✅ Done |
+| **Head Aim / Look-At** | Aim constraint on head with a world-space target locator. Auto look-at with adjustable blend. | Planned |
+| **Prop / Object Attachment** | Pre-built parent-constraint slots on hand, head, and back joints so props can be parented to the rig with one click. Space-switchable between hands. | Planned |
+| **Soft IK** | Smoothly ease into full extension instead of snapping. Node-based falloff curve before the IK chain reaches max length. | Planned |
+| **Bendy / Ribbon Limbs** | Ribbon surface or spline-based intermediate deformation between main joints, giving volume-preserving bends at elbows and knees. | Planned |
 
 ### Lower Priority / Nice to Have
 
-| Feature | Description |
-|---|---|
-| **Animation Picker** | 2D visual picker panel (HTML or Qt-based) showing a character silhouette with clickable regions to select controls. Standard in most production rigs. |
-| **Mirror Pose / Flip Animation** | Mirror selected keyframes or current pose from L↔R. Copy arm/leg pose across sides with axis correction. |
-| **Secondary Dynamics / Jiggle** | Spring/jiggle solver on FK chains (hair, cloth, accessories) with damping and stiffness controls. Procedural overlap without simulation. |
-| **Corrective Blend Shapes** | Pose-space deformation driver: automatically activate corrective blend shape targets based on joint rotation thresholds (e.g. shoulder fix at 90° raise). |
-| **Volume Preservation** | Squash-and-stretch scaling perpendicular to joint compression. Applied to spine, limbs, and neck. Maintains silhouette during extreme poses. |
-| **Reverse Foot Improvements** | Toe tap, toe wiggle, bank (inner/outer edge roll), and heel swivel attributes. Side-roll pivot locators. Matches AdvancedSkeleton's full foot roll attribute set. |
-| **Control Shape Library** | Swappable control curve shapes (circle, square, arrow, sphere, cube, cross, etc.) per control, selectable at build time or post-build. |
-| **Rig Versioning / Update** | Rebuild the rig on an already-constrained skeleton without losing animation. Store animation on controls, remove rig, rebuild, reapply animation. |
-| **Proxy Geo Display** | Low-poly proxy geometry per limb segment that follows the rig, toggleable for fast viewport playback without the full mesh. |
-| **Animation Layer Support** | Additive animation layers on controls so base cycles (walk, run) can have layered adjustments (limp, carry weight) without destructive edits. |
+| Feature | Description | Status |
+|---|---|---|
+| **Animation Picker** | 2D visual picker panel (HTML or Qt-based) showing a character silhouette with clickable regions to select controls. | Planned |
+| **Mirror Pose / Flip Animation** | Mirror selected keyframes or current pose from L↔R. Copy arm/leg pose across sides with axis correction. | Planned |
+| **Secondary Dynamics / Jiggle** | Spring/jiggle solver on FK chains (hair, cloth, accessories) with damping and stiffness controls. | Planned |
+| **Corrective Blend Shapes** | Pose-space deformation driver: activate corrective blend shape targets based on joint rotation thresholds. | Planned |
+| **Volume Preservation** | Squash-and-stretch scaling perpendicular to joint compression. Applied to spine, limbs, and neck. | Planned |
+| **Reverse Foot Improvements** | Toe tap, toe wiggle, bank (inner/outer edge roll), and heel swivel attributes. Side-roll pivot locators. | Planned |
+| **Control Shape Library** | Swappable control curve shapes per control, selectable at build time or post-build. | Planned |
+| **Rig Versioning / Update** | Rebuild the rig without losing animation. Store animation, remove rig, rebuild, reapply. | Planned |
+| **Proxy Geo Display** | Low-poly proxy geometry per limb segment that follows the rig, toggleable for fast viewport playback. | Planned |
+| **Animation Layer Support** | Additive animation layers on controls so base cycles can have layered adjustments without destructive edits. | Planned |
 
 
 
