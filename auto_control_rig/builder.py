@@ -11,12 +11,10 @@ from . import helpers
 
 class AutoControlRigBuilder:
     """
-    Architecture:
-        Controls  -->  Driver joints (clean orient, IK-friendly)
-                            |
-                       parentConstraint (maintainOffset)
-                            v
-                       Skin joints (untouched)
+    Dual-chain FK/IK architecture:
+        FK Controls  -->  FK Driver joints  ──┐
+                                               ├─ parentConstraint (blended) --> Skin joints
+        IK Handle    -->  IK Driver joints  ──┘
     """
 
     def __init__(self, mapping, opts):
@@ -25,11 +23,13 @@ class AutoControlRigBuilder:
         self.sz = opts.get("control_size", 1.0)
         self.taper = opts.get("scale_taper", 1.3)
         self.dj = {}
+        self.ik_dj = {}
         self.fk_con = {}
         self.ik_con = {}
         self.fk_offsets = {}
         self.ik_offsets = {}
         self.ik_fk_oc = {}
+        self.skin_con = {}
         self.skin_constraints = []
         self.twist_nodes = []
         self.bind_pose = {}
@@ -48,8 +48,15 @@ class AutoControlRigBuilder:
         cmds.setAttr(self.ik_grp + ".v", 0)
         cmds.setAttr(self.misc_grp + ".v", 0)
 
-        # 1) Driver skeleton
+        # 1) Driver skeleton (FK)
         skeleton.build_driver_skeleton(self)
+
+        # 1.5) IK driver skeletons (separate chains for IK solving)
+        for s in "lr":
+            if self.opts.get("create_ik_arms", True):
+                skeleton.build_ik_driver_arm(self, s)
+            if self.opts.get("create_ik_legs", True):
+                skeleton.build_ik_driver_leg(self, s)
 
         # 2) Controls
         controls.build_root(self)
@@ -63,15 +70,17 @@ class AutoControlRigBuilder:
                 controls.build_ik_leg(self, s)
             if self.opts.get("create_ik_arms", True):
                 controls.build_ik_arm(self, s)
+
+        # 3) Bind skin joints to driver
+        self._bind_skin()
+
+        # 3.1) FK/IK blend switches (after bind, uses skin constraints)
         for s in "LR":
             if self.opts.get("create_fkik_blend", True):
                 if self.opts.get("create_ik_legs") and self.opts.get("create_fk_legs"):
                     controls.build_fkik(self, "Leg", s)
                 if self.opts.get("create_ik_arms") and self.opts.get("create_fk_arms"):
                     controls.build_fkik(self, "Arm", s)
-
-        # 3) Bind skin joints to driver
-        self._bind_skin()
 
         # 3.25) Twist joint drivers
         if self.opts.get("create_twist_drivers", True):
@@ -99,16 +108,66 @@ class AutoControlRigBuilder:
         print("// AutoControlRig built.")
 
     def _bind_skin(self):
+        mapped_skins = set(self.m.values())
         for slot, dj in self.dj.items():
             skin = self.m.get(slot, "")
-            if skin and cmds.objExists(skin):
-                self.bind_pose[skin] = {
-                    "t": list(cmds.getAttr(skin + ".t")[0]),
-                    "r": list(cmds.getAttr(skin + ".r")[0]),
-                    "s": list(cmds.getAttr(skin + ".s")[0]),
-                }
+            if not skin or not cmds.objExists(skin):
+                continue
+            self.bind_pose[skin] = {
+                "t": list(cmds.getAttr(skin + ".t")[0]),
+                "r": list(cmds.getAttr(skin + ".r")[0]),
+                "s": list(cmds.getAttr(skin + ".s")[0]),
+            }
+            ik_dj = self.ik_dj.get(slot)
+            if ik_dj and cmds.objExists(ik_dj):
+                # Dual-target: FK driver + IK driver
+                c = cmds.parentConstraint(dj, ik_dj, skin, mo=1)[0]
+                self.skin_con[slot] = c
+                # Default to IK active
+                w = cmds.parentConstraint(c, q=1, wal=1)
+                if len(w) >= 2:
+                    cmds.setAttr("{}.{}".format(c, w[0]), 0)
+                    cmds.setAttr("{}.{}".format(c, w[1]), 1)
+            else:
                 c = cmds.parentConstraint(dj, skin, mo=1)[0]
-                self.skin_constraints.append(c)
+            self.skin_constraints.append(c)
+
+        # Bind unmapped intermediate joints between consecutive spine slots
+        spine_slots = ["spine", "chest", "neck", "head"]
+        for i in range(len(spine_slots) - 1):
+            lo_slot = spine_slots[i]
+            hi_slot = spine_slots[i + 1]
+            lo_skin = self.m.get(lo_slot, "")
+            hi_skin = self.m.get(hi_slot, "")
+            lo_dj = self.dj.get(lo_slot)
+            if not lo_skin or not hi_skin or not lo_dj:
+                continue
+            # Walk down from lo_skin's children toward hi_skin
+            cur = lo_skin
+            while cur:
+                children = cmds.listRelatives(cur, c=1, type="joint") or []
+                found = None
+                for ch in children:
+                    if ch == hi_skin:
+                        found = None
+                        cur = None
+                        break
+                    if ch not in mapped_skins:
+                        found = ch
+                        break
+                if cur is None:
+                    break
+                if found:
+                    self.bind_pose[found] = {
+                        "t": list(cmds.getAttr(found + ".t")[0]),
+                        "r": list(cmds.getAttr(found + ".r")[0]),
+                        "s": list(cmds.getAttr(found + ".s")[0]),
+                    }
+                    c = cmds.parentConstraint(lo_dj, found, mo=1)[0]
+                    self.skin_constraints.append(c)
+                    cur = found
+                else:
+                    break
 
     def _create_debug_vis(self):
         dbg = cmds.group(em=1, n="Debug_GRP", p=self.top)

@@ -43,7 +43,7 @@ def build_fk_spine(builder):
         color(c, COL_M)
         o = offset(c)
         cmds.parent(o, par if cmds.objExists(par) else builder.ctrl_grp)
-        cmds.orientConstraint(c, dj, mo=1)
+        cmds.parentConstraint(c, dj, mo=1)
         par = c
 
 
@@ -53,8 +53,6 @@ def build_fk_spine(builder):
 def build_fk_arm(builder, side):
     s = side.lower()
     col = side_color(side)
-    ik_too = builder.opts.get("create_ik_arms", False)
-    ik_slots = {"shoulder_" + s, "elbow_" + s, "wrist_" + s}
     par = "FKChest_M" if cmds.objExists("FKChest_M") else builder.ctrl_grp
     chain = [("scapula_" + s, "FKScapula_" + side),
              ("shoulder_" + s, "FKShoulder_" + side),
@@ -72,12 +70,7 @@ def build_fk_arm(builder, side):
         o = offset(c)
         cmds.parent(o, par if cmds.objExists(par) else builder.ctrl_grp)
         builder.fk_offsets[slot] = o
-        con = cmds.orientConstraint(c, dj, mo=1)[0]
-        builder.fk_con[slot] = con
-        if ik_too and slot in ik_slots:
-            w = cmds.orientConstraint(con, q=1, wal=1)
-            if w:
-                cmds.setAttr("{}.{}".format(con, w[0]), 0)
+        cmds.parentConstraint(c, dj, mo=1)
         par = c
 
 
@@ -87,7 +80,6 @@ def build_fk_arm(builder, side):
 def build_fk_leg(builder, side):
     s = side.lower()
     col = side_color(side)
-    ik_too = builder.opts.get("create_ik_legs", False)
     par = "RootX_M" if cmds.objExists("RootX_M") else builder.ctrl_grp
     chain = [("hip_" + s, "FKHip_" + side),
              ("knee_" + s, "FKKnee_" + side),
@@ -105,12 +97,7 @@ def build_fk_leg(builder, side):
         o = offset(c)
         cmds.parent(o, par if cmds.objExists(par) else builder.ctrl_grp)
         builder.fk_offsets[slot] = o
-        con = cmds.orientConstraint(c, dj, mo=1)[0]
-        builder.fk_con[slot] = con
-        if ik_too and slot in ("hip_" + s, "knee_" + s):
-            w = cmds.orientConstraint(con, q=1, wal=1)
-            if w:
-                cmds.setAttr("{}.{}".format(con, w[0]), 0)
+        cmds.parentConstraint(c, dj, mo=1)
         par = c
 
 
@@ -119,7 +106,7 @@ def build_fk_leg(builder, side):
 # ---------------------------------------------------------------------------
 def build_ik_leg(builder, side):
     s = side.lower()
-    hip, knee, foot = [builder.dj.get(k + "_" + s) for k in ("hip", "knee", "foot")]
+    hip, knee, foot = [builder.ik_dj.get(k + "_" + s) for k in ("hip", "knee", "foot")]
     if not all([hip, knee, foot]):
         return
 
@@ -136,7 +123,7 @@ def build_ik_leg(builder, side):
 
     ikh, _ = cmds.ikHandle(n="ikh_Leg_" + side, sj=hip, ee=foot, sol="ikRPsolver")
 
-    toe_dj = builder.dj.get("toe_" + s)
+    toe_dj = builder.ik_dj.get("toe_" + s)
     if toe_dj:
         foot_p = pos(foot)
         toe_p = pos(toe_dj)
@@ -164,21 +151,8 @@ def build_ik_leg(builder, side):
         ik_orient_toe = cmds.group(em=1, n="ikOrientToe_" + side, p=toetip_grp)
         cmds.xform(ik_orient_toe, ws=1, ro=cmds.xform(toe_dj, q=1, ws=1, ro=1))
 
-        fc_foot = builder.fk_con.get("foot_" + s)
-        if fc_foot:
-            cmds.orientConstraint(ik_orient_foot, foot, e=1, mo=1)
-            w = cmds.orientConstraint(fc_foot, q=1, wal=1)
-            if len(w) >= 2:
-                cmds.setAttr("{}.{}".format(fc_foot, w[0]), 0)
-                cmds.setAttr("{}.{}".format(fc_foot, w[1]), 1)
-
-        fc_toe = builder.fk_con.get("toe_" + s)
-        if fc_toe:
-            cmds.orientConstraint(ik_orient_toe, toe_dj, e=1, mo=1)
-            w = cmds.orientConstraint(fc_toe, q=1, wal=1)
-            if len(w) >= 2:
-                cmds.setAttr("{}.{}".format(fc_toe, w[0]), 0)
-                cmds.setAttr("{}.{}".format(fc_toe, w[1]), 1)
+        cmds.orientConstraint(ik_orient_foot, foot, mo=1)
+        cmds.orientConstraint(ik_orient_toe, toe_dj, mo=1)
 
         start = builder.opts.get("roll_start_angle", 30)
         end = builder.opts.get("roll_end_angle", 60)
@@ -217,14 +191,7 @@ def build_ik_leg(builder, side):
     else:
         cmds.parent(ikh, builder.ik_grp)
         cmds.pointConstraint(c, ikh)
-        fc_foot = builder.fk_con.get("foot_" + s)
-        foot_dj = builder.dj.get("foot_" + s)
-        if fc_foot and foot_dj:
-            cmds.orientConstraint(c, foot_dj, e=1, mo=1)
-            w = cmds.orientConstraint(fc_foot, q=1, wal=1)
-            if len(w) >= 2:
-                cmds.setAttr("{}.{}".format(fc_foot, w[0]), 0)
-                cmds.setAttr("{}.{}".format(fc_foot, w[1]), 1)
+        cmds.orientConstraint(c, foot, mo=1)
 
     pole = cross("PoleLeg_" + side, sz=builder.sz * 3)
     cmds.xform(pole, ws=1, t=pole_pos(knee, builder.sz * 20, (0, 0, 1)))
@@ -240,7 +207,7 @@ def build_ik_leg(builder, side):
 # ---------------------------------------------------------------------------
 def build_ik_arm(builder, side):
     s = side.lower()
-    sho, elb, wri = [builder.dj.get(k + "_" + s) for k in ("shoulder", "elbow", "wrist")]
+    sho, elb, wri = [builder.ik_dj.get(k + "_" + s) for k in ("shoulder", "elbow", "wrist")]
     if not all([sho, elb, wri]):
         return
 
@@ -249,13 +216,11 @@ def build_ik_arm(builder, side):
     box_sz = builder.sz * 5
     c = box("IKArm_" + side, sz=box_sz)
     cmds.xform(c, ws=1, t=pos(wri))
-    # Orient along forearm (match wrist skin joint orientation)
     skin_wri = builder.m.get("wrist_" + s)
     if skin_wri and cmds.objExists(skin_wri):
         cmds.xform(c, ws=1, ro=cmds.xform(skin_wri, q=1, ws=1, ro=1))
     else:
         cmds.xform(c, ws=1, ro=wri_rest_ro)
-    # Center box on pivot, then shift half-width toward hand (along bone +X)
     half = box_sz * 0.5
     shift_cvs(c, dx=half, dy=-half)
     color(c, COL_IK if side == "L" else COL_R)
@@ -278,14 +243,7 @@ def build_ik_arm(builder, side):
 
     ik_orient_wrist = cmds.group(em=1, n="ikOrientWrist_" + side, p=c)
     cmds.xform(ik_orient_wrist, ws=1, ro=wri_rest_ro)
-
-    fc_wrist = builder.fk_con.get("wrist_" + s)
-    if fc_wrist:
-        cmds.orientConstraint(ik_orient_wrist, wri, e=1, mo=1)
-        w = cmds.orientConstraint(fc_wrist, q=1, wal=1)
-        if len(w) >= 2:
-            cmds.setAttr("{}.{}".format(fc_wrist, w[0]), 0)
-            cmds.setAttr("{}.{}".format(fc_wrist, w[1]), 1)
+    cmds.orientConstraint(ik_orient_wrist, wri, mo=1)
 
 
 # ---------------------------------------------------------------------------
@@ -335,34 +293,20 @@ def build_fkik(builder, limb, side):
     if cmds.objExists(ikh):
         cmds.connectAttr(norm + ".outputX", ikh + ".ikBlend")
 
+    # Blend weights on skin joint parentConstraints (FK driver + IK driver)
     if limb == "Leg":
-        fk_slots = ["hip_" + s, "knee_" + s]
+        blend_slots = ["hip_" + s, "knee_" + s, "foot_" + s, "toe_" + s]
     else:
-        fk_slots = ["shoulder_" + s, "elbow_" + s]
+        blend_slots = ["shoulder_" + s, "elbow_" + s, "wrist_" + s]
 
-    for sl in fk_slots:
-        fc = builder.fk_con.get(sl)
-        if not fc or not cmds.objExists(fc):
+    for sl in blend_slots:
+        sc = builder.skin_con.get(sl)
+        if not sc or not cmds.objExists(sc):
             continue
-        w = cmds.orientConstraint(fc, q=1, wal=1)
-        if w:
-            cmds.connectAttr(rev + ".outputX", "{}.{}".format(fc, w[0]))
-
-    if limb == "Leg":
-        dual_slots = ["foot_" + s, "toe_" + s]
-    else:
-        dual_slots = ["wrist_" + s]
-
-    for sl in dual_slots:
-        fc = builder.fk_con.get(sl)
-        if not fc or not cmds.objExists(fc):
-            continue
-        w = cmds.orientConstraint(fc, q=1, wal=1)
+        w = cmds.parentConstraint(sc, q=1, wal=1)
         if len(w) >= 2:
-            cmds.connectAttr(rev + ".outputX", "{}.{}".format(fc, w[0]))
-            cmds.connectAttr(norm + ".outputX", "{}.{}".format(fc, w[1]))
-        elif w:
-            cmds.connectAttr(rev + ".outputX", "{}.{}".format(fc, w[0]))
+            cmds.connectAttr(rev + ".outputX", "{}.{}".format(sc, w[0]))
+            cmds.connectAttr(norm + ".outputX", "{}.{}".format(sc, w[1]))
 
     # Visibility
     fk_vis = cmds.createNode("condition", n="fkVis_{}_{}".format(limb, side))
@@ -382,7 +326,7 @@ def build_fkik(builder, limb, side):
     if limb == "Leg":
         vis_fk = ["hip_" + s, "knee_" + s, "foot_" + s, "toe_" + s]
     else:
-        vis_fk = ["scapula_" + s, "shoulder_" + s, "elbow_" + s, "wrist_" + s]
+        vis_fk = ["shoulder_" + s, "elbow_" + s, "wrist_" + s]
     for sl in vis_fk:
         off = builder.fk_offsets.get(sl)
         if off and cmds.objExists(off):

@@ -89,10 +89,6 @@ def _driver_arm(builder, s, S):
         _drv(builder, sl, par)
         par = builder.dj.get(sl, par)
 
-    arm = [builder.dj[k] for k in ["shoulder_" + s, "elbow_" + s, "wrist_" + s] if k in builder.dj]
-    if len(arm) == 3:
-        set_preferred_angle(arm[0], arm[1], arm[2], bend_dir=(0, 0, -1))
-
 
 def _driver_leg(builder, s, S):
     root = builder.dj.get("root", builder.drv_grp)
@@ -100,12 +96,51 @@ def _driver_leg(builder, s, S):
         _drv(builder, sl, root)
         root = builder.dj.get(sl, root)
 
-    leg = [builder.dj[k] for k in ["hip_" + s, "knee_" + s, "foot_" + s] if k in builder.dj]
-    if len(leg) == 3:
-        set_preferred_angle(leg[0], leg[1], leg[2], bend_dir=(0, 0, 1))
-
     foot_drv = builder.dj.get("foot_" + s, root)
     _drv(builder, "toe_" + s, foot_drv)
+
+
+# ---------------------------------------------------------------------------
+# IK driver chains (separate from FK for clean FK/IK separation)
+# ---------------------------------------------------------------------------
+def _ik_drv(builder, slot, parent):
+    """Create an IK driver joint (parallel chain for IK solving)."""
+    skin = builder.m.get(slot, "")
+    if not skin or not cmds.objExists(skin):
+        return
+    dj = make_driver_joint(skin, "ik_drv_" + slot, parent)
+    _copy_skin_orient(builder, dj, slot)
+    builder.ik_dj[slot] = dj
+
+
+def build_ik_driver_arm(builder, s):
+    """Build IK driver arm chain, parented under FK scapula."""
+    scap = builder.dj.get("scapula_" + s, builder.drv_grp)
+    par = scap
+    for sl in ["shoulder_" + s, "elbow_" + s, "wrist_" + s]:
+        _ik_drv(builder, sl, par)
+        par = builder.ik_dj.get(sl, par)
+    arm = [builder.ik_dj[k] for k in
+           ["shoulder_" + s, "elbow_" + s, "wrist_" + s]
+           if k in builder.ik_dj]
+    if len(arm) == 3:
+        set_preferred_angle(arm[0], arm[1], arm[2], bend_dir=(0, 0, -1))
+
+
+def build_ik_driver_leg(builder, s):
+    """Build IK driver leg chain, parented under FK root."""
+    root = builder.dj.get("root", builder.drv_grp)
+    par = root
+    for sl in ["hip_" + s, "knee_" + s, "foot_" + s]:
+        _ik_drv(builder, sl, par)
+        par = builder.ik_dj.get(sl, par)
+    leg = [builder.ik_dj[k] for k in
+           ["hip_" + s, "knee_" + s, "foot_" + s]
+           if k in builder.ik_dj]
+    if len(leg) == 3:
+        set_preferred_angle(leg[0], leg[1], leg[2], bend_dir=(0, 0, 1))
+    foot_ik = builder.ik_dj.get("foot_" + s, par)
+    _ik_drv(builder, "toe_" + s, foot_ik)
 
 
 def build_driver_skeleton(builder):
