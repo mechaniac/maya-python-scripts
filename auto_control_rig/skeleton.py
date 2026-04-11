@@ -143,6 +143,15 @@ def build_ik_driver_leg(builder, s):
     _ik_drv(builder, "toe_" + s, foot_ik)
 
 
+def build_ik_driver_spine(builder):
+    """Build IK driver spine chain, parented under FK root."""
+    root = builder.dj.get("root", builder.drv_grp)
+    par = root
+    for sl in ["spine", "spine_1", "chest"]:
+        _ik_drv(builder, sl, par)
+        par = builder.ik_dj.get(sl, par)
+
+
 def build_driver_skeleton(builder):
     _drv(builder, "root", builder.drv_grp)
 

@@ -83,7 +83,10 @@ def _on_select_all_controls(*a):
         cmds.warning("Ctrl_GRP not found. Build the control rig first.")
         return
     all_nodes = cmds.listRelatives(grp, allDescendents=True, type="transform", fullPath=True) or []
-    ctrls = [n for n in all_nodes if not n.rsplit("|", 1)[-1].endswith("_offset")]
+    ctrls = [n for n in all_nodes if cmds.listRelatives(n, s=1)]
+    # Include Main_M if it exists (parent of Ctrl_GRP)
+    if cmds.objExists("Main_M"):
+        ctrls.append("Main_M")
     if not ctrls:
         cmds.warning("No controls found under Ctrl_GRP.")
         return
@@ -100,6 +103,7 @@ def _on_build(*a):
         "control_size": cmds.floatField(_ui["sz"], q=1, v=1),
         "create_ik_legs": cmds.checkBox(_ui["ik_l"], q=1, v=1),
         "create_ik_arms": cmds.checkBox(_ui["ik_a"], q=1, v=1),
+        "create_ik_spine": cmds.checkBox(_ui["ik_s"], q=1, v=1),
         "create_fk_arms": cmds.checkBox(_ui["fk_a"], q=1, v=1),
         "create_fk_legs": cmds.checkBox(_ui["fk_l"], q=1, v=1),
         "create_fkik_blend": cmds.checkBox(_ui["fkik"], q=1, v=1),
@@ -186,6 +190,7 @@ def show_window():
     _ui["fk_a"] = cmds.checkBox(l="FK Arms", v=1)
     _ui["fk_l"] = cmds.checkBox(l="FK Legs", v=1)
     _ui["fkik"] = cmds.checkBox(l="FK/IK Blend", v=1)
+    _ui["ik_s"] = cmds.checkBox(l="IK Spine", v=1)
     _ui["twist"] = cmds.checkBox(l="Twist Joints", v=1)
     _ui["dbg"] = cmds.checkBox(l="Show Debug", v=0)
     cmds.setParent("..")

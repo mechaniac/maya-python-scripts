@@ -6,6 +6,20 @@ from .utils import pos, color, side_color, circle, box, cross, diamond, snap, of
 
 
 # ---------------------------------------------------------------------------
+# Main (world) controller
+# ---------------------------------------------------------------------------
+def build_main(builder):
+    c = circle("Main_M", r=builder.sz * 12)
+    cmds.xform(c, ws=1, t=(0, 0, 0), ro=(0, 0, 0))
+    color(c, COL_M)
+    o = offset(c)
+    cmds.parent(o, builder.top)
+    for grp in [builder.ctrl_grp, builder.drv_grp, builder.ik_grp, builder.misc_grp]:
+        cmds.parent(grp, c)
+    builder.main = c
+
+
+# ---------------------------------------------------------------------------
 # Root / Hip
 # ---------------------------------------------------------------------------
 def build_root(builder):
@@ -33,8 +47,6 @@ def build_root(builder):
 # FK Spine
 # ---------------------------------------------------------------------------
 def build_fk_spine(builder):
-    ik_spine = builder.opts.get("create_ik_spine", True)
-    ik_spine_slots = {"spine", "spine_1", "chest"} if ik_spine else set()
     par = "RootX_M" if cmds.objExists("RootX_M") else builder.ctrl_grp
     for slot in ["spine", "spine_1", "chest", "neck", "head"]:
         dj = builder.dj.get(slot)
@@ -45,8 +57,8 @@ def build_fk_spine(builder):
         color(c, COL_M)
         o = offset(c)
         cmds.parent(o, par if cmds.objExists(par) else builder.ctrl_grp)
-        if slot not in ik_spine_slots:
-            cmds.parentConstraint(c, dj, mo=1)
+        builder.fk_offsets[slot] = o
+        cmds.parentConstraint(c, dj, mo=1)
         par = c
 
 
@@ -54,47 +66,73 @@ def build_fk_spine(builder):
 # IK Spline Spine
 # ---------------------------------------------------------------------------
 def build_ik_spine(builder):
-    spine_dj = builder.dj.get("spine")
-    chest_dj = builder.dj.get("chest")
-    mid_dj = builder.dj.get("spine_1")
-    if not spine_dj or not chest_dj or not mid_dj:
+    spine_ik = builder.ik_dj.get("spine")
+    chest_ik = builder.ik_dj.get("chest")
+    if not spine_ik or not chest_ik:
         return
 
-    ikh, eff = cmds.ikHandle(
-        n="ikh_Spine_M", sj=spine_dj, ee=chest_dj,
+    ikh, eff, crv = cmds.ikHandle(
+        n="ikh_Spine_M", sj=spine_ik, ee=chest_ik,
         sol="ikSplineSolver", ccv=True, scv=False, pcv=False,
     )
-    # The auto-created curve is the third item in listConnections
-    crv = cmds.ikHandle(ikh, q=1, c=1)
     crv = cmds.rename(crv, "ikSplineCrv_Spine")
     cmds.parent(ikh, builder.ik_grp)
     cmds.parent(crv, builder.misc_grp)
+    cmds.setAttr(crv + ".inheritsTransform", 0)
 
-    # Cluster each CV and parent to the matching FK control
+    ik_key = "Spine_M"
+    builder.ik_offsets.setdefault(ik_key, [])
+
+    root_ctrl = "RootX_M" if cmds.objExists("RootX_M") else builder.ctrl_grp
+
+    # --- Bottom IK control (hip-level) ---
+    ik_spine = circle("IKSpine_M", r=builder.sz * 9, n=(1, 0, 0))
+    snap(ik_spine, spine_ik)
+    color(ik_spine, COL_IK)
+    ik_spine_off = offset(ik_spine)
+    cmds.parent(ik_spine_off, root_ctrl)
+    builder.ik_offsets[ik_key].append(ik_spine_off)
+
+    # --- Mid IK control (between spine and chest) ---
+    spine1_ik = builder.ik_dj.get("spine_1")
+    mid_ref = spine1_ik if spine1_ik else spine_ik
+    ik_mid = circle("IKSpineMid_M", r=builder.sz * 7.5, n=(1, 0, 0))
+    snap(ik_mid, mid_ref)
+    color(ik_mid, COL_IK)
+    ik_mid_off = offset(ik_mid)
+    cmds.parent(ik_mid_off, root_ctrl)
+    builder.ik_offsets[ik_key].append(ik_mid_off)
+
+    # --- Top IK control (chest-level) ---
+    ik_chest = circle("IKChest_M", r=builder.sz * 9, n=(1, 0, 0))
+    snap(ik_chest, chest_ik)
+    color(ik_chest, COL_IK)
+    ik_chest_off = offset(ik_chest)
+    cmds.parent(ik_chest_off, root_ctrl)
+    builder.ik_offsets[ik_key].append(ik_chest_off)
+
+    # Cluster each CV: CV0 → bottom, CV1 → mid, CV2 → mid, CV3 → top
     num_cvs = cmds.getAttr(crv + ".cp", s=1)
-    ctrl_list = ["HipSwinger_M", "FKSpine1_M", "FKSpine2_M", "FKChest_M"]
-    # Trim or pad to match the actual CV count
-    ctrl_list = ctrl_list[:num_cvs]
-
     for i in range(num_cvs):
         cls, cls_h = cmds.cluster(
             "{}.cv[{}]".format(crv, i), n="spineCls_{}_M".format(i),
         )
-        ctrl = ctrl_list[i] if i < len(ctrl_list) else None
-        if ctrl and cmds.objExists(ctrl):
-            cmds.parent(cls_h, ctrl)
+        if i == 0:
+            parent_ctrl = ik_spine
+        elif i == num_cvs - 1:
+            parent_ctrl = ik_chest
         else:
-            cmds.parent(cls_h, builder.misc_grp)
+            parent_ctrl = ik_mid
+        cmds.parent(cls_h, parent_ctrl)
 
     # Advanced twist controls (object rotation up start/end)
     cmds.setAttr(ikh + ".dTwistControlEnable", 1)
     cmds.setAttr(ikh + ".dWorldUpType", 4)
-    hip_ctrl = "HipSwinger_M" if cmds.objExists("HipSwinger_M") else "RootX_M"
-    chest_ctrl = "FKChest_M"
-    if cmds.objExists(hip_ctrl):
-        cmds.connectAttr(hip_ctrl + ".worldMatrix[0]", ikh + ".dWorldUpMatrix")
-    if cmds.objExists(chest_ctrl):
-        cmds.connectAttr(chest_ctrl + ".worldMatrix[0]", ikh + ".dWorldUpMatrixEnd")
+    cmds.connectAttr(ik_spine + ".worldMatrix[0]", ikh + ".dWorldUpMatrix")
+    cmds.connectAttr(ik_chest + ".worldMatrix[0]", ikh + ".dWorldUpMatrixEnd")
+
+    # Store chest IK ctrl name so build_spaces can use it
+    builder.ik_chest_ctrl = ik_chest
 
 
 # ---------------------------------------------------------------------------
@@ -301,15 +339,29 @@ def build_ik_arm(builder, side):
 # ---------------------------------------------------------------------------
 def build_fkik(builder, limb, side):
     s = side.lower()
-    end_slot = ("foot_" if limb == "Leg" else "wrist_") + s
-    ref = builder.dj.get(end_slot)
+
+    # Determine blend slots and reference joint per limb type
+    if limb == "Spine":
+        blend_slots = ["spine", "spine_1", "chest"]
+        ref = builder.dj.get("chest")
+    elif limb == "Leg":
+        blend_slots = ["hip_" + s, "knee_" + s, "foot_" + s, "toe_" + s]
+        ref = builder.dj.get("foot_" + s)
+    else:
+        blend_slots = ["shoulder_" + s, "elbow_" + s, "wrist_" + s]
+        ref = builder.dj.get("wrist_" + s)
     if not ref:
         return
 
     c = diamond("FKIK{}_{}".format(limb, side), sz=builder.sz * 2)
     ref_p = pos(ref)
     sign = 1 if ref_p[0] > 0 else -1
-    if limb == "Leg":
+    if limb == "Spine":
+        spine_dj = builder.dj.get("spine")
+        spine_p = pos(spine_dj) if spine_dj else ref_p
+        cmds.xform(c, ws=1, t=(spine_p[0] + builder.sz * 10,
+                                spine_p[1], spine_p[2]))
+    elif limb == "Leg":
         knee = builder.dj.get("knee_" + s)
         hip = builder.dj.get("hip_" + s)
         if knee and hip:
@@ -325,7 +377,7 @@ def build_fkik(builder, limb, side):
         sign = 1 if sho_p[0] > 0 else -1
         cmds.xform(c, ws=1, t=(sho_p[0] + builder.sz * 5 * sign,
                                 sho_p[1] + builder.sz * 8, sho_p[2]))
-    color(c, side_color(side))
+    color(c, COL_M if limb == "Spine" else side_color(side))
     o = offset(c)
     cmds.parent(o, builder.ctrl_grp)
 
@@ -344,11 +396,6 @@ def build_fkik(builder, limb, side):
         cmds.connectAttr(norm + ".outputX", ikh + ".ikBlend")
 
     # Blend weights on skin joint parentConstraints (FK driver + IK driver)
-    if limb == "Leg":
-        blend_slots = ["hip_" + s, "knee_" + s, "foot_" + s, "toe_" + s]
-    else:
-        blend_slots = ["shoulder_" + s, "elbow_" + s, "wrist_" + s]
-
     for sl in blend_slots:
         sc = builder.skin_con.get(sl)
         if not sc or not cmds.objExists(sc):
@@ -358,13 +405,27 @@ def build_fkik(builder, limb, side):
             cmds.connectAttr(rev + ".outputX", "{}.{}".format(sc, w[0]))
             cmds.connectAttr(norm + ".outputX", "{}.{}".format(sc, w[1]))
 
-    # Visibility
+    # Visibility — FK side
     fk_vis = cmds.createNode("condition", n="fkVis_{}_{}".format(limb, side))
     cmds.connectAttr(norm + ".outputX", fk_vis + ".firstTerm")
     cmds.setAttr(fk_vis + ".secondTerm", 1)
     cmds.setAttr(fk_vis + ".operation", 4)
     cmds.setAttr(fk_vis + ".colorIfTrueR", 1)
     cmds.setAttr(fk_vis + ".colorIfFalseR", 0)
+
+    if limb == "Spine":
+        # Spine FK forms a parent chain shared with neck/head,
+        # so hide only the shape nodes (not the offset groups).
+        for sl in blend_slots:
+            ctrl = SLOT_TO_CTRL.get(sl)
+            if ctrl and cmds.objExists(ctrl):
+                for shp in cmds.listRelatives(ctrl, s=1) or []:
+                    cmds.connectAttr(fk_vis + ".outColorR", shp + ".v")
+    else:
+        for sl in blend_slots:
+            off = builder.fk_offsets.get(sl)
+            if off and cmds.objExists(off):
+                cmds.connectAttr(fk_vis + ".outColorR", off + ".v")
 
     ik_vis = cmds.createNode("condition", n="ikVis_{}_{}".format(limb, side))
     cmds.connectAttr(norm + ".outputX", ik_vis + ".firstTerm")
@@ -373,16 +434,133 @@ def build_fkik(builder, limb, side):
     cmds.setAttr(ik_vis + ".colorIfTrueR", 1)
     cmds.setAttr(ik_vis + ".colorIfFalseR", 0)
 
-    if limb == "Leg":
-        vis_fk = ["hip_" + s, "knee_" + s, "foot_" + s, "toe_" + s]
-    else:
-        vis_fk = ["shoulder_" + s, "elbow_" + s, "wrist_" + s]
-    for sl in vis_fk:
-        off = builder.fk_offsets.get(sl)
-        if off and cmds.objExists(off):
-            cmds.connectAttr(fk_vis + ".outColorR", off + ".v")
-
     ik_key = "{}_{}".format(limb, side)
     for off in builder.ik_offsets.get(ik_key, []):
         if cmds.objExists(off):
             cmds.connectAttr(ik_vis + ".outColorR", off + ".v")
+
+    # Driver joint drawStyle — hide the inactive chain's bones without
+    # affecting child visibility (drawStyle 0=Bone, 2=None).
+    fk_drv_ds = cmds.createNode("condition",
+                                n="fkDrvDs_{}_{}".format(limb, side))
+    cmds.connectAttr(norm + ".outputX", fk_drv_ds + ".firstTerm")
+    cmds.setAttr(fk_drv_ds + ".secondTerm", 1)
+    cmds.setAttr(fk_drv_ds + ".operation", 4)   # less than
+    cmds.setAttr(fk_drv_ds + ".colorIfTrueR", 0)   # Bone
+    cmds.setAttr(fk_drv_ds + ".colorIfFalseR", 2)   # None
+
+    ik_drv_ds = cmds.createNode("condition",
+                                n="ikDrvDs_{}_{}".format(limb, side))
+    cmds.connectAttr(norm + ".outputX", ik_drv_ds + ".firstTerm")
+    cmds.setAttr(ik_drv_ds + ".secondTerm", 0)
+    cmds.setAttr(ik_drv_ds + ".operation", 2)   # greater than
+    cmds.setAttr(ik_drv_ds + ".colorIfTrueR", 0)   # Bone
+    cmds.setAttr(ik_drv_ds + ".colorIfFalseR", 2)   # None
+
+    for sl in blend_slots:
+        dj = builder.dj.get(sl)
+        if dj and cmds.objExists(dj):
+            cmds.connectAttr(fk_drv_ds + ".outColorR", dj + ".drawStyle")
+        ik_dj = builder.ik_dj.get(sl)
+        if ik_dj and cmds.objExists(ik_dj):
+            cmds.connectAttr(ik_drv_ds + ".outColorR", ik_dj + ".drawStyle")
+
+
+# ---------------------------------------------------------------------------
+# Chest follow & IK space switching (called after FKIK blends)
+# ---------------------------------------------------------------------------
+def build_spaces(builder):
+    main_ctrl = getattr(builder, "main", "Main_M")
+
+    # --- Chest Follow ---
+    # Creates a group that always follows the *result* chest position,
+    # regardless of FK/IK mode.  Neck, head, and arm FK offset groups
+    # are reparented under this so they automatically follow the spine.
+    #
+    # When IK spine is active, the IK chest control (IKChest_M) drives
+    # the ik_drv_chest joint via the spline solver.  We parentConstraint
+    # chestFollow to both FK and IK chest drivers, blended by the FKIK
+    # weight so appendages always track the active mode.
+    chest_fk = builder.dj.get("chest")
+    chest_ik = builder.ik_dj.get("chest")
+    ik_chest_ctrl = getattr(builder, "ik_chest_ctrl", None)
+    chest_follow = None
+
+    if chest_fk and chest_ik and cmds.objExists("fkikN_Spine_M"):
+        cf = cmds.group(em=1, n="chestFollow_M")
+        snap(cf, chest_fk)
+        cmds.parent(cf, builder.ctrl_grp)
+
+        # ParentConstraint to the FK chest *control* (not driver joint)
+        # and to the IK chest *control*.  This way chestFollow always
+        # inherits the full transform of whichever mode is active,
+        # including any user rotations on the IK/FK control.
+        fk_chest_ctrl = "FKChest_M"
+        ik_tgt = ik_chest_ctrl if ik_chest_ctrl and cmds.objExists(ik_chest_ctrl) else chest_ik
+        fk_tgt = fk_chest_ctrl if cmds.objExists(fk_chest_ctrl) else chest_fk
+
+        con = cmds.parentConstraint(fk_tgt, ik_tgt, cf, mo=1)[0]
+        w = cmds.parentConstraint(con, q=1, wal=1)
+        if len(w) >= 2:
+            cmds.connectAttr("fkikR_Spine_M.outputX",
+                             "{}.{}".format(con, w[0]))
+            cmds.connectAttr("fkikN_Spine_M.outputX",
+                             "{}.{}".format(con, w[1]))
+
+        # Reparent neck and scapula FK offsets under chestFollow so the
+        # entire FK arm/neck/head chain inherits the blended chest.
+        for slot in ["neck", "scapula_l", "scapula_r"]:
+            off = builder.fk_offsets.get(slot)
+            if off and cmds.objExists(off):
+                cmds.parent(off, cf)
+        chest_follow = cf
+
+    elif chest_fk and not chest_ik:
+        # No IK spine — chestFollow is just FKChest_M directly
+        chest_follow = "FKChest_M" if cmds.objExists("FKChest_M") else None
+
+    # --- IK Leg spaces: Main (default) / Root ---
+    for side in "LR":
+        _build_ik_space(builder, "Leg_" + side, "IKLeg_" + side,
+                        [(main_ctrl, "Main"), ("RootX_M", "Root")], 0)
+
+    # --- IK Arm spaces: Main (default) / Root / Chest / Head ---
+    chest_target = chest_follow if chest_follow else "FKChest_M"
+    for side in "LR":
+        _build_ik_space(builder, "Arm_" + side, "IKArm_" + side,
+                        [(main_ctrl, "Main"), ("RootX_M", "Root"),
+                         (chest_target, "Chest"), ("FKHead_M", "Head")], 0)
+
+
+def _build_ik_space(builder, ik_key, ctrl_name, targets, default_idx):
+    offsets = builder.ik_offsets.get(ik_key, [])
+    if not offsets or not cmds.objExists(ctrl_name):
+        return
+    # Verify all targets exist
+    targets = [(t, lbl) for t, lbl in targets if cmds.objExists(t)]
+    if not targets:
+        return
+
+    space = cmds.group(em=1, n="space_" + ik_key)
+    cmds.parent(space, builder.ctrl_grp)
+    for off in offsets:
+        if cmds.objExists(off):
+            cmds.parent(off, space)
+
+    enum_str = ":".join(lbl for _, lbl in targets)
+    cmds.addAttr(ctrl_name, ln="Space", at="enum", en=enum_str,
+                 dv=default_idx, k=1)
+
+    target_nodes = [t for t, _ in targets]
+    con = cmds.parentConstraint(*target_nodes, space, mo=1)[0]
+    w = cmds.parentConstraint(con, q=1, wal=1)
+
+    for i, wa in enumerate(w):
+        cond = cmds.createNode("condition",
+                               n="spaceCond_{}_{}".format(ik_key, targets[i][1]))
+        cmds.connectAttr(ctrl_name + ".Space", cond + ".firstTerm")
+        cmds.setAttr(cond + ".secondTerm", i)
+        cmds.setAttr(cond + ".operation", 0)  # Equal
+        cmds.setAttr(cond + ".colorIfTrueR", 1)
+        cmds.setAttr(cond + ".colorIfFalseR", 0)
+        cmds.connectAttr(cond + ".outColorR", "{}.{}".format(con, wa))

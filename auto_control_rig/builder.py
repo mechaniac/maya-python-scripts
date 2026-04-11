@@ -48,10 +48,15 @@ class AutoControlRigBuilder:
         cmds.setAttr(self.ik_grp + ".v", 0)
         cmds.setAttr(self.misc_grp + ".v", 0)
 
+        # 0) Main controller (parents all groups under itself)
+        controls.build_main(self)
+
         # 1) Driver skeleton (FK)
         skeleton.build_driver_skeleton(self)
 
         # 1.5) IK driver skeletons (separate chains for IK solving)
+        if self.opts.get("create_ik_spine", True):
+            skeleton.build_ik_driver_spine(self)
         for s in "lr":
             if self.opts.get("create_ik_arms", True):
                 skeleton.build_ik_driver_arm(self, s)
@@ -76,13 +81,26 @@ class AutoControlRigBuilder:
         # 3) Bind skin joints to driver
         self._bind_skin()
 
+        # 3.05) Global scale — propagate Main_M scale to the skin skeleton
+        root_skin = self.m.get("root", "")
+        main = getattr(self, "main", "Main_M")
+        if root_skin and cmds.objExists(root_skin) and cmds.objExists(main):
+            sc = cmds.scaleConstraint(main, root_skin, mo=1)[0]
+            self.skin_constraints.append(sc)
+
         # 3.1) FK/IK blend switches (after bind, uses skin constraints)
+        if self.opts.get("create_fkik_blend", True):
+            if self.opts.get("create_ik_spine", True):
+                controls.build_fkik(self, "Spine", "M")
         for s in "LR":
             if self.opts.get("create_fkik_blend", True):
                 if self.opts.get("create_ik_legs") and self.opts.get("create_fk_legs"):
                     controls.build_fkik(self, "Leg", s)
                 if self.opts.get("create_ik_arms") and self.opts.get("create_fk_arms"):
                     controls.build_fkik(self, "Arm", s)
+
+        # 3.15) Chest follow + IK space switching
+        controls.build_spaces(self)
 
         # 3.25) Twist joint drivers
         if self.opts.get("create_twist_drivers", True):

@@ -54,13 +54,29 @@ def reset_to_bind_pose():
     if not cmds.objExists(RIG_GRP):
         cmds.warning("No rig found.")
         return
+
+    # Collect controls under Ctrl_GRP + Main_M (which is above Ctrl_GRP).
+    # Only include curve-shape transforms (controls), never joints.
     ctrl_grp = "Ctrl_GRP"
-    if not cmds.objExists(ctrl_grp):
-        cmds.warning("Ctrl_GRP not found.")
-        return
-    ctrls = cmds.listRelatives(ctrl_grp, ad=1, type="transform", f=1) or []
-    for c in ctrls:
-        shapes = cmds.listRelatives(c, s=1) or []
+    all_transforms = []
+
+    if cmds.objExists(ctrl_grp):
+        descendants = cmds.listRelatives(ctrl_grp, ad=1, type="transform", f=1) or []
+        all_transforms.extend(descendants)
+
+    # Main_M lives above Ctrl_GRP — add it explicitly.
+    if cmds.objExists("Main_M"):
+        all_transforms.append("Main_M")
+
+    # Sort by depth (shallowest first → top-down reset so parents
+    # settle before children, avoiding transient double-offsets).
+    all_transforms = list(dict.fromkeys(all_transforms))  # dedupe
+    all_transforms.sort(key=lambda p: p.count("|"))
+
+    for c in all_transforms:
+        # Only reset nodes that have curve shapes (actual controls).
+        # Skip joints, offset groups, constraint groups, etc.
+        shapes = cmds.listRelatives(c, s=1, type="nurbsCurve") or []
         if not shapes:
             continue
         for attr in ("tx", "ty", "tz", "rx", "ry", "rz"):
@@ -82,6 +98,8 @@ def reset_to_bind_pose():
                 cmds.setAttr(c + "." + attr, dv)
             except Exception:
                 pass
+
+    cmds.dgdirty(a=1)
     cmds.select(cl=1)
     print("// All controls reset to bind pose.")
 
