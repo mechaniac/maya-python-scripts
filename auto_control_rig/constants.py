@@ -3,7 +3,8 @@ RIG_GRP = "AutoCtrlRig_GRP"
 SLOT_DEFS = [
     ("root",       "Root / Pelvis",        "M", ["pelvis","hips","root"]),
     ("spine",      "Spine",                "M", ["spine_01","spine1","spine"]),
-    ("chest",      "Chest",                "M", ["spine_02","spine2","chest"]),
+    ("spine_1",    "Spine 1 (Mid)",        "M", ["spine_02","spine2","spine_1","spine1a"]),
+    ("chest",      "Chest",                "M", ["spine_03","spine3","chest"]),
     ("neck",       "Neck",                 "M", ["neck"]),
     ("head",       "Head",                 "M", ["head"]),
     ("scapula_l",  "Scapula / Clavicle L", "L", ["clavicle_l","l_clavicle","shoulder_l","leftshoulder"]),
@@ -25,7 +26,8 @@ SLOT_DEFS = [
 ]
 
 SLOT_TO_CTRL = {
-    "root": "RootX_M", "spine": "FKSpine1_M", "chest": "FKChest_M",
+    "root": "RootX_M", "spine": "FKSpine1_M", "spine_1": "FKSpine2_M",
+    "chest": "FKChest_M",
     "neck": "FKNeck_M", "head": "FKHead_M",
     "scapula_l": "FKScapula_L", "shoulder_l": "FKShoulder_L",
     "elbow_l": "FKElbow_L", "wrist_l": "FKWrist_L",

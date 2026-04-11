@@ -61,6 +61,8 @@ class AutoControlRigBuilder:
         # 2) Controls
         controls.build_root(self)
         controls.build_fk_spine(self)
+        if self.opts.get("create_ik_spine", True):
+            controls.build_ik_spine(self)
         for s in "LR":
             if self.opts.get("create_fk_arms", True):
                 controls.build_fk_arm(self, s)
@@ -133,7 +135,7 @@ class AutoControlRigBuilder:
             self.skin_constraints.append(c)
 
         # Bind unmapped intermediate joints between consecutive spine slots
-        spine_slots = ["spine", "chest", "neck", "head"]
+        spine_slots = ["spine", "spine_1", "chest", "neck", "head"]
         for i in range(len(spine_slots) - 1):
             lo_slot = spine_slots[i]
             hi_slot = spine_slots[i + 1]

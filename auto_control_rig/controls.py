@@ -33,8 +33,10 @@ def build_root(builder):
 # FK Spine
 # ---------------------------------------------------------------------------
 def build_fk_spine(builder):
+    ik_spine = builder.opts.get("create_ik_spine", True)
+    ik_spine_slots = {"spine", "spine_1", "chest"} if ik_spine else set()
     par = "RootX_M" if cmds.objExists("RootX_M") else builder.ctrl_grp
-    for slot in ["spine", "chest", "neck", "head"]:
+    for slot in ["spine", "spine_1", "chest", "neck", "head"]:
         dj = builder.dj.get(slot)
         if not dj:
             continue
@@ -43,8 +45,56 @@ def build_fk_spine(builder):
         color(c, COL_M)
         o = offset(c)
         cmds.parent(o, par if cmds.objExists(par) else builder.ctrl_grp)
-        cmds.parentConstraint(c, dj, mo=1)
+        if slot not in ik_spine_slots:
+            cmds.parentConstraint(c, dj, mo=1)
         par = c
+
+
+# ---------------------------------------------------------------------------
+# IK Spline Spine
+# ---------------------------------------------------------------------------
+def build_ik_spine(builder):
+    spine_dj = builder.dj.get("spine")
+    chest_dj = builder.dj.get("chest")
+    mid_dj = builder.dj.get("spine_1")
+    if not spine_dj or not chest_dj or not mid_dj:
+        return
+
+    ikh, eff = cmds.ikHandle(
+        n="ikh_Spine_M", sj=spine_dj, ee=chest_dj,
+        sol="ikSplineSolver", ccv=True, scv=False, pcv=False,
+    )
+    # The auto-created curve is the third item in listConnections
+    crv = cmds.ikHandle(ikh, q=1, c=1)
+    crv = cmds.rename(crv, "ikSplineCrv_Spine")
+    cmds.parent(ikh, builder.ik_grp)
+    cmds.parent(crv, builder.misc_grp)
+
+    # Cluster each CV and parent to the matching FK control
+    num_cvs = cmds.getAttr(crv + ".cp", s=1)
+    ctrl_list = ["HipSwinger_M", "FKSpine1_M", "FKSpine2_M", "FKChest_M"]
+    # Trim or pad to match the actual CV count
+    ctrl_list = ctrl_list[:num_cvs]
+
+    for i in range(num_cvs):
+        cls, cls_h = cmds.cluster(
+            "{}.cv[{}]".format(crv, i), n="spineCls_{}_M".format(i),
+        )
+        ctrl = ctrl_list[i] if i < len(ctrl_list) else None
+        if ctrl and cmds.objExists(ctrl):
+            cmds.parent(cls_h, ctrl)
+        else:
+            cmds.parent(cls_h, builder.misc_grp)
+
+    # Advanced twist controls (object rotation up start/end)
+    cmds.setAttr(ikh + ".dTwistControlEnable", 1)
+    cmds.setAttr(ikh + ".dWorldUpType", 4)
+    hip_ctrl = "HipSwinger_M" if cmds.objExists("HipSwinger_M") else "RootX_M"
+    chest_ctrl = "FKChest_M"
+    if cmds.objExists(hip_ctrl):
+        cmds.connectAttr(hip_ctrl + ".worldMatrix[0]", ikh + ".dWorldUpMatrix")
+    if cmds.objExists(chest_ctrl):
+        cmds.connectAttr(chest_ctrl + ".worldMatrix[0]", ikh + ".dWorldUpMatrixEnd")
 
 
 # ---------------------------------------------------------------------------

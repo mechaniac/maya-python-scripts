@@ -146,7 +146,7 @@ def build_ik_driver_leg(builder, s):
 def build_driver_skeleton(builder):
     _drv(builder, "root", builder.drv_grp)
 
-    spine = ["spine", "chest", "neck", "head"]
+    spine = ["spine", "spine_1", "chest", "neck", "head"]
     par = builder.dj.get("root", builder.drv_grp)
     for sl in spine:
         _drv(builder, sl, par)
