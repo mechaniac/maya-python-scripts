@@ -53,17 +53,17 @@ class WalkSecondary(Layer):
             twist = p['{}_twist'.format(part)]
             twist_off = p['{}_twist_offset'.format(part)]
 
-            # rotateZ = nod (forward/back pitch) -- 3-point, once per cycle
+            # rotateZ = nod (forward/back pitch) -- 5-point, twice per cycle
             chs.append(Channel(ctrl, 'rotateZ', Wave.COSINE,
-                               amplitude=nod, frequency=1, n_points=3,
+                               amplitude=nod, frequency=2, n_points=5,
                                label='{} Nod'.format(part)))
             # rotateY = lean (lateral side bend) -- 3-point, once per cycle
             chs.append(Channel(ctrl, 'rotateY', Wave.COSINE,
                                amplitude=lean, frequency=1, n_points=3,
                                label='{} Lean'.format(part)))
-            # rotateX = twist (axial roll) -- 5-point, twice per cycle
+            # rotateX = twist (axial roll) -- 3-point, once per cycle
             chs.append(Channel(ctrl, 'rotateX', Wave.COSINE,
                                amplitude=twist, offset=twist_off,
-                               frequency=2, n_points=5,
+                               frequency=1, n_points=3,
                                label='{} Twist'.format(part)))
         return chs
