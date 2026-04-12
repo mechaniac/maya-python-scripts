@@ -38,7 +38,7 @@ class AnimGenWindow:
         self.walk_arms = WalkArms()
         self._fields = {}        # key -> widget handle
         self._plain_fields = set()  # keys using floatField (vs floatSliderGrp)
-        self._slider2_widgets = []  # floatSlider2 handles for auto-update
+        self._nod_keys = set()      # plain-field keys with self-managed sync
         self._auto_update = False
         self._mute_cbs = {}      # section_name -> checkBox
 
@@ -98,7 +98,33 @@ class AnimGenWindow:
         fb = cmds.floatField(v=def_back, precision=1, width=50)
         ff = cmds.floatField(v=def_front, precision=1, width=50)
         sl = cmds.floatSlider2(minimum=-60, maximum=60,
-                               positionControl1=fb, positionControl2=ff)
+                               value1=def_back, value2=def_front)
+
+        # Bidirectional sync — slider handles ↔ float fields
+        def _sl_changed(*_):
+            cmds.floatField(fb, e=True,
+                            v=cmds.floatSlider2(sl, q=True, value1=True))
+            cmds.floatField(ff, e=True,
+                            v=cmds.floatSlider2(sl, q=True, value2=True))
+            if self._auto_update:
+                self._generate()
+
+        def _fb_changed(val):
+            cmds.floatSlider2(sl, e=True, value1=val)
+            if self._auto_update:
+                self._generate()
+
+        def _ff_changed(val):
+            cmds.floatSlider2(sl, e=True, value2=val)
+            if self._auto_update:
+                self._generate()
+
+        cmds.floatSlider2(sl, e=True,
+                          changeCommand1=_sl_changed,
+                          changeCommand2=_sl_changed)
+        cmds.floatField(fb, e=True, changeCommand=_fb_changed)
+        cmds.floatField(ff, e=True, changeCommand=_ff_changed)
+
         cmds.formLayout(form, e=True,
             attachForm=[(lbl, 'left', 0), (lbl, 'top', 3),
                         (fb, 'top', 0),
@@ -114,7 +140,8 @@ class AnimGenWindow:
         self._fields[key_front] = ff
         self._plain_fields.add(key_back)
         self._plain_fields.add(key_front)
-        self._slider2_widgets.append(sl)
+        self._nod_keys.add(key_back)
+        self._nod_keys.add(key_front)
 
     def _get_val(self, key):
         h = self._fields[key]
@@ -444,18 +471,14 @@ class AnimGenWindow:
         self._auto_update = val
         cb = (lambda *_: self._generate()) if val else (lambda *_: None)
         for key, f in self._fields.items():
+            if key in self._nod_keys:
+                continue  # nod fields self-manage via _nod_range callbacks
             try:
                 if key in self._plain_fields:
                     cmds.floatField(f, e=True, changeCommand=cb)
                 else:
                     cmds.floatSliderGrp(f, e=True, changeCommand=cb,
                                         dragCommand=cb)
-            except Exception:
-                pass
-        for sl in self._slider2_widgets:
-            try:
-                cmds.floatSlider2(sl, e=True,
-                                  changeCommand1=cb, changeCommand2=cb)
             except Exception:
                 pass
 
