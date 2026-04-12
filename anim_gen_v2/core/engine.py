@@ -29,7 +29,7 @@ def clear_keys(ctrls, attrs=None):
     """Cut keys and reset attrs on *ctrls* within the playback range."""
     if attrs is None:
         attrs = ['translateX', 'translateY', 'translateZ',
-                 'rotateX', 'rotateY', 'rotateZ']
+                 'rotateX', 'rotateY', 'rotateZ', 'Roll']
     start, end = timeline_range()
     for name in ctrls:
         node = resolver.resolve(name) or name

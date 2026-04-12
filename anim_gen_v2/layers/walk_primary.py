@@ -15,6 +15,8 @@ class WalkPrimary(Layer):
         'stride_width':     2.0,
         'stride_height':    4.0,
         'foot_raise':      10.0,
+        'foot_roll_heel':  -8.0,
+        'foot_roll_toe':   40.0,
         'hip_nod':         10.0,
         'hip_lean':         5.0,
         'hip_twist':        0.0,
@@ -84,6 +86,21 @@ class WalkPrimary(Layer):
                            values=[0, 0, p['foot_raise'], 0, 0, 0],
                            sample_at=[0, 0.25, 0.375, 0.5, 0.75, 1.0],
                            label='L Foot Raise'))
+
+        # ── foot roll (Roll attr on IKLeg) ──
+        # heel strike at contact, toe push at mid-stance
+        # Right: heel at 0/1, toe push-off around 0.5
+        chs.append(Channel('IKLeg_R', 'Roll',
+                           values=[p['foot_roll_heel'], 0,
+                                   p['foot_roll_toe'], 0,
+                                   p['foot_roll_heel']],
+                           label='R Foot Roll'))
+        # Left: phase shifted by half
+        chs.append(Channel('IKLeg_L', 'Roll',
+                           values=[p['foot_roll_toe'], 0,
+                                   p['foot_roll_heel'], 0,
+                                   p['foot_roll_toe']],
+                           label='L Foot Roll'))
 
         # ── hip nod / lean / twist ──
         # HipSwinger_M joint-aligned (same as FK spine):

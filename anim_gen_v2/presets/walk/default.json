@@ -11,6 +11,8 @@
     "stride_width": 2.0,
     "stride_height": 4.0,
     "foot_raise": 10.0,
+    "foot_roll_heel": -8.0,
+    "foot_roll_toe": 40.0,
     "hip_nod": 10.0,
     "hip_lean": 5.0,
     "hip_twist": 0.0,

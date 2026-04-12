@@ -23,6 +23,12 @@ CLR_X = (0.45, 0.18, 0.18)
 CLR_Y = (0.18, 0.45, 0.18)
 CLR_Z = (0.18, 0.18, 0.45)
 
+# Slider range presets  (min, max, field_min, field_max)
+RNG_AMP   = (-60, 60, -180, 180)   # general rotation amplitude
+RNG_TRANS = (-20, 20, -100, 100)   # translation
+RNG_OFF   = (-30, 30, -90, 90)     # offset
+RNG_ROLL  = (-90, 90, -120, 120)   # foot roll
+
 
 class AnimGenWindow:
 
@@ -30,8 +36,9 @@ class AnimGenWindow:
         self.walk_primary = WalkPrimary()
         self.walk_secondary = WalkSecondary()
         self.walk_arms = WalkArms()
-        self._fields = {}
+        self._fields = {}        # key -> floatSliderGrp
         self._auto_update = False
+        self._mute_cbs = {}      # section_name -> checkBox
 
     # ──────────────────────────────────────────────
     #  Show
@@ -41,7 +48,7 @@ class AnimGenWindow:
         if cmds.window(WINDOW_NAME, exists=True):
             cmds.deleteUI(WINDOW_NAME)
         win = cmds.window(WINDOW_NAME, title=WINDOW_TITLE,
-                          widthHeight=(620, 700), sizeable=True)
+                          widthHeight=(600, 780), sizeable=True)
         cmds.scrollLayout(childResizable=True)
         tabs = cmds.tabLayout()
 
@@ -55,12 +62,11 @@ class AnimGenWindow:
         cmds.showWindow(win)
 
     # ──────────────────────────────────────────────
-    #  Field helpers
+    #  Helpers
     # ──────────────────────────────────────────────
 
     @staticmethod
     def _sel(ctrls):
-        """Select the given controls in the viewport (resolver-aware)."""
         from ..core import resolver
         nodes = []
         for c in ctrls:
@@ -70,65 +76,57 @@ class AnimGenWindow:
         if nodes:
             cmds.select(nodes, r=True)
 
-    def _sel_btn(self, ctrls):
-        """Create a small select-control icon button."""
-        cmds.iconTextButton(style='iconOnly', image='aselect.png',
-                            width=22, height=22,
-                            annotation='Select  ' + ', '.join(ctrls),
-                            command=lambda *_, c=list(ctrls): self._sel(c))
-
-    def _float_field(self, key, default, color=None):
-        kw = dict(v=default, precision=2, width=80)
+    def _slider(self, label, key, default, rng=RNG_AMP, color=None):
+        """Create a compact floatSliderGrp and register it."""
+        kw = dict(label=label, field=True, value=default,
+                  minValue=rng[0], maxValue=rng[1],
+                  fieldMinValue=rng[2], fieldMaxValue=rng[3],
+                  columnWidth3=(130, 50, 10), adjustableColumn=3,
+                  precision=2)
         if color:
             kw['backgroundColor'] = color
-        f = cmds.floatField(**kw)
+        f = cmds.floatSliderGrp(**kw)
         self._fields[key] = f
         return f
 
-    def _row(self, label, key, default, color=None, ctrls=None):
-        if ctrls:
-            cmds.rowLayout(numberOfColumns=3, columnWidth3=(200, 100, 24),
-                           adjustableColumn=2)
-        else:
-            cmds.rowLayout(numberOfColumns=2, columnWidth2=(200, 100),
-                           adjustableColumn=2)
-        cmds.text(label=label)
-        self._float_field(key, default, color)
-        if ctrls:
-            self._sel_btn(ctrls)
-        cmds.setParent('..')
-
-    def _two_col(self, l1, k1, d1, c1, l2, k2, d2, c2,
-                 ctrls1=None, ctrls2=None):
-        has_sel = ctrls1 or ctrls2
-        if has_sel:
-            cmds.rowLayout(numberOfColumns=6,
-                           columnWidth6=(148, 80, 22, 148, 80, 22),
-                           adjustableColumn=4)
-        else:
-            cmds.rowLayout(numberOfColumns=4,
-                           columnWidth4=(160, 90, 160, 90),
-                           adjustableColumn=4)
-        cmds.text(label=l1); self._float_field(k1, d1, c1)
-        if has_sel:
-            if ctrls1:
-                self._sel_btn(ctrls1)
-            else:
-                cmds.text(label='', width=22)
-        cmds.text(label=l2); self._float_field(k2, d2, c2)
-        if has_sel:
-            if ctrls2:
-                self._sel_btn(ctrls2)
-            else:
-                cmds.text(label='', width=22)
+    def _section_header(self, label, ctrls, mute_key):
+        """Joint header: big label + select button + mute checkbox."""
+        cmds.rowLayout(numberOfColumns=3, columnWidth3=(200, 60, 80),
+                       adjustableColumn=1, height=24)
+        cmds.text(label='  ' + label, align='left', font='boldLabelFont')
+        cmds.button(label='Select', height=20, width=50,
+                    command=lambda *_, c=list(ctrls): self._sel(c))
+        cb = cmds.checkBox(label='Mute', value=False,
+                           changeCommand=lambda val, k=mute_key: self._toggle_mute(k, val))
+        self._mute_cbs[mute_key] = cb
         cmds.setParent('..')
 
     def _zero_fields(self, keys):
-        """Set all float fields in *keys* to 0."""
         for k in keys:
             f = self._fields.get(k)
             if f:
-                cmds.floatField(f, e=True, v=0)
+                cmds.floatSliderGrp(f, e=True, v=0)
+        if self._auto_update:
+            self._generate()
+
+    def _toggle_mute(self, section, val):
+        """Mute/unmute a section by setting all its sliders to 0 or restoring."""
+        if val:
+            # Store current values then zero
+            if not hasattr(self, '_muted_vals'):
+                self._muted_vals = {}
+            self._muted_vals[section] = {}
+            for key, fld in self._fields.items():
+                if key.startswith(section + '_') or key in self._section_keys.get(section, []):
+                    self._muted_vals[section][key] = cmds.floatSliderGrp(fld, q=True, v=True)
+                    cmds.floatSliderGrp(fld, e=True, v=0, enable=False)
+        else:
+            # Restore
+            stored = getattr(self, '_muted_vals', {}).get(section, {})
+            for key, val in stored.items():
+                fld = self._fields.get(key)
+                if fld:
+                    cmds.floatSliderGrp(fld, e=True, v=val, enable=True)
         if self._auto_update:
             self._generate()
 
@@ -140,49 +138,68 @@ class AnimGenWindow:
         cmds.setParent(parent)
         cmds.frameLayout(label='Primary  (Root / Hips / Legs)',
                          collapsable=True, marginHeight=4, marginWidth=4)
-        cmds.columnLayout(adjustableColumn=True)
+        col = cmds.columnLayout(adjustableColumn=True)
+
+        d = self.walk_primary.DEFAULTS
+
+        # Track which keys belong to which mute section
+        if not hasattr(self, '_section_keys'):
+            self._section_keys = {}
 
         legs = ['IKLeg_R', 'IKLeg_L']
         hip = ['HipSwinger_M']
         root = ['RootX_M']
 
-        d = self.walk_primary.DEFAULTS
-        self._row('Stride Length', 'stride', d['stride'], ctrls=legs)
-        self._two_col('Stride Width  X', 'stride_width', d['stride_width'], CLR_X,
-                       'Stride Height  Y', 'stride_height', d['stride_height'], CLR_Y,
-                       ctrls1=legs, ctrls2=legs)
-        self._row('Foot Raise  rX', 'foot_raise', d['foot_raise'], CLR_X, ctrls=legs)
+        # ── Legs ──
+        cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
+                         marginHeight=3, marginWidth=4, collapsable=False)
+        self._section_header('Legs', legs, 'legs')
+        self._slider('Stride Length', 'stride', d['stride'], RNG_TRANS)
+        self._slider('Stride Width', 'stride_width', d['stride_width'], (0, 10, 0, 30))
+        self._slider('Stride Height', 'stride_height', d['stride_height'], (0, 20, 0, 50))
+        self._slider('Foot Raise', 'foot_raise', d['foot_raise'], (0, 40, 0, 90))
+        self._slider('Roll Heel', 'foot_roll_heel', d['foot_roll_heel'], RNG_ROLL)
+        self._slider('Roll Toe', 'foot_roll_toe', d['foot_roll_toe'], RNG_ROLL)
+        self._section_keys['legs'] = ['stride', 'stride_width', 'stride_height',
+                                       'foot_raise', 'foot_roll_heel', 'foot_roll_toe']
+        cmds.setParent(col)
 
-        cmds.separator(height=8, style='in')
-        self._two_col('Hip Nod  rZ', 'hip_nod', d['hip_nod'], CLR_Z,
-                       'Hip Lean  rY', 'hip_lean', d['hip_lean'], CLR_Y,
-                       ctrls1=hip, ctrls2=hip)
-        self._row('Hip Twist  rX', 'hip_twist', d['hip_twist'], CLR_X, ctrls=hip)
+        # ── Hip ──
+        cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
+                         marginHeight=3, marginWidth=4, collapsable=False)
+        self._section_header('Hip', hip, 'hip')
+        self._slider('Nod  rZ', 'hip_nod', d['hip_nod'], RNG_AMP, CLR_Z)
+        self._slider('Lean  rY', 'hip_lean', d['hip_lean'], RNG_AMP, CLR_Y)
+        self._slider('Twist  rX', 'hip_twist', d['hip_twist'], RNG_AMP, CLR_X)
+        self._section_keys['hip'] = ['hip_nod', 'hip_lean', 'hip_twist']
+        cmds.setParent(col)
 
-        cmds.separator(height=8, style='in')
-        self._two_col('Bounce  tX', 'root_bounce', d['root_bounce'], CLR_X,
-                       'Bounce Offset', 'bounce_offset', d['bounce_offset'], CLR_X,
-                       ctrls1=root, ctrls2=root)
-        self._two_col('Nod  rZ', 'root_nod', d['root_nod'], CLR_Z,
-                       'Nod Offset', 'root_nod_offset', d['root_nod_offset'], CLR_Z,
-                       ctrls1=root, ctrls2=root)
-        self._two_col('Lean  rY', 'root_lean', d['root_lean'], CLR_Y,
-                       'Twist  rX', 'root_twist', d['root_twist'], CLR_X,
-                       ctrls1=root, ctrls2=root)
-        self._two_col('Left-Right  tZ', 'root_lr', d['root_lr'], CLR_Z,
-                       'Back-Forth  tY', 'root_bf', d['root_bf'], CLR_Y,
-                       ctrls1=root, ctrls2=root)
+        # ── Root ──
+        cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
+                         marginHeight=3, marginWidth=4, collapsable=False)
+        self._section_header('Root', root, 'root')
+        self._slider('Bounce  tX', 'root_bounce', d['root_bounce'], RNG_TRANS, CLR_X)
+        self._slider('Bounce Offset', 'bounce_offset', d['bounce_offset'], RNG_OFF, CLR_X)
+        self._slider('Nod  rZ', 'root_nod', d['root_nod'], RNG_AMP, CLR_Z)
+        self._slider('Nod Offset', 'root_nod_offset', d['root_nod_offset'], RNG_OFF, CLR_Z)
+        self._slider('Lean  rY', 'root_lean', d['root_lean'], RNG_AMP, CLR_Y)
+        self._slider('Twist  rX', 'root_twist', d['root_twist'], RNG_AMP, CLR_X)
+        self._slider('Left-Right  tZ', 'root_lr', d['root_lr'], RNG_TRANS, CLR_Z)
+        self._slider('Back-Forth  tY', 'root_bf', d['root_bf'], RNG_TRANS, CLR_Y)
+        self._section_keys['root'] = ['root_bounce', 'bounce_offset', 'root_nod',
+                                       'root_nod_offset', 'root_lean', 'root_twist',
+                                       'root_lr', 'root_bf']
+        cmds.setParent(col)
 
-        cmds.separator(height=6, style='none')
-        cmds.rowLayout(numberOfColumns=2, columnWidth2=(310, 290),
-                       adjustableColumn=2)
-        cmds.button(label='Set to 0', height=22,
+        # Bottom buttons
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=(300, 280),
+                       adjustableColumn=2, height=26)
+        cmds.button(label='Set All to 0', height=22,
                     command=lambda *_: self._zero_fields(
                         list(self.walk_primary.DEFAULTS.keys())))
         cmds.button(label='Select All Primary', height=22,
                     command=lambda *_: self._sel(legs + hip + root))
         cmds.setParent('..')
-
         cmds.setParent(parent)
 
     # ──────────────────────────────────────────────
@@ -193,7 +210,7 @@ class AnimGenWindow:
         cmds.setParent(parent)
         cmds.frameLayout(label='Secondary  (Spine / Chest / Neck / Head)',
                          collapsable=True, marginHeight=4, marginWidth=4)
-        cmds.columnLayout(adjustableColumn=True)
+        col = cmds.columnLayout(adjustableColumn=True)
 
         part_ctrls = {
             'spine': 'FKSpine_M', 'chest': 'FKChest_M',
@@ -202,34 +219,34 @@ class AnimGenWindow:
 
         for part in ('spine', 'chest', 'neck', 'head'):
             ctrl = [part_ctrls[part]]
-            cmds.rowLayout(numberOfColumns=2, columnWidth2=(200, 24),
-                           adjustableColumn=1)
-            cmds.text(label='  {} :'.format(part.title()), align='left',
-                      font='boldLabelFont')
-            self._sel_btn(ctrl)
-            cmds.setParent('..')
+            cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
+                             marginHeight=3, marginWidth=4, collapsable=False)
+            self._section_header(part.title(), ctrl, part)
 
             nod = self.walk_secondary._params['{}_nod'.format(part)]
             lean = self.walk_secondary._params['{}_lean'.format(part)]
             twist = self.walk_secondary._params['{}_twist'.format(part)]
             nod_off = self.walk_secondary._params['{}_nod_offset'.format(part)]
-            self._two_col('Nod  rZ', '{}_nod'.format(part), nod, CLR_Z,
-                           'Nod Offset', '{}_nod_offset'.format(part), nod_off, CLR_Z,
-                           ctrls1=ctrl, ctrls2=ctrl)
-            self._two_col('Lean  rY', '{}_lean'.format(part), lean, CLR_Y,
-                           'Twist  rX', '{}_twist'.format(part), twist, CLR_X,
-                           ctrls1=ctrl, ctrls2=ctrl)
 
-        cmds.separator(height=6, style='none')
-        cmds.rowLayout(numberOfColumns=2, columnWidth2=(310, 290),
-                       adjustableColumn=2)
-        cmds.button(label='Set to 0', height=22,
+            self._slider('Nod  rZ', '{}_nod'.format(part), nod, RNG_AMP, CLR_Z)
+            self._slider('Nod Offset', '{}_nod_offset'.format(part), nod_off, RNG_OFF, CLR_Z)
+            self._slider('Lean  rY', '{}_lean'.format(part), lean, RNG_AMP, CLR_Y)
+            self._slider('Twist  rX', '{}_twist'.format(part), twist, RNG_AMP, CLR_X)
+
+            self._section_keys[part] = ['{}_nod'.format(part),
+                                         '{}_nod_offset'.format(part),
+                                         '{}_lean'.format(part),
+                                         '{}_twist'.format(part)]
+            cmds.setParent(col)
+
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=(300, 280),
+                       adjustableColumn=2, height=26)
+        cmds.button(label='Set All to 0', height=22,
                     command=lambda *_: self._zero_fields(
                         list(self.walk_secondary._params.keys())))
         cmds.button(label='Select All Secondary', height=22,
                     command=lambda *_: self._sel(list(part_ctrls.values())))
         cmds.setParent('..')
-
         cmds.setParent(parent)
 
     # ──────────────────────────────────────────────
@@ -240,7 +257,7 @@ class AnimGenWindow:
         cmds.setParent(parent)
         cmds.frameLayout(label='Arms', collapsable=True,
                          marginHeight=4, marginWidth=4)
-        cmds.columnLayout(adjustableColumn=True)
+        col = cmds.columnLayout(adjustableColumn=True)
 
         sh = ['FKShoulder_R', 'FKShoulder_L']
         sc = ['FKScapula_R', 'FKScapula_L']
@@ -249,27 +266,50 @@ class AnimGenWindow:
         all_arm = sc + sh + el + wr
 
         d = self.walk_arms.DEFAULTS
-        self._two_col('Shoulder Droop  rY', 'shoulder_droop', d['shoulder_droop'], CLR_Y,
-                       'Scapula Droop  rY', 'scapula_droop', d['scapula_droop'], CLR_Y,
-                       ctrls1=sh, ctrls2=sc)
-        self._two_col('Shoulder Swing  rZ', 'shoulder_swing', d['shoulder_swing'], CLR_Z,
-                       'Shoulder Twist  rX', 'shoulder_twist', d['shoulder_twist'], CLR_X,
-                       ctrls1=sh, ctrls2=sh)
-        self._two_col('Scapula Swing  rZ', 'scapula_swing', d['scapula_swing'], CLR_Z,
-                       'Elbow Bend  rZ', 'elbow_bend', d['elbow_bend'], CLR_Z,
-                       ctrls1=sc, ctrls2=el)
-        self._row('Wrist Swing  rZ', 'wrist_swing', d['wrist_swing'], CLR_Z, ctrls=wr)
 
-        cmds.separator(height=6, style='none')
-        cmds.rowLayout(numberOfColumns=2, columnWidth2=(310, 290),
-                       adjustableColumn=2)
-        cmds.button(label='Set to 0', height=22,
+        # ── Shoulder ──
+        cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
+                         marginHeight=3, marginWidth=4, collapsable=False)
+        self._section_header('Shoulder', sh, 'shoulder')
+        self._slider('Droop  rY', 'shoulder_droop', d['shoulder_droop'], RNG_AMP, CLR_Y)
+        self._slider('Swing  rZ', 'shoulder_swing', d['shoulder_swing'], RNG_AMP, CLR_Z)
+        self._slider('Twist  rX', 'shoulder_twist', d['shoulder_twist'], RNG_AMP, CLR_X)
+        self._section_keys['shoulder'] = ['shoulder_droop', 'shoulder_swing', 'shoulder_twist']
+        cmds.setParent(col)
+
+        # ── Scapula ──
+        cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
+                         marginHeight=3, marginWidth=4, collapsable=False)
+        self._section_header('Scapula', sc, 'scapula')
+        self._slider('Droop  rY', 'scapula_droop', d['scapula_droop'], RNG_AMP, CLR_Y)
+        self._slider('Swing  rZ', 'scapula_swing', d['scapula_swing'], RNG_AMP, CLR_Z)
+        self._section_keys['scapula'] = ['scapula_droop', 'scapula_swing']
+        cmds.setParent(col)
+
+        # ── Elbow ──
+        cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
+                         marginHeight=3, marginWidth=4, collapsable=False)
+        self._section_header('Elbow', el, 'elbow')
+        self._slider('Bend  rZ', 'elbow_bend', d['elbow_bend'], RNG_AMP, CLR_Z)
+        self._section_keys['elbow'] = ['elbow_bend']
+        cmds.setParent(col)
+
+        # ── Wrist ──
+        cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
+                         marginHeight=3, marginWidth=4, collapsable=False)
+        self._section_header('Wrist', wr, 'wrist')
+        self._slider('Swing  rZ', 'wrist_swing', d['wrist_swing'], RNG_AMP, CLR_Z)
+        self._section_keys['wrist'] = ['wrist_swing']
+        cmds.setParent(col)
+
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=(300, 280),
+                       adjustableColumn=2, height=26)
+        cmds.button(label='Set All to 0', height=22,
                     command=lambda *_: self._zero_fields(
                         list(self.walk_arms.DEFAULTS.keys())))
         cmds.button(label='Select All Arms', height=22,
                     command=lambda *_: self._sel(all_arm))
         cmds.setParent('..')
-
         cmds.setParent(parent)
 
     # ──────────────────────────────────────────────
@@ -278,9 +318,9 @@ class AnimGenWindow:
 
     def _build_actions(self, parent):
         cmds.setParent(parent)
-        cmds.separator(height=12, style='in')
+        cmds.separator(height=10, style='in')
 
-        cmds.rowLayout(numberOfColumns=4, columnWidth4=(220, 170, 170, 150),
+        cmds.rowLayout(numberOfColumns=4, columnWidth4=(200, 150, 150, 100),
                        adjustableColumn=1)
         cmds.button(label='Generate Walk Cycle', height=36,
                     command=lambda *_: self._generate())
@@ -288,17 +328,14 @@ class AnimGenWindow:
                     command=lambda *_: self._delete_anim())
         cmds.button(label='Select All Controls', height=36,
                     command=lambda *_: self._sel_all())
-        cmds.checkBox(label='Auto-update', value=False,
+        cmds.checkBox(label='Auto', value=False,
                       changeCommand=lambda val: self._toggle_auto(val))
         cmds.setParent('..')
 
-        # ── preset section ──
-        cmds.separator(height=8, style='in')
-        cmds.text(label='  Presets', align='left', font='boldLabelFont')
-
-        cmds.rowLayout(numberOfColumns=3, columnWidth3=(300, 160, 160),
+        cmds.separator(height=6, style='in')
+        cmds.rowLayout(numberOfColumns=3, columnWidth3=(280, 150, 150),
                        adjustableColumn=1)
-        self._preset_menu = cmds.optionMenu(label='', changeCommand=lambda *_: None)
+        self._preset_menu = cmds.optionMenu(label='Preset:', changeCommand=lambda *_: None)
         self._refresh_preset_list()
         cmds.button(label='Load Selected',
                     command=lambda *_: self._load_selected_preset())
@@ -306,7 +343,7 @@ class AnimGenWindow:
                     command=lambda *_: self._print_settings())
         cmds.setParent('..')
 
-        cmds.rowLayout(numberOfColumns=4, columnWidth4=(155, 155, 155, 155),
+        cmds.rowLayout(numberOfColumns=4, columnWidth4=(150, 150, 150, 150),
                        adjustableColumn=4)
         cmds.button(label='Save to Library',
                     command=lambda *_: self._save_to_library())
@@ -323,9 +360,8 @@ class AnimGenWindow:
     # ──────────────────────────────────────────────
 
     def _read_fields(self):
-        """Sync current UI field values into layer parameters."""
         for key, ctrl in self._fields.items():
-            val = cmds.floatField(ctrl, q=True, v=True)
+            val = cmds.floatSliderGrp(ctrl, q=True, v=True)
             if key in self.walk_primary.DEFAULTS:
                 self.walk_primary._params[key] = val
             elif key in self.walk_secondary._params:
@@ -334,7 +370,6 @@ class AnimGenWindow:
                 self.walk_arms._params[key] = val
 
     def _delete_anim(self):
-        """Delete all keys within the playback range for every layer control."""
         all_ctrls = set()
         fkik_ctrls = set()
         for layer in (self.walk_primary, self.walk_secondary, self.walk_arms):
@@ -354,7 +389,6 @@ class AnimGenWindow:
                          self.walk_arms])
 
     def _sel_all(self):
-        """Select every control used by all enabled layers."""
         all_ctrls = (self.walk_primary.controls()
                      + self.walk_secondary.controls()
                      + self.walk_arms.controls())
@@ -365,7 +399,8 @@ class AnimGenWindow:
         cb = (lambda *_: self._generate()) if val else (lambda *_: None)
         for f in self._fields.values():
             try:
-                cmds.floatField(f, e=True, changeCommand=cb)
+                cmds.floatSliderGrp(f, e=True, changeCommand=cb,
+                                    dragCommand=cb)
             except Exception:
                 pass
 
@@ -380,12 +415,9 @@ class AnimGenWindow:
     # ── preset callbacks ──
 
     def _refresh_preset_list(self):
-        """Rebuild the preset dropdown from library + project presets."""
-        # Remove existing items
         existing = cmds.optionMenu(self._preset_menu, q=True, ill=True) or []
         for item in existing:
             cmds.deleteUI(item)
-        # Populate
         self._preset_entries = presets.list_presets('walk')
         for entry in self._preset_entries:
             tag = '[lib]' if entry['source'] == 'library' else '[proj]'
@@ -395,7 +427,6 @@ class AnimGenWindow:
             cmds.menuItem(label='(no presets found)', parent=self._preset_menu)
 
     def _load_selected_preset(self):
-        """Load the preset currently selected in the dropdown."""
         if not self._preset_entries:
             return
         idx = cmds.optionMenu(self._preset_menu, q=True, sl=True) - 1
@@ -405,7 +436,6 @@ class AnimGenWindow:
         self._apply_preset_data(data)
 
     def _prompt_name(self, title='Preset Name'):
-        """Prompt user for a preset name.  Returns the name or None."""
         result = cmds.promptDialog(title=title, message='Preset name:',
                                    button=['OK', 'Cancel'],
                                    defaultButton='OK',
@@ -444,7 +474,6 @@ class AnimGenWindow:
         self._apply_preset_data(data)
 
     def _apply_preset_data(self, data):
-        """Apply a loaded preset dict to all layers and refresh the UI."""
         if 'primary' in data:
             self.walk_primary.set_params(data['primary'])
         if 'secondary' in data:
@@ -454,7 +483,6 @@ class AnimGenWindow:
         self._refresh_fields()
 
     def _refresh_fields(self):
-        """Push layer params back into the UI fields."""
         all_p = {}
         all_p.update(self.walk_primary._params)
         all_p.update(self.walk_secondary._params)
@@ -462,7 +490,7 @@ class AnimGenWindow:
         for key, ctrl in self._fields.items():
             if key in all_p:
                 try:
-                    cmds.floatField(ctrl, e=True, v=all_p[key])
+                    cmds.floatSliderGrp(ctrl, e=True, v=all_p[key])
                 except Exception:
                     pass
 
