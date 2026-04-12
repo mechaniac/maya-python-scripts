@@ -154,19 +154,20 @@ class AnimGenWindow:
         self._row('Foot Raise  rX', 'foot_raise', d['foot_raise'], CLR_X, ctrls=legs)
 
         cmds.separator(height=8, style='in')
-        self._two_col('Hip Swing  rZ', 'hip_swing', d['hip_swing'], CLR_Z,
-                       'Hip Sway  rY', 'hip_sway', d['hip_sway'], CLR_Y,
+        self._two_col('Hip Nod  rZ', 'hip_nod', d['hip_nod'], CLR_Z,
+                       'Hip Lean  rY', 'hip_lean', d['hip_lean'], CLR_Y,
                        ctrls1=hip, ctrls2=hip)
+        self._row('Hip Twist  rX', 'hip_twist', d['hip_twist'], CLR_X, ctrls=hip)
 
         cmds.separator(height=8, style='in')
         self._two_col('Bounce  tY', 'root_bounce', d['root_bounce'], CLR_Y,
                        'Bounce Offset', 'bounce_offset', d['bounce_offset'], CLR_Y,
                        ctrls1=root, ctrls2=root)
-        self._two_col('Sway  rY', 'root_sway', d['root_sway'], CLR_Y,
-                       'Rock  rZ', 'root_rock', d['root_rock'], CLR_Z,
+        self._two_col('Nod  rZ', 'root_nod', d['root_nod'], CLR_Z,
+                       'Nod Offset', 'root_nod_offset', d['root_nod_offset'], CLR_Z,
                        ctrls1=root, ctrls2=root)
-        self._two_col('Twist  rX', 'root_twist', d['root_twist'], CLR_X,
-                       'Rock Offset', 'rock_offset', d['rock_offset'], CLR_Z,
+        self._two_col('Lean  rY', 'root_lean', d['root_lean'], CLR_Y,
+                       'Twist  rX', 'root_twist', d['root_twist'], CLR_X,
                        ctrls1=root, ctrls2=root)
         self._two_col('Left-Right  tX', 'root_lr', d['root_lr'], CLR_X,
                        'Back-Forth  tZ', 'root_bf', d['root_bf'], CLR_Z,
