@@ -36,7 +36,8 @@ class AnimGenWindow:
         self.walk_primary = WalkPrimary()
         self.walk_secondary = WalkSecondary()
         self.walk_arms = WalkArms()
-        self._fields = {}        # key -> floatSliderGrp
+        self._fields = {}        # key -> widget handle
+        self._plain_fields = set()  # keys using floatField (vs floatSliderGrp)
         self._auto_update = False
         self._mute_cbs = {}      # section_name -> checkBox
 
@@ -89,6 +90,42 @@ class AnimGenWindow:
         self._fields[key] = f
         return f
 
+    def _nod_range(self, key_front, key_back, def_front, def_back, color=None):
+        """Compact Nod row: label + Front field + Back field on one line."""
+        bg = dict(backgroundColor=color) if color else {}
+        cmds.rowLayout(numberOfColumns=5, columnWidth5=(130, 35, 60, 35, 60),
+                       adjustableColumn=5, height=22)
+        cmds.text(label='Nod  rZ', align='left', **bg)
+        cmds.text(label='Front:', align='right', font='smallPlainLabelFont')
+        ff = cmds.floatField(v=def_front, precision=2, width=55)
+        cmds.text(label='Back:', align='right', font='smallPlainLabelFont')
+        fb = cmds.floatField(v=def_back, precision=2, width=55)
+        cmds.setParent('..')
+        self._fields[key_front] = ff
+        self._fields[key_back] = fb
+        self._plain_fields.add(key_front)
+        self._plain_fields.add(key_back)
+
+    def _get_val(self, key):
+        h = self._fields[key]
+        if key in self._plain_fields:
+            return cmds.floatField(h, q=True, v=True)
+        return cmds.floatSliderGrp(h, q=True, v=True)
+
+    def _set_val(self, key, val):
+        h = self._fields[key]
+        if key in self._plain_fields:
+            cmds.floatField(h, e=True, v=val)
+        else:
+            cmds.floatSliderGrp(h, e=True, v=val)
+
+    def _set_field_enabled(self, key, enabled):
+        h = self._fields[key]
+        if key in self._plain_fields:
+            cmds.floatField(h, e=True, enable=enabled)
+        else:
+            cmds.floatSliderGrp(h, e=True, enable=enabled)
+
     def _section_header(self, label, ctrls, mute_key):
         """Joint header: big label + select button + mute checkbox."""
         cmds.rowLayout(numberOfColumns=3, columnWidth3=(200, 60, 80),
@@ -103,30 +140,28 @@ class AnimGenWindow:
 
     def _zero_fields(self, keys):
         for k in keys:
-            f = self._fields.get(k)
-            if f:
-                cmds.floatSliderGrp(f, e=True, v=0)
+            if k in self._fields:
+                self._set_val(k, 0)
         if self._auto_update:
             self._generate()
 
     def _toggle_mute(self, section, val):
         """Mute/unmute a section by setting all its sliders to 0 or restoring."""
         if val:
-            # Store current values then zero
             if not hasattr(self, '_muted_vals'):
                 self._muted_vals = {}
             self._muted_vals[section] = {}
             for key, fld in self._fields.items():
                 if key.startswith(section + '_') or key in self._section_keys.get(section, []):
-                    self._muted_vals[section][key] = cmds.floatSliderGrp(fld, q=True, v=True)
-                    cmds.floatSliderGrp(fld, e=True, v=0, enable=False)
+                    self._muted_vals[section][key] = self._get_val(key)
+                    self._set_val(key, 0)
+                    self._set_field_enabled(key, False)
         else:
-            # Restore
             stored = getattr(self, '_muted_vals', {}).get(section, {})
             for key, val in stored.items():
-                fld = self._fields.get(key)
-                if fld:
-                    cmds.floatSliderGrp(fld, e=True, v=val, enable=True)
+                if key in self._fields:
+                    self._set_val(key, val)
+                    self._set_field_enabled(key, True)
         if self._auto_update:
             self._generate()
 
@@ -180,14 +215,14 @@ class AnimGenWindow:
         self._section_header('Root', root, 'root')
         self._slider('Bounce  tX', 'root_bounce', d['root_bounce'], RNG_TRANS, CLR_X)
         self._slider('Bounce Offset', 'bounce_offset', d['bounce_offset'], RNG_OFF, CLR_X)
-        self._slider('Nod  rZ', 'root_nod', d['root_nod'], RNG_AMP, CLR_Z)
-        self._slider('Nod Offset', 'root_nod_offset', d['root_nod_offset'], RNG_OFF, CLR_Z)
+        self._nod_range('root_nod_front', 'root_nod_back',
+                        d['root_nod_front'], d['root_nod_back'], CLR_Z)
         self._slider('Lean  rY', 'root_lean', d['root_lean'], RNG_AMP, CLR_Y)
         self._slider('Twist  rX', 'root_twist', d['root_twist'], RNG_AMP, CLR_X)
         self._slider('Left-Right  tZ', 'root_lr', d['root_lr'], RNG_TRANS, CLR_Z)
         self._slider('Back-Forth  tY', 'root_bf', d['root_bf'], RNG_TRANS, CLR_Y)
-        self._section_keys['root'] = ['root_bounce', 'bounce_offset', 'root_nod',
-                                       'root_nod_offset', 'root_lean', 'root_twist',
+        self._section_keys['root'] = ['root_bounce', 'bounce_offset', 'root_nod_front',
+                                       'root_nod_back', 'root_lean', 'root_twist',
                                        'root_lr', 'root_bf']
         cmds.setParent(col)
 
@@ -223,18 +258,19 @@ class AnimGenWindow:
                              marginHeight=3, marginWidth=4, collapsable=False)
             self._section_header(part.title(), ctrl, part)
 
-            nod = self.walk_secondary._params['{}_nod'.format(part)]
+            nod_f = self.walk_secondary._params['{}_nod_front'.format(part)]
+            nod_b = self.walk_secondary._params['{}_nod_back'.format(part)]
             lean = self.walk_secondary._params['{}_lean'.format(part)]
             twist = self.walk_secondary._params['{}_twist'.format(part)]
-            nod_off = self.walk_secondary._params['{}_nod_offset'.format(part)]
 
-            self._slider('Nod  rZ', '{}_nod'.format(part), nod, RNG_AMP, CLR_Z)
-            self._slider('Nod Offset', '{}_nod_offset'.format(part), nod_off, RNG_OFF, CLR_Z)
+            self._nod_range('{}_nod_front'.format(part),
+                            '{}_nod_back'.format(part),
+                            nod_f, nod_b, CLR_Z)
             self._slider('Lean  rY', '{}_lean'.format(part), lean, RNG_AMP, CLR_Y)
             self._slider('Twist  rX', '{}_twist'.format(part), twist, RNG_AMP, CLR_X)
 
-            self._section_keys[part] = ['{}_nod'.format(part),
-                                         '{}_nod_offset'.format(part),
+            self._section_keys[part] = ['{}_nod_front'.format(part),
+                                         '{}_nod_back'.format(part),
                                          '{}_lean'.format(part),
                                          '{}_twist'.format(part)]
             cmds.setParent(col)
@@ -360,8 +396,8 @@ class AnimGenWindow:
     # ──────────────────────────────────────────────
 
     def _read_fields(self):
-        for key, ctrl in self._fields.items():
-            val = cmds.floatSliderGrp(ctrl, q=True, v=True)
+        for key in self._fields:
+            val = self._get_val(key)
             if key in self.walk_primary.DEFAULTS:
                 self.walk_primary._params[key] = val
             elif key in self.walk_secondary._params:
@@ -397,10 +433,13 @@ class AnimGenWindow:
     def _toggle_auto(self, val):
         self._auto_update = val
         cb = (lambda *_: self._generate()) if val else (lambda *_: None)
-        for f in self._fields.values():
+        for key, f in self._fields.items():
             try:
-                cmds.floatSliderGrp(f, e=True, changeCommand=cb,
-                                    dragCommand=cb)
+                if key in self._plain_fields:
+                    cmds.floatField(f, e=True, changeCommand=cb)
+                else:
+                    cmds.floatSliderGrp(f, e=True, changeCommand=cb,
+                                        dragCommand=cb)
             except Exception:
                 pass
 
@@ -487,10 +526,10 @@ class AnimGenWindow:
         all_p.update(self.walk_primary._params)
         all_p.update(self.walk_secondary._params)
         all_p.update(self.walk_arms._params)
-        for key, ctrl in self._fields.items():
+        for key in self._fields:
             if key in all_p:
                 try:
-                    cmds.floatSliderGrp(ctrl, e=True, v=all_p[key])
+                    self._set_val(key, all_p[key])
                 except Exception:
                     pass
 

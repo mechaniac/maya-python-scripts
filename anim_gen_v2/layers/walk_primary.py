@@ -21,13 +21,13 @@ class WalkPrimary(Layer):
         'hip_lean':         5.0,
         'hip_twist':        0.0,
         'root_bounce':      1.5,
-        'root_nod':         1.0,
+        'root_nod_front':   1.0,
+        'root_nod_back':   -1.0,
         'root_lean':        2.0,
         'root_twist':       0.0,
         'root_lr':          0.0,
         'root_bf':          0.0,
         'bounce_offset':    0.0,
-        'root_nod_offset':  0.0,
     }
 
     def __init__(self):
@@ -143,9 +143,10 @@ class WalkPrimary(Layer):
         # ── root nod / lean / twist ──
         # RootX_M joint-aligned (same as FK spine):
         #   rotateZ = nod (forward/back), rotateY = lean (side), rotateX = twist
+        nod_amp = (p['root_nod_front'] - p['root_nod_back']) / 2.0
+        nod_off = (p['root_nod_front'] + p['root_nod_back']) / 2.0
         chs.append(Channel('RootX_M', 'rotateZ', Wave.COSINE,
-                           amplitude=p['root_nod'],
-                           offset=p['root_nod_offset'],
+                           amplitude=nod_amp, offset=nod_off,
                            frequency=2, n_points=5,
                            label='Root Nod'))
         chs.append(Channel('RootX_M', 'rotateY', Wave.COSINE,
