@@ -14,6 +14,7 @@ from ..core import engine, presets
 from ..layers.walk_primary import WalkPrimary
 from ..layers.walk_secondary import WalkSecondary
 from ..layers.walk_arms import WalkArms
+from .range_slider import RangeSlider, embed_in_layout
 
 WINDOW_NAME = 'animGenV2Win'
 WINDOW_TITLE = 'Animation Generator v2'
@@ -36,8 +37,9 @@ class AnimGenWindow:
         self.walk_primary = WalkPrimary()
         self.walk_secondary = WalkSecondary()
         self.walk_arms = WalkArms()
-        self._fields = {}        # key -> widget handle
-        self._range_keys = set()  # keys backed by floatField (range rows)
+        self._fields = {}        # key -> widget handle (cmds) or None (range)
+        self._range_sliders = {}  # (key_lo, key_hi) -> RangeSlider widget
+        self._range_keys = {}     # key -> (RangeSlider, 'low'|'high')
         self._auto_update = False
         self._mute_cbs = {}      # section_name -> checkBox
 
@@ -92,43 +94,81 @@ class AnimGenWindow:
 
     def _range_slider(self, label, key_lo, key_hi, def_lo, def_hi,
                       rng=RNG_AMP, color=None):
-        """Compact range row: label [lo] ═══ [hi] on a single line."""
+        """Compact range row: label [lo field] ═══slider═══ [hi field]."""
         bg = dict(backgroundColor=color) if color else {}
         form = cmds.formLayout(height=22)
         lbl = cmds.text(label=label, width=130, align='right', **bg)
         f_lo = cmds.floatField(v=def_lo, precision=2, width=50,
                                minValue=rng[2], maxValue=rng[3])
-        bar = cmds.text(label='', **bg)
+        # placeholder for the Qt slider
+        holder = cmds.columnLayout(adjustableColumn=True, height=20)
+        cmds.setParent(form)
         f_hi = cmds.floatField(v=def_hi, precision=2, width=50,
                                minValue=rng[2], maxValue=rng[3])
         cmds.formLayout(form, e=True,
             attachForm=[(lbl, 'left', 0), (lbl, 'top', 2), (lbl, 'bottom', 2),
                         (f_lo, 'top', 0),
-                        (bar, 'top', 2), (bar, 'bottom', 2),
+                        (holder, 'top', 0), (holder, 'bottom', 0),
                         (f_hi, 'top', 0), (f_hi, 'right', 0)],
             attachNone=[(lbl, 'right'), (f_lo, 'right'), (f_hi, 'left')],
             attachControl=[(f_lo, 'left', 4, lbl),
-                           (bar, 'left', 0, f_lo),
-                           (bar, 'right', 0, f_hi)])
+                           (holder, 'left', 2, f_lo),
+                           (holder, 'right', 2, f_hi)])
+
+        # embed Qt range slider into the cmds holder layout
+        sl = embed_in_layout(holder, minimum=rng[0], maximum=rng[1],
+                             low=def_lo, high=def_hi)
+
+        # bidirectional sync
+        def _slider_changed(lo, hi):
+            cmds.floatField(f_lo, e=True, v=lo)
+            cmds.floatField(f_hi, e=True, v=hi)
+            if self._auto_update:
+                self._generate()
+
+        def _lo_field_changed(val):
+            sl.setLow(val)
+            if self._auto_update:
+                self._generate()
+
+        def _hi_field_changed(val):
+            sl.setHigh(val)
+            if self._auto_update:
+                self._generate()
+
+        sl.rangeChanged.connect(_slider_changed)
+        cmds.floatField(f_lo, e=True, changeCommand=_lo_field_changed)
+        cmds.floatField(f_hi, e=True, changeCommand=_hi_field_changed)
+
         cmds.setParent('..')
         self._fields[key_lo] = f_lo
         self._fields[key_hi] = f_hi
-        self._range_keys.add(key_lo)
-        self._range_keys.add(key_hi)
+        self._range_keys[key_lo] = (sl, 'low')
+        self._range_keys[key_hi] = (sl, 'high')
+        self._range_sliders[(key_lo, key_hi)] = sl
 
     def _get_val(self, key):
         if key in self._range_keys:
-            return cmds.floatField(self._fields[key], q=True, v=True)
+            sl, which = self._range_keys[key]
+            lo, hi = sl.value()
+            return lo if which == 'low' else hi
         return cmds.floatSliderGrp(self._fields[key], q=True, v=True)
 
     def _set_val(self, key, val):
         if key in self._range_keys:
+            sl, which = self._range_keys[key]
+            if which == 'low':
+                sl.setLow(val)
+            else:
+                sl.setHigh(val)
             cmds.floatField(self._fields[key], e=True, v=val)
         else:
             cmds.floatSliderGrp(self._fields[key], e=True, v=val)
 
     def _set_field_enabled(self, key, enabled):
         if key in self._range_keys:
+            sl, _ = self._range_keys[key]
+            sl.setEnabled(enabled)
             cmds.floatField(self._fields[key], e=True, enable=enabled)
         else:
             cmds.floatSliderGrp(self._fields[key], e=True, enable=enabled)
@@ -441,12 +481,11 @@ class AnimGenWindow:
         self._auto_update = val
         cb = (lambda *_: self._generate()) if val else (lambda *_: None)
         for key, f in self._fields.items():
+            if key in self._range_keys:
+                continue  # range fields already self-manage via _range_slider
             try:
-                if key in self._range_keys:
-                    cmds.floatField(f, e=True, changeCommand=cb)
-                else:
-                    cmds.floatSliderGrp(f, e=True, changeCommand=cb,
-                                        dragCommand=cb)
+                cmds.floatSliderGrp(f, e=True, changeCommand=cb,
+                                    dragCommand=cb)
             except Exception:
                 pass
 
