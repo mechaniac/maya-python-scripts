@@ -196,11 +196,11 @@ class AnimGenWindow:
         cmds.columnLayout(adjustableColumn=True)
 
         part_ctrls = {
-            'spine1': 'FKSpine1_M', 'chest': 'FKChest_M',
+            'spine': 'FKSpine_M', 'chest': 'FKChest_M',
             'neck': 'FKNeck_M', 'head': 'FKHead_M',
         }
 
-        for part in ('spine1', 'chest', 'neck', 'head'):
+        for part in ('spine', 'chest', 'neck', 'head'):
             ctrl = [part_ctrls[part]]
             cmds.rowLayout(numberOfColumns=2, columnWidth2=(200, 24),
                            adjustableColumn=1)

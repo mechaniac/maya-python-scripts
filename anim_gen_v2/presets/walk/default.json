@@ -24,10 +24,10 @@
     "root_nod_offset": 0.0
   },
   "secondary": {
-    "spine1_nod": 5.0,
-    "spine1_lean": 2.0,
-    "spine1_twist": 1.5,
-    "spine1_nod_offset": 0.0,
+    "spine_nod": 5.0,
+    "spine_lean": 2.0,
+    "spine_twist": 1.5,
+    "spine_nod_offset": 0.0,
     "chest_nod": 7.0,
     "chest_lean": 3.0,
     "chest_twist": 2.0,

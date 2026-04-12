@@ -15,7 +15,7 @@ from . import Layer
 
 # (part_key, ctrl_name, nod, lean, twist, nod_offset)
 _PARTS = (
-    ('spine1', 'FKSpine1_M', 5.0, 2.0, 1.5, 0.0),
+    ('spine', 'FKSpine_M',  5.0, 2.0, 1.5, 0.0),
     ('chest',  'FKChest_M',  7.0, 3.0, 2.0, 0.0),
     ('neck',   'FKNeck_M',   4.0, 2.0, 1.0, 0.0),
     ('head',   'FKHead_M',   3.0, 1.5, 1.5, 0.0),

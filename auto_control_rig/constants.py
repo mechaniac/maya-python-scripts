@@ -34,7 +34,7 @@ SLOT_DEFS = [
 ]
 
 SLOT_TO_CTRL = {
-    "root": "RootX_M", "spine": "FKSpine1_M", "spine_1": "FKSpine2_M",
+    "root": "RootX_M", "spine": "FKSpine_M",
     "chest": "FKChest_M",
     "neck": "FKNeck_M", "head": "FKHead_M",
     "scapula_l": "FKScapula_L", "shoulder_l": "FKShoulder_L",

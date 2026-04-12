@@ -50,7 +50,43 @@ def build_root(builder):
 # ---------------------------------------------------------------------------
 def build_fk_spine(builder):
     par = "RootX_M" if cmds.objExists("RootX_M") else builder.ctrl_grp
-    for slot in ["spine", "spine_1", "chest", "neck", "head"]:
+
+    # -- Single FKSpine_M drives both spine and spine_1 at 50% each --
+    spine_dj = builder.dj.get("spine")
+    spine1_dj = builder.dj.get("spine_1")
+    if spine_dj:
+        c = circle(SLOT_TO_CTRL["spine"], r=builder.sz * 8, n=(1, 0, 0))
+        snap(c, spine_dj)
+        color(c, COL_M)
+        o = offset(c)
+        cmds.parent(o, par if cmds.objExists(par) else builder.ctrl_grp)
+        builder.fk_offsets["spine"] = o
+
+        # Create a half-rotation driver group for the 50/50 split
+        half_grp = cmds.group(em=True, n="FKSpine_half_drv")
+        snap(half_grp, spine_dj)
+        half_off = offset(half_grp)
+        cmds.parent(half_off, par if cmds.objExists(par) else builder.ctrl_grp)
+
+        # Connect half the rotation: multiply FKSpine rotations by 0.5
+        md = cmds.createNode("multiplyDivide", n="FKSpine_half_md")
+        cmds.setAttr(md + ".input2X", 0.5)
+        cmds.setAttr(md + ".input2Y", 0.5)
+        cmds.setAttr(md + ".input2Z", 0.5)
+        cmds.connectAttr(c + ".rotate", md + ".input1")
+        cmds.connectAttr(md + ".output", half_grp + ".rotate")
+
+        # spine_0 joint gets the half rotation
+        cmds.parentConstraint(half_grp, spine_dj, mo=1)
+        # spine_1 joint also gets the half rotation
+        if spine1_dj:
+            cmds.parentConstraint(half_grp, spine1_dj, mo=1)
+            builder.fk_offsets["spine_1"] = half_off
+
+        par = c
+
+    # -- Remaining chain: chest, neck, head --
+    for slot in ["chest", "neck", "head"]:
         dj = builder.dj.get(slot)
         if not dj:
             continue
