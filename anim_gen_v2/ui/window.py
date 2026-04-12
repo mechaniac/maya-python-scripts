@@ -211,12 +211,12 @@ class AnimGenWindow:
             nod = self.walk_secondary._params['{}_nod'.format(part)]
             lean = self.walk_secondary._params['{}_lean'.format(part)]
             twist = self.walk_secondary._params['{}_twist'.format(part)]
-            twist_off = self.walk_secondary._params['{}_twist_offset'.format(part)]
+            nod_off = self.walk_secondary._params['{}_nod_offset'.format(part)]
             self._two_col('Nod  rZ', '{}_nod'.format(part), nod, CLR_Z,
-                           'Lean  rY', '{}_lean'.format(part), lean, CLR_Y,
+                           'Nod Offset', '{}_nod_offset'.format(part), nod_off, CLR_Z,
                            ctrls1=ctrl, ctrls2=ctrl)
-            self._two_col('Twist  rX', '{}_twist'.format(part), twist, CLR_X,
-                           'Twist Offset', '{}_twist_offset'.format(part), twist_off, CLR_X,
+            self._two_col('Lean  rY', '{}_lean'.format(part), lean, CLR_Y,
+                           'Twist  rX', '{}_twist'.format(part), twist, CLR_X,
                            ctrls1=ctrl, ctrls2=ctrl)
 
         cmds.separator(height=6, style='none')

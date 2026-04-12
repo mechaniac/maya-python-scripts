@@ -13,7 +13,7 @@ from ..core.channel import Channel
 from ..core.patterns import Wave
 from . import Layer
 
-# (part_key, ctrl_name, nod, lean, twist, twist_offset)
+# (part_key, ctrl_name, nod, lean, twist, nod_offset)
 _PARTS = (
     ('spine1', 'FKSpine1_M', 5.0, 2.0, 1.5, 0.0),
     ('chest',  'FKChest_M',  7.0, 3.0, 2.0, 0.0),
@@ -31,12 +31,12 @@ class WalkSecondary(Layer):
         super().__init__()
         self._params = {}
         self._ctrl_map = {}
-        for part, ctrl, nod, lean, twist, twist_off in _PARTS:
+        for part, ctrl, nod, lean, twist, nod_off in _PARTS:
             self._ctrl_map[part] = ctrl
             self._params['{}_nod'.format(part)] = nod
             self._params['{}_lean'.format(part)] = lean
             self._params['{}_twist'.format(part)] = twist
-            self._params['{}_twist_offset'.format(part)] = twist_off
+            self._params['{}_nod_offset'.format(part)] = nod_off
 
     def controls(self):
         return list(self._ctrl_map.values())
@@ -51,11 +51,12 @@ class WalkSecondary(Layer):
             nod = p['{}_nod'.format(part)]
             lean = p['{}_lean'.format(part)]
             twist = p['{}_twist'.format(part)]
-            twist_off = p['{}_twist_offset'.format(part)]
+            nod_off = p['{}_nod_offset'.format(part)]
 
             # rotateZ = nod (forward/back pitch) -- 5-point, twice per cycle
             chs.append(Channel(ctrl, 'rotateZ', Wave.COSINE,
-                               amplitude=nod, frequency=2, n_points=5,
+                               amplitude=nod, offset=nod_off,
+                               frequency=2, n_points=5,
                                label='{} Nod'.format(part)))
             # rotateY = lean (lateral side bend) -- 3-point, once per cycle
             chs.append(Channel(ctrl, 'rotateY', Wave.COSINE,
@@ -63,7 +64,7 @@ class WalkSecondary(Layer):
                                label='{} Lean'.format(part)))
             # rotateX = twist (axial roll) -- 3-point, once per cycle
             chs.append(Channel(ctrl, 'rotateX', Wave.COSINE,
-                               amplitude=twist, offset=twist_off,
+                               amplitude=twist,
                                frequency=1, n_points=3,
                                label='{} Twist'.format(part)))
         return chs
