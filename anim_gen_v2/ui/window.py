@@ -37,6 +37,7 @@ class AnimGenWindow:
         self.walk_secondary = WalkSecondary()
         self.walk_arms = WalkArms()
         self._fields = {}        # key -> widget handle
+        self._range_keys = set()  # keys backed by floatField (range rows)
         self._auto_update = False
         self._mute_cbs = {}      # section_name -> checkBox
 
@@ -89,14 +90,48 @@ class AnimGenWindow:
         self._fields[key] = f
         return f
 
+    def _range_slider(self, label, key_lo, key_hi, def_lo, def_hi,
+                      rng=RNG_AMP, color=None):
+        """Compact range row: label [lo] ═══ [hi] on a single line."""
+        bg = dict(backgroundColor=color) if color else {}
+        form = cmds.formLayout(height=22)
+        lbl = cmds.text(label=label, width=130, align='right', **bg)
+        f_lo = cmds.floatField(v=def_lo, precision=2, width=50,
+                               minValue=rng[2], maxValue=rng[3])
+        bar = cmds.text(label='', **bg)
+        f_hi = cmds.floatField(v=def_hi, precision=2, width=50,
+                               minValue=rng[2], maxValue=rng[3])
+        cmds.formLayout(form, e=True,
+            attachForm=[(lbl, 'left', 0), (lbl, 'top', 2), (lbl, 'bottom', 2),
+                        (f_lo, 'top', 0),
+                        (bar, 'top', 2), (bar, 'bottom', 2),
+                        (f_hi, 'top', 0), (f_hi, 'right', 0)],
+            attachNone=[(lbl, 'right'), (f_lo, 'right'), (f_hi, 'left')],
+            attachControl=[(f_lo, 'left', 4, lbl),
+                           (bar, 'left', 0, f_lo),
+                           (bar, 'right', 0, f_hi)])
+        cmds.setParent('..')
+        self._fields[key_lo] = f_lo
+        self._fields[key_hi] = f_hi
+        self._range_keys.add(key_lo)
+        self._range_keys.add(key_hi)
+
     def _get_val(self, key):
+        if key in self._range_keys:
+            return cmds.floatField(self._fields[key], q=True, v=True)
         return cmds.floatSliderGrp(self._fields[key], q=True, v=True)
 
     def _set_val(self, key, val):
-        cmds.floatSliderGrp(self._fields[key], e=True, v=val)
+        if key in self._range_keys:
+            cmds.floatField(self._fields[key], e=True, v=val)
+        else:
+            cmds.floatSliderGrp(self._fields[key], e=True, v=val)
 
     def _set_field_enabled(self, key, enabled):
-        cmds.floatSliderGrp(self._fields[key], e=True, enable=enabled)
+        if key in self._range_keys:
+            cmds.floatField(self._fields[key], e=True, enable=enabled)
+        else:
+            cmds.floatSliderGrp(self._fields[key], e=True, enable=enabled)
 
     def _section_header(self, label, ctrls, mute_key):
         """Joint header: big label + select button + mute checkbox."""
@@ -187,8 +222,8 @@ class AnimGenWindow:
         self._section_header('Root', root, 'root')
         self._slider('Bounce  tX', 'root_bounce', d['root_bounce'], RNG_TRANS, CLR_X)
         self._slider('Bounce Offset', 'bounce_offset', d['bounce_offset'], RNG_OFF, CLR_X)
-        self._slider('Nod Back  rZ', 'root_nod_back', d['root_nod_back'], RNG_AMP, CLR_Z)
-        self._slider('Nod Front  rZ', 'root_nod_front', d['root_nod_front'], RNG_AMP, CLR_Z)
+        self._range_slider('Nod  rZ', 'root_nod_back', 'root_nod_front',
+                           d['root_nod_back'], d['root_nod_front'], RNG_AMP, CLR_Z)
         self._slider('Lean  rY', 'root_lean', d['root_lean'], RNG_AMP, CLR_Y)
         self._slider('Twist  rX', 'root_twist', d['root_twist'], RNG_AMP, CLR_X)
         self._slider('Left-Right  tZ', 'root_lr', d['root_lr'], RNG_TRANS, CLR_Z)
@@ -235,8 +270,9 @@ class AnimGenWindow:
             lean = self.walk_secondary._params['{}_lean'.format(part)]
             twist = self.walk_secondary._params['{}_twist'.format(part)]
 
-            self._slider('Nod Back  rZ', '{}_nod_back'.format(part), nod_b, RNG_AMP, CLR_Z)
-            self._slider('Nod Front  rZ', '{}_nod_front'.format(part), nod_f, RNG_AMP, CLR_Z)
+            self._range_slider('Nod  rZ', '{}_nod_back'.format(part),
+                               '{}_nod_front'.format(part),
+                               nod_b, nod_f, RNG_AMP, CLR_Z)
             self._slider('Lean  rY', '{}_lean'.format(part), lean, RNG_AMP, CLR_Y)
             self._slider('Twist  rX', '{}_twist'.format(part), twist, RNG_AMP, CLR_X)
 
@@ -404,10 +440,13 @@ class AnimGenWindow:
     def _toggle_auto(self, val):
         self._auto_update = val
         cb = (lambda *_: self._generate()) if val else (lambda *_: None)
-        for f in self._fields.values():
+        for key, f in self._fields.items():
             try:
-                cmds.floatSliderGrp(f, e=True, changeCommand=cb,
-                                    dragCommand=cb)
+                if key in self._range_keys:
+                    cmds.floatField(f, e=True, changeCommand=cb)
+                else:
+                    cmds.floatSliderGrp(f, e=True, changeCommand=cb,
+                                        dragCommand=cb)
             except Exception:
                 pass
 
