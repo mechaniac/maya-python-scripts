@@ -1,8 +1,8 @@
-"""Maya material creation from Source 2 texture files.
+﻿"""Maya material creation from Source 2 texture files.
 
-Discovers all available texture channels per material, creates
-Maya-native shaders with s&box-matching names and settings, cleans up
-FBX placeholder materials.
+Exports ALL available textures to PNG, creates file nodes for every one
+(even unconnected), builds Maya-native shaders with s&box names, and
+cleans up FBX placeholder materials.
 """
 
 import os
@@ -14,56 +14,51 @@ import maya.cmds as cmds
 from . import vrf as _vrf
 
 
-# ── texture slot definitions ──────────────────────────────────────
-# (slot_name, match_patterns, exclude_patterns)
-_TEXTURE_SLOTS = [
-    ("color",       ["_color_", "_tcolor_"],
-                    ["_grey_", "_old_", "_young_"]),
-    ("normal",      ["_normal_", "_tnormal_"],
-                    ["_iris_normal_", "_bentnormal_"]),
-    ("ao",          ["_ao_", "_tambientocclusion_", "_tocclusion_"],
-                    ["_grey_", "_old_", "_young_"]),
-    ("roughness",   ["_roughness_"],          []),
-    ("metalness",   ["_metalness_"],          []),
-    ("emission",    ["_selfillum_", "_tselfillummask_"],  []),
-    ("iris_mask",   ["_iris_mask_"],          []),
-    ("iris_normal", ["_iris_normal_"],        []),
-    ("transparency", ["_trans_"],             []),
-]
+# Skin variants we skip - only import the default citizen_skin textures
+_VARIANT_SKIP = ("_grey_", "_old_", "_young_")
 
 
-# ── public entry point ────────────────────────────────────────────
+# -- public entry point ------------------------------------------------
 
 
 def process_material(vrf_exe, vmat_c_path, content_root, texture_output,
                      fbx_mat_name):
-    """Convert textures and create a Maya material for a .vmat_c.
+    """Convert ALL textures for a material and create a Maya shader.
 
-    Uses the s&box material name from the vmat_c filename. Cleans up
-    the FBX placeholder material after reassigning geometry.
+    Every .vtex_c that belongs to this material gets exported to PNG
+    and loaded as a file node in the scene. Only safe connections are
+    made; the rest are left for manual hookup.
     """
     fbx_name  = fbx_mat_name.replace(".vmat", "")
     sbox_name = os.path.splitext(os.path.basename(vmat_c_path))[0]
     mat_dir   = os.path.dirname(vmat_c_path)
 
-    # ── discover all available textures ──────────────────────────
-    textures = _discover_textures(vrf_exe, mat_dir, sbox_name,
-                                  fbx_name, texture_output)
-    if not textures:
-        print(f"    No textures found for {sbox_name} — skipping")
+    # -- export ALL matching textures ----------------------------------
+    tex_map = _export_all_textures(vrf_exe, mat_dir, sbox_name,
+                                   fbx_name, texture_output)
+
+    # eyeao references citizen_eyes_trans for opacity (cross-material ref)
+    if _classify(sbox_name) == "eyeao":
+        _add_cross_ref(vrf_exe, mat_dir, texture_output, tex_map,
+                       "citizen_eyes_trans", "eyes_trans")
+
+    if not tex_map:
+        print(f"    No textures found for {sbox_name} - skipping")
         return None
 
-    for slot, png in textures.items():
-        print(f"    {slot}: {os.path.basename(png)}")
+    for label, png in sorted(tex_map.items()):
+        print(f"    {label}: {os.path.basename(png)}")
 
-    # ── collect geo from FBX placeholders, then remove them ──────
+    # -- collect geo from FBX placeholders, then delete them -----------
     old_members = _collect_and_remove_fbx_materials(fbx_name)
 
-    # ── create shader with s&box name ────────────────────────────
+    # -- create shader + file nodes for every texture ------------------
     mat_type = _classify(sbox_name)
-    mat, sg = _create_shader(sbox_name, textures, mat_type)
+    mat, sg, file_nodes = _create_shader(sbox_name, tex_map, mat_type)
 
-    # ── assign geometry to new shader ────────────────────────────
+    print(f"    Created {len(file_nodes)} file node(s)")
+
+    # -- assign geometry -----------------------------------------------
     if old_members:
         valid = [m for m in old_members if cmds.objExists(m)]
         if valid:
@@ -73,61 +68,119 @@ def process_material(vrf_exe, vmat_c_path, content_root, texture_output,
     return {
         "name": sbox_name,
         "maya_material": mat,
-        "textures": list(textures.keys()),
+        "textures": list(tex_map.keys()),
+        "file_nodes": file_nodes,
     }
 
 
-# ── texture discovery ─────────────────────────────────────────────
+# -- texture export (ALL textures) ------------------------------------
 
 
-def _discover_textures(vrf_exe, mat_dir, sbox_name, fbx_name, output_dir):
-    """Find and convert all available texture channels.
+def _export_all_textures(vrf_exe, mat_dir, sbox_name, fbx_name, output_dir):
+    """Export every .vtex_c belonging to this material.
 
-    Tries multiple prefix candidates to account for naming variations
-    (citizen_skin01 vs citizen_skin_, citizen_eyes vs citizen_eyes_advanced_).
+    Returns dict of human-readable label -> PNG path.
     """
     if not os.path.isdir(mat_dir):
         return {}
 
-    # Prefix candidates: sbox name, fbx name, digits-stripped sbox name
-    prefixes = [sbox_name.lower()]
-    fbx_lower = fbx_name.lower()
-    if fbx_lower not in prefixes:
-        prefixes.append(fbx_lower)
-    stripped = sbox_name.lower().rstrip("0123456789")
-    if stripped not in prefixes and stripped != sbox_name.lower():
-        prefixes.append(stripped)
+    # Build prefix list to match
+    prefixes = []
+    for p in (sbox_name.lower(), fbx_name.lower(),
+              sbox_name.lower().rstrip("0123456789")):
+        if p and p not in prefixes:
+            prefixes.append(p)
 
-    all_vtex = sorted(fn for fn in os.listdir(mat_dir)
-                      if fn.endswith(".vtex_c"))
-
-    textures = {}  # slot_name -> png_path
-    for slot_name, patterns, excludes in _TEXTURE_SLOTS:
-        for prefix in prefixes:
-            match = _find_texture(all_vtex, prefix, patterns, excludes)
-            if match:
-                png = _export_texture(vrf_exe,
-                                      os.path.join(mat_dir, match),
-                                      output_dir)
-                if png:
-                    textures[slot_name] = png
-                break
-
-    return textures
-
-
-def _find_texture(vtex_files, prefix, patterns, excludes):
-    """Return first .vtex_c matching prefix + any pattern, excluding rejects."""
-    for fn in vtex_files:
+    tex_map = {}
+    for fn in sorted(os.listdir(mat_dir)):
         fn_lower = fn.lower()
-        if not fn_lower.startswith(prefix):
+
+        if fn_lower.endswith(".vtex_c"):
+            # Compiled textures — export via VRF
+            if not any(fn_lower.startswith(p) for p in prefixes):
+                continue
+            if any(v in fn_lower for v in _VARIANT_SKIP):
+                continue
+
+            png = _export_texture(vrf_exe, os.path.join(mat_dir, fn),
+                                  output_dir)
+            if png:
+                label = _human_label(fn, sbox_name)
+                tex_map[label] = png
+
+        elif (fn_lower.endswith(".png")
+              and not fn_lower.endswith(".generated.png")):
+            # Raw PNG source textures (shipped alongside vtex_c)
+            if not any(fn_lower.startswith(p) for p in prefixes):
+                continue
+            if any(v in fn_lower for v in _VARIANT_SKIP):
+                continue
+            src = os.path.join(mat_dir, fn)
+            dest = os.path.join(output_dir, fn)
+            if not os.path.isfile(dest):
+                os.makedirs(output_dir, exist_ok=True)
+                shutil.copy2(src, dest)
+            label = _label_from_png(fn, sbox_name)
+            if label:
+                tex_map[label] = dest
+
+    return tex_map
+
+
+def _human_label(vtex_filename, sbox_name):
+    """Derive a short descriptive label from a vtex_c filename.
+
+    e.g. 'citizen_skin_color_png_de459613.generated.vtex_c' -> 'color'
+         'citizen_eyes_advanced_iris_mask_psd_...'            -> 'iris_mask'
+    """
+    base = vtex_filename.lower()
+    # Strip hash suffix + extensions
+    base = re.sub(r'_[0-9a-f]{6,}\.generated\.vtex_c$', '', base)
+    # Strip material prefix
+    for prefix in (sbox_name.lower(), sbox_name.lower().rstrip("0123456789")):
+        if base.startswith(prefix + "_vmat_g_"):
+            base = base[len(prefix) + len("_vmat_g_"):]
+            break
+        elif base.startswith(prefix + "_"):
+            base = base[len(prefix) + 1:]
+            break
+
+    # Clean up remaining artifacts
+    base = base.rstrip("_").replace("_png", "").replace("_psd", "")
+    base = base.replace("_vmat_g_", "")
+    return base or "unknown"
+
+
+def _label_from_png(png_filename, sbox_name):
+    """Derive label from a raw PNG filename (non-vtex_c source textures)."""
+    base = os.path.splitext(png_filename.lower())[0]
+    for prefix in (sbox_name.lower(), sbox_name.lower().rstrip("0123456789")):
+        if base.startswith(prefix + "_"):
+            base = base[len(prefix) + 1:]
+            break
+    return base or ""
+
+
+def _add_cross_ref(vrf_exe, mat_dir, output_dir, tex_map, file_prefix,
+                   label):
+    """Find and export a texture from a different material's prefix."""
+    for fn in sorted(os.listdir(mat_dir)):
+        fn_lower = fn.lower()
+        if not fn_lower.startswith(file_prefix.lower()):
             continue
-        if not any(p in fn_lower for p in patterns):
-            continue
-        if any(e in fn_lower for e in excludes):
-            continue
-        return fn
-    return None
+        if fn_lower.endswith(".vtex_c"):
+            png = _export_texture(vrf_exe, os.path.join(mat_dir, fn),
+                                  output_dir)
+            if png:
+                tex_map[label] = png
+                return
+        elif fn_lower.endswith(".png") and not fn_lower.endswith(".generated.png"):
+            dest = os.path.join(output_dir, fn)
+            if not os.path.isfile(dest):
+                os.makedirs(output_dir, exist_ok=True)
+                shutil.copy2(os.path.join(mat_dir, fn), dest)
+            tex_map[label] = dest
+            return
 
 
 def _export_texture(vrf_exe, vtex_c_path, output_dir):
@@ -136,7 +189,6 @@ def _export_texture(vrf_exe, vtex_c_path, output_dir):
     base = os.path.splitext(os.path.basename(vtex_c_path))[0]
     dest = os.path.join(output_dir, base + ".png")
 
-    # Already converted?
     if os.path.isfile(dest):
         return dest
 
@@ -147,7 +199,6 @@ def _export_texture(vrf_exe, vtex_c_path, output_dir):
         return None
 
     if result and os.path.isfile(result):
-        # VRF may have written next to input — move to output_dir
         if os.path.normpath(result) != os.path.normpath(dest):
             shutil.move(result, dest)
         return dest
@@ -155,7 +206,60 @@ def _export_texture(vrf_exe, vtex_c_path, output_dir):
     return dest if os.path.isfile(dest) else None
 
 
-# ── FBX placeholder cleanup ──────────────────────────────────────
+def export_remaining_textures(vrf_exe, mat_dir, texture_output,
+                             already_exported):
+    """Export any .vtex_c not already handled and create orphan file nodes.
+
+    Returns list of (label, file_node) for textures loaded but not
+    connected to any material.
+    """
+    if not os.path.isdir(mat_dir):
+        return []
+
+    exported_bases = set()
+    for png in already_exported:
+        exported_bases.add(os.path.splitext(os.path.basename(png))[0].lower())
+
+    orphans = []
+    for fn in sorted(os.listdir(mat_dir)):
+        fn_lower = fn.lower()
+
+        if fn_lower.endswith(".vtex_c"):
+            if any(v in fn_lower for v in _VARIANT_SKIP):
+                continue
+            base = os.path.splitext(fn)[0].lower()
+            if base in exported_bases:
+                continue
+            png = _export_texture(vrf_exe, os.path.join(mat_dir, fn),
+                                  texture_output)
+            if png:
+                label = re.sub(r'_[0-9a-f]{6,}\.generated$', '',
+                               os.path.splitext(os.path.basename(png))[0])
+                node = _file_node(label, png)
+                orphans.append((label, node))
+                print(f"    Orphan texture: {label}")
+
+        elif (fn_lower.endswith(".png")
+              and not fn_lower.endswith(".generated.png")):
+            if any(v in fn_lower for v in _VARIANT_SKIP):
+                continue
+            base = os.path.splitext(fn)[0].lower()
+            if base in exported_bases:
+                continue
+            src = os.path.join(mat_dir, fn)
+            dest = os.path.join(texture_output, fn)
+            if not os.path.isfile(dest):
+                os.makedirs(texture_output, exist_ok=True)
+                shutil.copy2(src, dest)
+            label = os.path.splitext(fn)[0]
+            node = _file_node(label, dest)
+            orphans.append((label, node))
+            print(f"    Orphan texture (PNG): {label}")
+
+    return orphans
+
+
+# -- FBX placeholder cleanup ------------------------------------------
 
 
 def _matches_fbx_name(mat_name, fbx_name):
@@ -189,13 +293,11 @@ def _collect_and_remove_fbx_materials(fbx_name):
             sgs_to_delete.append(sg)
         mats_to_delete.append(mat)
 
-    # Park geometry on initialShadingGroup first
     if all_members:
         valid = [m for m in all_members if cmds.objExists(m)]
         if valid:
             cmds.sets(valid, e=True, forceElement="initialShadingGroup")
 
-    # Delete SGs then materials
     for node in sgs_to_delete + mats_to_delete:
         if cmds.objExists(node):
             cmds.delete(node)
@@ -204,7 +306,7 @@ def _collect_and_remove_fbx_materials(fbx_name):
     return all_members
 
 
-# ── shader creation (dispatch) ────────────────────────────────────
+# -- shader creation ---------------------------------------------------
 
 
 def _classify(name):
@@ -218,7 +320,8 @@ def _classify(name):
     return "generic"
 
 
-def _create_shader(name, textures, mat_type):
+def _create_shader(name, tex_map, mat_type):
+    """Create material, file nodes for ALL textures, connect safe ones."""
     if _arnold_loaded():
         builders = {
             "skin":    _make_skin,
@@ -226,66 +329,65 @@ def _create_shader(name, textures, mat_type):
             "eyeao":   _make_eyeao,
             "generic": _make_generic,
         }
-        return builders[mat_type](name, textures)
-    return _make_lambert(name, textures)
+        return builders[mat_type](name, tex_map)
+    return _make_lambert(name, tex_map)
 
 
-# ── skin shader ───────────────────────────────────────────────────
+# -- skin shader -------------------------------------------------------
 
 
-def _make_skin(name, textures):
+def _make_skin(name, tex_map):
     mat, sg = _make_base_ai(name)
+    file_nodes = {}
 
-    if "color" in textures:
-        ftex = _file_node(f"{name}_color", textures["color"])
-        cmds.connectAttr(f"{ftex}.outColor", f"{mat}.baseColor")
+    # Create file nodes for ALL textures
+    for label, png in tex_map.items():
+        raw = label not in ("color",)
+        fn = _file_node(f"{name}_{label}", png, raw=raw)
+        file_nodes[label] = fn
 
-    if "normal" in textures:
-        _connect_normal(name, mat, textures["normal"])
+    # Connect only safe channels
+    if "color" in file_nodes:
+        cmds.connectAttr(f"{file_nodes['color']}.outColor",
+                         f"{mat}.baseColor")
 
-    if "ao" in textures:
-        ao = _file_node(f"{name}_ao", textures["ao"], raw=True)
-        cmds.connectAttr(f"{ao}.outColorR", f"{mat}.base")
+    if "normal" in file_nodes:
+        _connect_normal(name, mat, file_nodes["normal"])
+        # Normal map alpha carries packed roughness data
+        cmds.connectAttr(f"{file_nodes['normal']}.outAlpha",
+                         f"{mat}.specularRoughness")
 
-    if "roughness" in textures:
-        rtex = _file_node(f"{name}_rough", textures["roughness"], raw=True)
-        cmds.connectAttr(f"{rtex}.outColorR", f"{mat}.specularRoughness")
+    # Translucency mask drives subsurface scattering intensity
+    if "trans" in file_nodes:
+        cmds.connectAttr(f"{file_nodes['trans']}.outColorR",
+                         f"{mat}.subsurface")
     else:
-        cmds.setAttr(f"{mat}.specularRoughness", 0.45)
-
-    if "emission" in textures:
-        etex = _file_node(f"{name}_emit", textures["emission"])
-        cmds.setAttr(f"{mat}.emission", 1.0)
-        cmds.connectAttr(f"{etex}.outColor", f"{mat}.emissionColor")
-
-    # Subsurface scattering for skin
-    cmds.setAttr(f"{mat}.subsurface", 0.15)
+        cmds.setAttr(f"{mat}.subsurface", 0.15)
     cmds.setAttr(f"{mat}.subsurfaceColor", 0.9, 0.55, 0.4, type="double3")
     cmds.setAttr(f"{mat}.subsurfaceRadius", 1.0, 0.4, 0.25, type="double3")
 
-    return mat, sg
+    return mat, sg, file_nodes
 
 
-# ── eye shader ────────────────────────────────────────────────────
+# -- eye shader (citizen_eyes_advanced) --------------------------------
 
 
-def _make_eye(name, textures):
+def _make_eye(name, tex_map):
     mat, sg = _make_base_ai(name)
+    file_nodes = {}
 
-    if "color" in textures:
-        ftex = _file_node(f"{name}_color", textures["color"])
-        cmds.connectAttr(f"{ftex}.outColor", f"{mat}.baseColor")
+    for label, png in tex_map.items():
+        raw = label not in ("color",)
+        fn = _file_node(f"{name}_{label}", png, raw=raw)
+        file_nodes[label] = fn
 
-    if "normal" in textures:
-        _connect_normal(name, mat, textures["normal"])
+    # Connect safe channels - NO opacity (eyes must be opaque)
+    if "color" in file_nodes:
+        cmds.connectAttr(f"{file_nodes['color']}.outColor",
+                         f"{mat}.baseColor")
 
-    if "ao" in textures:
-        ao = _file_node(f"{name}_ao", textures["ao"], raw=True)
-        cmds.connectAttr(f"{ao}.outColorR", f"{mat}.base")
-
-    if "transparency" in textures:
-        ttex = _file_node(f"{name}_trans", textures["transparency"], raw=True)
-        cmds.connectAttr(f"{ttex}.outColor", f"{mat}.opacity")
+    if "normal" in file_nodes:
+        _connect_normal(name, mat, file_nodes["normal"])
 
     # Wet glossy cornea
     cmds.setAttr(f"{mat}.specular", 1.0)
@@ -294,86 +396,89 @@ def _make_eye(name, textures):
     cmds.setAttr(f"{mat}.coat", 1.0)
     cmds.setAttr(f"{mat}.coatRoughness", 0.0)
 
-    return mat, sg
+    return mat, sg, file_nodes
 
 
-# ── eye-AO overlay shader ────────────────────────────────────────
+# -- eye-AO overlay shader --------------------------------------------
 
 
-def _make_eyeao(name, textures):
-    """Transparent darkening overlay — opaque black where AO is dark."""
+def _make_eyeao(name, tex_map):
+    """Eye AO overlay — eyes_trans drives opacity, AO darkens the base."""
     mat, sg = _make_base_ai(name)
+    file_nodes = {}
 
-    # Pure black surface, no specular
-    cmds.setAttr(f"{mat}.baseColor", 0, 0, 0, type="double3")
+    for label, png in tex_map.items():
+        fn = _file_node(f"{name}_{label}", png, raw=True)
+        file_nodes[label] = fn
+
+    # Dark overlay: AO tints the base, no specular
     cmds.setAttr(f"{mat}.specular", 0)
+    cmds.setAttr(f"{mat}.metalness", 0)
+    cmds.setAttr(f"{mat}.transmission", 0.3)
+    cmds.setAttr(f"{mat}.thinWalled", 1)
 
-    if "ao" in textures:
-        ao = _file_node(f"{name}_ao", textures["ao"], raw=True)
-        # opacity = 1 − AO → transparent where lit, opaque where shadowed
-        rev = cmds.shadingNode("reverse", asUtility=True,
-                               name=f"{name}_reverse")
-        cmds.connectAttr(f"{ao}.outColor", f"{rev}.input")
-        cmds.connectAttr(f"{rev}.output", f"{mat}.opacity")
+    # AO texture drives base color (dark = shadow)
+    if "tambientocclusion" in file_nodes:
+        cmds.connectAttr(f"{file_nodes['tambientocclusion']}.outColor",
+                         f"{mat}.baseColor")
+    else:
+        cmds.setAttr(f"{mat}.baseColor", 0, 0, 0, type="double3")
 
-    if "normal" in textures:
-        _connect_normal(name, mat, textures["normal"])
+    # citizen_eyes_trans is the actual opacity map
+    if "eyes_trans" in file_nodes:
+        cmds.connectAttr(f"{file_nodes['eyes_trans']}.outColor",
+                         f"{mat}.opacity")
 
-    return mat, sg
+    if "tnormal" in file_nodes:
+        _connect_normal(name, mat, file_nodes["tnormal"])
+
+    return mat, sg, file_nodes
 
 
-# ── generic / fallback shaders ───────────────────────────────────
+# -- generic fallback --------------------------------------------------
 
 
-def _make_generic(name, textures):
+def _make_generic(name, tex_map):
     mat, sg = _make_base_ai(name)
+    file_nodes = {}
 
-    if "color" in textures:
-        ftex = _file_node(f"{name}_color", textures["color"])
-        cmds.connectAttr(f"{ftex}.outColor", f"{mat}.baseColor")
+    for label, png in tex_map.items():
+        raw = label not in ("color",)
+        fn = _file_node(f"{name}_{label}", png, raw=raw)
+        file_nodes[label] = fn
 
-    if "normal" in textures:
-        _connect_normal(name, mat, textures["normal"])
+    if "color" in file_nodes:
+        cmds.connectAttr(f"{file_nodes['color']}.outColor",
+                         f"{mat}.baseColor")
 
-    if "ao" in textures:
-        ao = _file_node(f"{name}_ao", textures["ao"], raw=True)
-        cmds.connectAttr(f"{ao}.outColorR", f"{mat}.base")
+    if "normal" in file_nodes:
+        _connect_normal(name, mat, file_nodes["normal"])
 
-    if "roughness" in textures:
-        rtex = _file_node(f"{name}_rough", textures["roughness"], raw=True)
-        cmds.connectAttr(f"{rtex}.outColorR", f"{mat}.specularRoughness")
-
-    if "metalness" in textures:
-        mtex = _file_node(f"{name}_metal", textures["metalness"], raw=True)
-        cmds.connectAttr(f"{mtex}.outColorR", f"{mat}.metalness")
-
-    if "emission" in textures:
-        etex = _file_node(f"{name}_emit", textures["emission"])
-        cmds.setAttr(f"{mat}.emission", 1.0)
-        cmds.connectAttr(f"{etex}.outColor", f"{mat}.emissionColor")
-
-    return mat, sg
+    return mat, sg, file_nodes
 
 
-def _make_lambert(name, textures):
+def _make_lambert(name, tex_map):
     """Fallback when Arnold is not loaded."""
     mat = cmds.shadingNode("lambert", asShader=True, name=name)
     sg = cmds.sets(renderable=True, noSurfaceShader=True, empty=True,
                    name=f"{name}SG")
     cmds.connectAttr(f"{mat}.outColor", f"{sg}.surfaceShader")
 
-    if "color" in textures:
-        ftex = _file_node(f"{name}_color", textures["color"])
-        cmds.connectAttr(f"{ftex}.outColor", f"{mat}.color")
+    file_nodes = {}
+    for label, png in tex_map.items():
+        fn = _file_node(f"{name}_{label}", png)
+        file_nodes[label] = fn
 
-    return mat, sg
+    if "color" in file_nodes:
+        cmds.connectAttr(f"{file_nodes['color']}.outColor", f"{mat}.color")
+
+    return mat, sg, file_nodes
 
 
-# ── shared helpers ────────────────────────────────────────────────
+# -- shared helpers ----------------------------------------------------
 
 
 def _make_base_ai(name):
-    """Create an aiStandardSurface + shading group pair."""
     mat = cmds.shadingNode("aiStandardSurface", asShader=True, name=name)
     sg = cmds.sets(renderable=True, noSurfaceShader=True, empty=True,
                    name=f"{name}SG")
@@ -381,12 +486,11 @@ def _make_base_ai(name):
     return mat, sg
 
 
-def _connect_normal(prefix, mat, png_path):
-    """Connect a normal-map PNG to mat.normalCamera via aiNormalMap."""
-    ntex = _file_node(f"{prefix}_normal", png_path, raw=True)
+def _connect_normal(prefix, mat, file_node):
+    """Connect an existing file node to mat.normalCamera via aiNormalMap."""
     bump = cmds.shadingNode("aiNormalMap", asUtility=True,
                             name=f"{prefix}_normalMap")
-    cmds.connectAttr(f"{ntex}.outColor", f"{bump}.input")
+    cmds.connectAttr(f"{file_node}.outColor", f"{bump}.input")
     cmds.connectAttr(f"{bump}.outValue", f"{mat}.normalCamera")
 
 

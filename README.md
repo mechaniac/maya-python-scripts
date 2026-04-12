@@ -396,6 +396,265 @@ Automatic corrective helper joints at elbows and knees that activate based on be
 
 ---
 
+## Appendix — s&box Citizen Model (`citizen.vmdl`)
+
+Reference documentation for the s&box default character model. This section describes the Source 2 file structure, what each piece does, and the conventions that well-made s&box models follow. Useful context for anyone building importers, clothing, or replacement characters.
+
+### File Layout
+
+```
+models/citizen/
+├── citizen.vmdl                    # Root model document (KV3 text, ~200 lines)
+├── citizen.vmdl_c                  # Compiled model binary (6.4 MB)
+├── citizen.vanmgrph                # Animation graph (state machine, blend trees)
+├── citizen.fbx                     # Body mesh source — torso, hands, legs, feet (LOD0)
+├── citizen_head.dmx                # Head mesh source — DMX format (3.2 MB, has blend shapes)
+├── citizen_REF.fbx                 # Full reference skeleton + mesh (4.6 MB)
+├── citizen_lod1..4.fbx             # Progressive LOD body meshes
+├── citizen/
+│   └── head_lod0_vmorf.vtex_c     # Morph target (blend shape) texture data
+├── skin/                           # Materials + textures (see Textures below)
+│   ├── *.vmat_c                    # Compiled material definitions
+│   └── *.generated.vtex_c         # Compiled textures (exported from PNG/PSD sources)
+├── animations/                     # ~293 compiled animation files (.vanim_c)
+├── prefabs/                        # 30 vmdl_prefab files (modular sub-documents)
+└── subgraphs/                      # Animation sub-state-machines
+```
+
+### vmdl Architecture — Prefab Composition
+
+The `citizen.vmdl` root file is a **KV3** (KeyValues 3) text document. It defines 16 top-level system classes, almost all of which delegate to external `.vmdl_prefab` files via `Prefab` references. This modular pattern keeps the root file small and lets systems be edited independently.
+
+```
+RootNode
+├── AnimConstraintList          → citizen_animconstraintlist.vmdl_prefab
+├── ModelModifierList           → inline ScaleAndMirror (scale = 0.3937)
+├── MaterialGroupList           → citizen_materialgrouplist.vmdl_prefab
+├── RenderMeshList              → citizen_rendermeshlist.vmdl_prefab
+├── AnimationList               → 5 prefabs (main, debug, menu, unicycle, visemes)
+├── BoneMarkupList              → citizen_bonemarkuplist.vmdl_prefab
+├── AttachmentList              → citizen_attachmentlist.vmdl_prefab
+├── PhysicsJointList            → citizen_physicsjointlist.vmdl_prefab
+├── PhysicsShapeList            → citizen_physicsshapelist.vmdl_prefab
+├── HitboxSetList               → citizen_hitboxsetlist.vmdl_prefab
+├── IKData                      → citizen_ikdata.vmdl_prefab
+├── PoseParamList               → citizen_poseparamlist.vmdl_prefab
+├── WeightListList              → citizen_weightlistlist.vmdl_prefab
+├── GameDataList                → citizen_gamedatalist.vmdl_prefab
+├── BodyGroupList               → citizen_bodygrouplist.vmdl_prefab
+└── LODGroupList                → citizen_lodgrouplist.vmdl_prefab
+```
+
+The root also sets `anim_graph_name = "models/citizen/citizen.vanmgrph"` and `default_root_bone_name = "pelvis"`.
+
+### Scale Convention
+
+Source files are authored in **centimeters**. The `ModelModifier_ScaleAndMirror` entry converts to Source 2 engine units (inches) at compile time:
+
+> *"We're working in centimeters at the source (which makes more sense for us), and then letting the engine take care of the conversion to inches at this step. So if you want to create something for the Citizen (like clothing), you should also model it in centimeters (matching the provided source files), and use a ScaleAndMirror modifier at 0.3937."*
+
+**Scale factor: 0.3937** (1 cm → ~1 inch ÷ 2.54).
+
+### Mesh Structure (RenderMeshList)
+
+The character is split into **5 body parts**, each with **4 LOD levels**:
+
+| Body Part | LOD0 Source | LOD1–3 Source | LOD4 Source |
+|---|---|---|---|
+| Head | `citizen_head.dmx` (DMX, has morph targets) | `citizen_lod2.fbx` → `citizen_lod4.fbx` | `citizen_lod4.fbx` |
+| Torso | `citizen.fbx` | `citizen_lod1..3.fbx` | `citizen_lod3.fbx` |
+| Hands | `citizen.fbx` | `citizen_lod1..3.fbx` | `citizen_lod3.fbx` |
+| Legs | `citizen.fbx` | `citizen_lod1..3.fbx` | `citizen_lod3.fbx` |
+| Feet | `citizen.fbx` | `citizen_lod1..3.fbx` | `citizen_lod3.fbx` |
+
+Notable mesh settings:
+- `use_expensive_tangents = true` — better normal-map quality
+- `high_precision_texcoords = true` — sub-pixel UV accuracy
+- `calc_per_vertex_curvature = true` — used by skin shaders for subsurface scattering
+
+The head uses **DMX format** (Valve's native mesh format) because it carries morph targets / blend shapes. The body parts use FBX. Each mesh is extracted from the shared FBX using an `exclude_by_default = true` import filter with a per-mesh exception list.
+
+LOD1 still uses the LOD0 head (the developer note says "for now!"). LOD2 is where the head switches to a lower-poly version without morphs.
+
+### LOD Thresholds
+
+| LOD | Threshold | Head | Body |
+|---|---|---|---|
+| LOD0 | 0.0 (closest) | Head_LOD0 (morphs) | Full detail body |
+| LOD1 | 5.0 | Head_LOD0 (still full) | Reduced body |
+| LOD2 | 20.0 | Head_LOD2 (no morphs) | Further reduced |
+| LOD3 | 40.0 | Head_LOD3 | Lowest body |
+| LOD4 | 70.0 (farthest) | Head_LOD4 | Reuses LOD3 body |
+
+Thresholds are in screen-space percentage — lower means the model must be closer to use that LOD.
+
+### Body Groups
+
+Body groups allow runtime toggling of mesh visibility. The citizen has 5:
+
+| Group | Choices | Purpose |
+|---|---|---|
+| Head | Show / Hide | Toggle head mesh |
+| Chest | Show / Hide | Toggle torso mesh |
+| Legs | Show / Hide | Toggle legs mesh |
+| Hands | Show / Hide | Toggle hands mesh |
+| Feet | Show / Hide | Toggle feet mesh |
+
+Clothing addons use body groups to hide the body part they replace (e.g., a jacket hides Chest, gloves hide Hands).
+
+### Materials
+
+7 compiled material files (`*.vmat_c`) in the `skin/` directory:
+
+| Material | Purpose |
+|---|---|
+| `citizen_skin.vmat_c` | Default skin (base, remapped to `citizen_skin01`) |
+| `citizen_skin01.vmat_c` | Active skin material (the remap target) |
+| `citizen_skin_grey.vmat_c` | Grey/neutral skin variant |
+| `citizen_skin_greyvmat.vmat_c` | Alternate grey skin |
+| `citizen_eyes.vmat_c` | Simple eye material (remapped to `citizen_eyes_advanced`) |
+| `citizen_eyes_advanced.vmat_c` | Full eye material with iris detail, refraction |
+| `citizen_eyeao.vmat_c` | Eye ambient occlusion overlay (shadow around eye socket) |
+
+The **MaterialGroupList** defines 3 remaps that upgrade the FBX-embedded material names to the final materials:
+
+| FBX Material | → Remapped To |
+|---|---|
+| `citizen_eyes` | `citizen_eyes_advanced` |
+| `citizen_skin` | `citizen_skin01` |
+| `citizen_eyeao` | `citizen_eyeao` (identity, no change) |
+
+### Textures
+
+25 compiled texture files (`*.generated.vtex_c`), plus 1 morph target texture. Grouped by material:
+
+**Skin** (citizen_skin / citizen_skin01):
+| Texture | Channel |
+|---|---|
+| `citizen_skin_color_png_*.vtex_c` | Base color (diffuse albedo) |
+| `citizen_skin_normal_png_*.vtex_c` | Normal map (tangent-space) |
+| `citizen_skin_ao_png_*.vtex_c` | Ambient occlusion |
+| `citizen_skin_bentnormal_png_*.vtex_c` | Bent normal (improved AO/GI direction) |
+
+**Skin variants** (old, young, grey):
+| Texture | Channel |
+|---|---|
+| `citizen_skin_old_color_png_*.vtex_c` | Old skin color |
+| `citizen_skin_old_normal_png_*.vtex_c` | Old skin normal |
+| `citizen_skin_young_color_png_*.vtex_c` | Young skin color |
+| `citizen_skin_young_normal_png_*.vtex_c` | Young skin normal |
+| `citizen_skin_young_ao_png_*.vtex_c` | Young skin AO |
+| `citizen_skin_grey_vmat_g_tcolor_*.vtex_c` | Grey skin color |
+| `citizen_skin_grey_vmat_g_tnormal_*.vtex_c` | Grey skin normal |
+| `citizen_skin_grey_vmat_g_tambientocclusion_*.vtex_c` | Grey skin AO |
+| `citizen_skin_grey_vmat_g_tselfillummask_*.vtex_c` | Grey skin self-illumination mask |
+
+**Eyes** (citizen_eyes_advanced):
+| Texture | Channel |
+|---|---|
+| `citizen_eyes_advanced_color_png_*.vtex_c` | Eye color (sclera + iris) |
+| `citizen_eyes_advanced_normal_png_*.vtex_c` | Eye normal map |
+| `citizen_eyes_advanced_iris_mask_psd_*.vtex_c` | Iris mask (isolates iris region) |
+| `citizen_eyes_advanced_iris_normal_png_*.vtex_c` | Iris-specific normal detail |
+| `citizen_eyes_advanced_vmat_g_tocclusion_*.vtex_c` | Eye occlusion |
+
+**Eyes legacy** (citizen_eyes):
+| Texture | Channel |
+|---|---|
+| `citizen_eyes_color_png_*.vtex_c` | Simple eye color |
+| `citizen_eyes_trans_png_*.vtex_c` | Eye transparency |
+| `citizen_eyes_vmat_g_tcombinedmasks_*.vtex_c` | Combined channel masks |
+| `citizen_eyes_vmat_g_tnormal_*.vtex_c` | Eye normal |
+
+**Eye AO** (citizen_eyeao):
+| Texture | Channel |
+|---|---|
+| `citizen_eyeao_vmat_g_tambientocclusion_*.vtex_c` | Eye socket AO shadow |
+| `citizen_eyeao_vmat_g_tnormal_*.vtex_c` | Eye AO normal |
+
+**Utility**:
+| Texture | Channel |
+|---|---|
+| `tint_lookup_png_*.vtex_c` | Color tint lookup table (runtime skin tone) |
+
+### Skeleton & Bone Markup
+
+Root bone: `pelvis`. The skeleton includes IK targets, aim matrices, twist distribution bones, and helper bones.
+
+**Bone markup categories** (from `citizen_bonemarkuplist.vmdl_prefab`):
+
+| Category | Purpose |
+|---|---|
+| `BoneMarkup_root_IK` | IK targets (feet, hands), aim matrices, root IK bone |
+| `BoneMarkup_limb_containers` | Parent bones for limb segments — only twist children do actual skinning |
+| `BoneMarkup_helpers` | Helper/corrective bones (e.g., knee caps, elbow positions) |
+| `BoneMarkup_twist_old_discard` | Legacy twist bones marked for removal |
+| `BoneMarkup_twist0` / `twist1` | Active twist distribution bones (upper/lower arm & leg) |
+
+### IK Chains
+
+4 IK chains defined in `citizen_ikdata.vmdl_prefab`:
+
+- `right_leg_IK` / `left_leg_IK`
+- `right_arm_IK` / `left_arm_IK`
+
+### Attachment Points
+
+37 named attachment points on the skeleton, including:
+
+- **Gameplay**: `hat`, `eyes`, `hold_L`, `hold_R`, `hand_L`, `hand_R`
+- **IK targets**: `IK_left_hand`, `IK_right_hand`, `foot_L`, `foot_R`
+- **Aim**: `aim_matrix_01`, `aim_matrix_02a`, `aim_matrix_02b`
+- **Reference**: `forward_reference`, `forward_reference_modelspace`, `middle_of_both_hands`
+- **Twist drivers**: `driver_arm_upper_L_twist1`, `driver_leg_lower_R_twist1`, etc.
+- **Eye forward**: `eye_L_forward`, `eye_R_forward`
+
+### Hitboxes
+
+20 hitboxes covering the full body, each attached to its corresponding bone:
+
+`HB_head`, `HB_neck_0`, `HB_spine_0/1/2`, `HB_pelvis`, `HB_clavicle_L/R`, `HB_arm_upper_L/R`, `HB_arm_lower_L/R`, `HB_hand_L/R`, `HB_leg_upper_L/R`, `HB_leg_lower_L/R`, `HB_ankle_L/R`
+
+### Physics & Cloth
+
+Physics is split across three prefabs:
+- `citizen_physicsshapelist.vmdl_prefab` — ragdoll collision shapes
+- `citizen_physicsjointlist.vmdl_prefab` — ragdoll joint constraints
+- `citizen_clothshapelist_upper.vmdl_prefab` / `_lower.vmdl_prefab` — cloth simulation regions
+
+### Animations
+
+The animation system uses a **state-machine animation graph** (`citizen.vanmgrph`) with ~293 animation files spread across 5 animation list prefabs:
+
+| Prefab | Content |
+|---|---|
+| `citizen_animationlist.vmdl_prefab` | Main locomotion, actions, idles (~359 AnimFile entries) |
+| `citizen_animationlist_menu.vmdl_prefab` | Menu/UI character poses |
+| `citizen_animationlist_visemes.vmdl_prefab` | Lip-sync viseme shapes |
+| `citizen_animationlist_debug.vmdl_prefab` | Debug/test animations |
+| `citizen_animationlist_unicycle.vmdl_prefab` | Unicycle locomotion set |
+
+Animations also reference **processing prefabs** that define post-processing rules:
+- `citizen_ani_process_walk.vmdl_prefab`
+- `citizen_ani_process_run.vmdl_prefab`
+- `citizen_ani_process_crouchwalk.vmdl_prefab`
+- `citizen_ani_process_crouchwalklow.vmdl_prefab`
+
+### Key Conventions for s&box Models
+
+1. **Author in centimeters**, apply `ScaleAndMirror` at **0.3937** to convert to engine inches
+2. **Split body into body groups** so clothing can hide/replace individual parts
+3. **Use DMX for heads** with morph targets; FBX for body parts
+4. **Provide 4–5 LOD levels** with screen-space thresholds for automatic switching
+5. **Use prefab composition** — keep the root `.vmdl` small, delegate to `_prefab` files
+6. **Material remapping** — FBX-embedded material names map to final engine materials via MaterialGroupList
+7. **Bone naming** follows Source 2 conventions: `pelvis`, `spine_0/1/2`, `arm_upper_L`, `ankle_R`, etc.
+8. **Twist bones** use a two-tier system (`twist0` + `twist1`) for smooth limb deformation
+9. **Bent normals** alongside regular normals improve subsurface scattering quality on skin
+10. **Tint lookup textures** enable runtime skin-tone variation without duplicate materials
+
+---
+
 ## Roadmap — Planned Features & Ideas
 
 Informed by state-of-the-art rigging systems (AdvancedSkeleton, mGear, Rapid Rig, Houdini KineFX/APEX, Unreal Control Rig). Organized roughly by priority and complexity.

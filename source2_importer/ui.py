@@ -8,6 +8,11 @@ from . import pipeline
 
 _WIN = "Source2ImporterWin"
 
+_DEFAULT_VMDL = ("C:/Program Files (x86)/Steam/steamapps/common/"
+                 "sbox/addons/citizen/Assets/models/citizen/citizen.vmdl")
+_DEFAULT_TEX = ("D:/WORK/Christof/2018_AssetSets_01/WiP/3D/"
+                "maya_project/sourceimages/cit")
+
 
 def show():
     """Open the Source 2 Importer window."""
@@ -28,7 +33,8 @@ def show():
     cmds.text(label="Model File (.vmdl):", align="left")
     r1 = cmds.rowLayout(numberOfColumns=2, adjustableColumn=1,
                         columnAttach2=("both", "right"), columnOffset2=(0, 4))
-    cmds.textField("s2i_vmdl", placeholderText="Path to .vmdl file")
+    cmds.textField("s2i_vmdl", text=_DEFAULT_VMDL if os.path.isfile(_DEFAULT_VMDL) else "",
+                   placeholderText="Path to .vmdl file")
     cmds.button(label="Browse", w=60, command=_browse_vmdl)
     cmds.setParent(main)
 
@@ -57,6 +63,7 @@ def show():
     r3 = cmds.rowLayout(numberOfColumns=2, adjustableColumn=1,
                         columnAttach2=("both", "right"), columnOffset2=(0, 4))
     cmds.textField("s2i_tex",
+                   text=_DEFAULT_TEX if os.path.isdir(os.path.dirname(_DEFAULT_TEX)) else "",
                    placeholderText="Default: project/sourceimages/<model>/")
     cmds.button(label="Browse", w=60, command=_browse_tex)
     cmds.setParent(main)

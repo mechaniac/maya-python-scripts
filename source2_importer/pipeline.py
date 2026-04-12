@@ -266,6 +266,32 @@ def import_source2_model(vmdl_path, vrf_exe=None, texture_output=None,
         except Exception as exc:
             _log(f"  Warning — material failed: {exc}")
 
+    # 5 -- export any remaining textures as orphan file nodes ----------
+    all_exported = []
+    for info in result["materials_created"]:
+        for png in (info.get("textures") or []):
+            if isinstance(png, str) and os.path.isfile(png):
+                all_exported.append(png)
+        for fn in (info.get("file_nodes") or {}).values():
+            png = cmds.getAttr(f"{fn}.fileTextureName") if cmds.objExists(fn) else None
+            if png:
+                all_exported.append(png)
+
+    # Find the skin/ subfolder where textures live
+    first_vmat = None
+    for remap in model["materials"]:
+        path = _resolve_material(remap["to"], content_root)
+        if os.path.isfile(path):
+            first_vmat = path
+            break
+    if first_vmat:
+        mat_dir = os.path.dirname(first_vmat)
+        orphans = _mat.export_remaining_textures(
+            vrf_exe, mat_dir, texture_output, all_exported
+        )
+        if orphans:
+            _log(f"  Loaded {len(orphans)} additional texture(s) as orphan file nodes")
+
     _log(f"Done. {len(new_nodes)} nodes, "
          f"{len(result['materials_created'])} materials.")
     return result
