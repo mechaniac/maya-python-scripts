@@ -45,17 +45,27 @@ class WalkArms(Layer):
         }
 
     def _arm_channels(self, side, phase):
-        """Build channels for one arm.  *phase* = 0 for R, 0.5 for L."""
+        """Build channels for one arm.
+
+        *phase* = 0 for R, 0.5 for L.
+
+        The joint orient is mirrored between sides (bone X flips),
+        which also flips M local Y.  We negate rotateY (droop) and
+        rotateX (twist) for the left arm so the visual result is
+        symmetric.  rotateZ (swing) keeps the same sign on both
+        sides; phase opposition handles contra-lateral timing.
+        """
         p = self._params
         sfx = '_' + side
+        mir = 1 if side == 'R' else -1
 
         chs = []
         # Scapula / shoulder static droop (rotateY, constant)
         chs.append(Channel('FKScapula' + sfx, 'rotateY', Wave.CONSTANT,
-                           amplitude=p['scapula_droop'], n_points=2,
+                           amplitude=p['scapula_droop'] * mir, n_points=2,
                            label='{} Scap Droop'.format(side)))
         chs.append(Channel('FKShoulder' + sfx, 'rotateY', Wave.CONSTANT,
-                           amplitude=p['shoulder_droop'], n_points=2,
+                           amplitude=p['shoulder_droop'] * mir, n_points=2,
                            label='{} Sh Droop'.format(side)))
 
         # Scapula swing (rotateZ)
@@ -66,7 +76,7 @@ class WalkArms(Layer):
 
         # Shoulder twist / swing
         chs.append(Channel('FKShoulder' + sfx, 'rotateX', Wave.COSINE,
-                           amplitude=p['shoulder_twist'], phase=phase,
+                           amplitude=p['shoulder_twist'] * mir, phase=phase,
                            frequency=1, n_points=3,
                            label='{} Sh Twist'.format(side)))
         chs.append(Channel('FKShoulder' + sfx, 'rotateZ', Wave.COSINE,
