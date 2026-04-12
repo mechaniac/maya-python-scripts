@@ -58,6 +58,25 @@ class AnimGenWindow:
     #  Field helpers
     # ──────────────────────────────────────────────
 
+    @staticmethod
+    def _sel(ctrls):
+        """Select the given controls in the viewport (resolver-aware)."""
+        from ..core import resolver
+        nodes = []
+        for c in ctrls:
+            n = resolver.resolve(c)
+            if n and cmds.objExists(n):
+                nodes.append(n)
+        if nodes:
+            cmds.select(nodes, r=True)
+
+    def _sel_btn(self, ctrls):
+        """Create a small select-control icon button."""
+        cmds.iconTextButton(style='iconOnly', image='aselect.png',
+                            width=22, height=22,
+                            annotation='Select  ' + ', '.join(ctrls),
+                            command=lambda *_, c=list(ctrls): self._sel(c))
+
     def _float_field(self, key, default, color=None):
         kw = dict(v=default, precision=2, width=80)
         if color:
@@ -66,18 +85,41 @@ class AnimGenWindow:
         self._fields[key] = f
         return f
 
-    def _row(self, label, key, default, color=None):
-        cmds.rowLayout(numberOfColumns=2, columnWidth2=(200, 100),
+    def _row(self, label, key, default, color=None, ctrls=None):
+        nc = 3 if ctrls else 2
+        cmds.rowLayout(numberOfColumns=nc,
+                       columnWidth2=(200, 100) if nc == 2 else None,
+                       columnWidth3=(200, 100, 24) if nc == 3 else None,
                        adjustableColumn=2)
         cmds.text(label=label)
         self._float_field(key, default, color)
+        if ctrls:
+            self._sel_btn(ctrls)
         cmds.setParent('..')
 
-    def _two_col(self, l1, k1, d1, c1, l2, k2, d2, c2):
-        cmds.rowLayout(numberOfColumns=4, columnWidth4=(160, 90, 160, 90),
-                       adjustableColumn=4)
+    def _two_col(self, l1, k1, d1, c1, l2, k2, d2, c2,
+                 ctrls1=None, ctrls2=None):
+        has_sel = ctrls1 or ctrls2
+        if has_sel:
+            cmds.rowLayout(numberOfColumns=6,
+                           columnWidth6=(148, 80, 22, 148, 80, 22),
+                           adjustableColumn=4)
+        else:
+            cmds.rowLayout(numberOfColumns=4,
+                           columnWidth4=(160, 90, 160, 90),
+                           adjustableColumn=4)
         cmds.text(label=l1); self._float_field(k1, d1, c1)
+        if has_sel:
+            if ctrls1:
+                self._sel_btn(ctrls1)
+            else:
+                cmds.text(label='', width=22)
         cmds.text(label=l2); self._float_field(k2, d2, c2)
+        if has_sel:
+            if ctrls2:
+                self._sel_btn(ctrls2)
+            else:
+                cmds.text(label='', width=22)
         cmds.setParent('..')
 
     def _zero_fields(self, keys):
@@ -97,30 +139,45 @@ class AnimGenWindow:
                          collapsable=True, marginHeight=4, marginWidth=4)
         cmds.columnLayout(adjustableColumn=True)
 
+        legs = ['IKLeg_R', 'IKLeg_L']
+        hip = ['HipSwinger_M']
+        root = ['RootX_M']
+
         d = self.walk_primary.DEFAULTS
-        self._row('Stride Length', 'stride', d['stride'])
+        self._row('Stride Length', 'stride', d['stride'], ctrls=legs)
         self._two_col('Stride Width  X', 'stride_width', d['stride_width'], CLR_X,
-                       'Stride Height  Y', 'stride_height', d['stride_height'], CLR_Y)
-        self._row('Foot Raise  rX', 'foot_raise', d['foot_raise'], CLR_X)
+                       'Stride Height  Y', 'stride_height', d['stride_height'], CLR_Y,
+                       ctrls1=legs, ctrls2=legs)
+        self._row('Foot Raise  rX', 'foot_raise', d['foot_raise'], CLR_X, ctrls=legs)
 
         cmds.separator(height=8, style='in')
         self._two_col('Hip Swing  rZ', 'hip_swing', d['hip_swing'], CLR_Z,
-                       'Hip Sway  rY', 'hip_sway', d['hip_sway'], CLR_Y)
+                       'Hip Sway  rY', 'hip_sway', d['hip_sway'], CLR_Y,
+                       ctrls1=hip, ctrls2=hip)
 
         cmds.separator(height=8, style='in')
         self._two_col('Bounce  tY', 'root_bounce', d['root_bounce'], CLR_Y,
-                       'Bounce Offset', 'bounce_offset', d['bounce_offset'], CLR_Y)
+                       'Bounce Offset', 'bounce_offset', d['bounce_offset'], CLR_Y,
+                       ctrls1=root, ctrls2=root)
         self._two_col('Sway  rY', 'root_sway', d['root_sway'], CLR_Y,
-                       'Rock  rX', 'root_rock', d['root_rock'], CLR_X)
+                       'Rock  rX', 'root_rock', d['root_rock'], CLR_X,
+                       ctrls1=root, ctrls2=root)
         self._two_col('Twist  rZ', 'root_twist', d['root_twist'], CLR_Z,
-                       'Rock Offset', 'rock_offset', d['rock_offset'], CLR_X)
+                       'Rock Offset', 'rock_offset', d['rock_offset'], CLR_X,
+                       ctrls1=root, ctrls2=root)
         self._two_col('Left-Right  tX', 'root_lr', d['root_lr'], CLR_X,
-                       'Back-Forth  tZ', 'root_bf', d['root_bf'], CLR_Z)
+                       'Back-Forth  tZ', 'root_bf', d['root_bf'], CLR_Z,
+                       ctrls1=root, ctrls2=root)
 
         cmds.separator(height=6, style='none')
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=(310, 290),
+                       adjustableColumn=2)
         cmds.button(label='Set to 0', height=22,
                     command=lambda *_: self._zero_fields(
                         list(self.walk_primary.DEFAULTS.keys())))
+        cmds.button(label='Select All Primary', height=22,
+                    command=lambda *_: self._sel(legs + hip + root))
+        cmds.setParent('..')
 
         cmds.setParent(parent)
 
@@ -134,22 +191,40 @@ class AnimGenWindow:
                          collapsable=True, marginHeight=4, marginWidth=4)
         cmds.columnLayout(adjustableColumn=True)
 
+        part_ctrls = {
+            'spine1': 'FKSpine1_M', 'chest': 'FKChest_M',
+            'neck': 'FKNeck_M', 'head': 'FKHead_M',
+        }
+
         for part in ('spine1', 'chest', 'neck', 'head'):
+            ctrl = [part_ctrls[part]]
+            cmds.rowLayout(numberOfColumns=2, columnWidth2=(200, 24),
+                           adjustableColumn=1)
             cmds.text(label='  {} :'.format(part.title()), align='left',
                       font='boldLabelFont')
+            self._sel_btn(ctrl)
+            cmds.setParent('..')
+
             nod = self.walk_secondary._params['{}_nod'.format(part)]
             lean = self.walk_secondary._params['{}_lean'.format(part)]
             twist = self.walk_secondary._params['{}_twist'.format(part)]
             twist_off = self.walk_secondary._params['{}_twist_offset'.format(part)]
             self._two_col('Nod  rZ', '{}_nod'.format(part), nod, CLR_Z,
-                           'Lean  rY', '{}_lean'.format(part), lean, CLR_Y)
+                           'Lean  rY', '{}_lean'.format(part), lean, CLR_Y,
+                           ctrls1=ctrl, ctrls2=ctrl)
             self._two_col('Twist  rX', '{}_twist'.format(part), twist, CLR_X,
-                           'Twist Offset', '{}_twist_offset'.format(part), twist_off, CLR_X)
+                           'Twist Offset', '{}_twist_offset'.format(part), twist_off, CLR_X,
+                           ctrls1=ctrl, ctrls2=ctrl)
 
         cmds.separator(height=6, style='none')
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=(310, 290),
+                       adjustableColumn=2)
         cmds.button(label='Set to 0', height=22,
                     command=lambda *_: self._zero_fields(
                         list(self.walk_secondary._params.keys())))
+        cmds.button(label='Select All Secondary', height=22,
+                    command=lambda *_: self._sel(list(part_ctrls.values())))
+        cmds.setParent('..')
 
         cmds.setParent(parent)
 
@@ -163,19 +238,33 @@ class AnimGenWindow:
                          marginHeight=4, marginWidth=4)
         cmds.columnLayout(adjustableColumn=True)
 
+        sh = ['FKShoulder_R', 'FKShoulder_L']
+        sc = ['FKScapula_R', 'FKScapula_L']
+        el = ['FKElbow_R', 'FKElbow_L']
+        wr = ['FKWrist_R', 'FKWrist_L']
+        all_arm = sc + sh + el + wr
+
         d = self.walk_arms.DEFAULTS
         self._two_col('Shoulder Droop  rY', 'shoulder_droop', d['shoulder_droop'], CLR_Y,
-                       'Scapula Droop  rY', 'scapula_droop', d['scapula_droop'], CLR_Y)
+                       'Scapula Droop  rY', 'scapula_droop', d['scapula_droop'], CLR_Y,
+                       ctrls1=sh, ctrls2=sc)
         self._two_col('Shoulder Swing  rZ', 'shoulder_swing', d['shoulder_swing'], CLR_Z,
-                       'Shoulder Twist  rX', 'shoulder_twist', d['shoulder_twist'], CLR_X)
+                       'Shoulder Twist  rX', 'shoulder_twist', d['shoulder_twist'], CLR_X,
+                       ctrls1=sh, ctrls2=sh)
         self._two_col('Scapula Swing  rZ', 'scapula_swing', d['scapula_swing'], CLR_Z,
-                       'Elbow Bend  rZ', 'elbow_bend', d['elbow_bend'], CLR_Z)
-        self._row('Wrist Swing  rZ', 'wrist_swing', d['wrist_swing'], CLR_Z)
+                       'Elbow Bend  rZ', 'elbow_bend', d['elbow_bend'], CLR_Z,
+                       ctrls1=sc, ctrls2=el)
+        self._row('Wrist Swing  rZ', 'wrist_swing', d['wrist_swing'], CLR_Z, ctrls=wr)
 
         cmds.separator(height=6, style='none')
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=(310, 290),
+                       adjustableColumn=2)
         cmds.button(label='Set to 0', height=22,
                     command=lambda *_: self._zero_fields(
                         list(self.walk_arms.DEFAULTS.keys())))
+        cmds.button(label='Select All Arms', height=22,
+                    command=lambda *_: self._sel(all_arm))
+        cmds.setParent('..')
 
         cmds.setParent(parent)
 
@@ -187,10 +276,12 @@ class AnimGenWindow:
         cmds.setParent(parent)
         cmds.separator(height=12, style='in')
 
-        cmds.rowLayout(numberOfColumns=2, columnWidth2=(310, 290),
-                       adjustableColumn=2)
+        cmds.rowLayout(numberOfColumns=3, columnWidth3=(250, 200, 150),
+                       adjustableColumn=1)
         cmds.button(label='Generate Walk Cycle', height=36,
                     command=lambda *_: self._generate())
+        cmds.button(label='Select All Controls', height=36,
+                    command=lambda *_: self._sel_all())
         cmds.checkBox(label='Auto-update', value=False,
                       changeCommand=lambda val: self._toggle_auto(val))
         cmds.setParent('..')
@@ -226,6 +317,13 @@ class AnimGenWindow:
         engine.generate([self.walk_primary,
                          self.walk_secondary,
                          self.walk_arms])
+
+    def _sel_all(self):
+        """Select every control used by all enabled layers."""
+        all_ctrls = (self.walk_primary.controls()
+                     + self.walk_secondary.controls()
+                     + self.walk_arms.controls())
+        self._sel(all_ctrls)
 
     def _toggle_auto(self, val):
         self._auto_update = val
