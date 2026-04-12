@@ -42,7 +42,7 @@ class WalkSecondary(Layer):
         return list(self._ctrl_map.values())
 
     def fkik_state(self):
-        return {'FKIKSpine_M': 10}   # full FK
+        return {'FKIKSpine_M': 0}   # full FK
 
     def channels(self):
         p = self._params

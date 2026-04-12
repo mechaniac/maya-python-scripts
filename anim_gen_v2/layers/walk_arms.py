@@ -40,8 +40,8 @@ class WalkArms(Layer):
 
     def fkik_state(self):
         return {
-            'FKIKArm_L': 10,   # full FK
-            'FKIKArm_R': 10,
+            'FKIKArm_L': 0,   # full FK
+            'FKIKArm_R': 0,
         }
 
     def _arm_channels(self, side, phase):

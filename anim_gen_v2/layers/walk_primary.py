@@ -36,8 +36,8 @@ class WalkPrimary(Layer):
 
     def fkik_state(self):
         return {
-            'FKIKLeg_L': 0,   # full IK
-            'FKIKLeg_R': 0,
+            'FKIKLeg_L': 10,   # full IK
+            'FKIKLeg_R': 10,
         }
 
     def channels(self):
