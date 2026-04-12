@@ -1,10 +1,214 @@
 # Maya Python Animation Scripts
 
-A collection of Maya Python scripts for procedural animation generation, rigging utilities, scene cleanup, and export tooling. Built around the **AdvancedSkeleton** rig naming convention. All animation generators provide GUI windows with adjustable parameters, JSON preset import/export, and operate on the current timeline range.
+A collection of Maya Python scripts for procedural animation generation, rigging, scene cleanup, and Source 2 model import. Designed for **Maya 2026** (Python 3.10, `maya.cmds` only). Built around the **AdvancedSkeleton** rig naming convention and the custom **Auto Control Rig** system.
+
+### Quick Start
+
+```python
+# Animation Generator v2
+from anim_gen_v2 import launcher; launcher.show()
+
+# Auto Control Rig
+import autoControlRig; autoControlRig.show()
+
+# Source 2 Importer
+import source2Importer; source2Importer.show()
+```
+
+### Package Overview
+
+| Package | Description |
+|---|---|
+| `anim_gen_v2/` | Layered keyframe engine with walk cycle generator, JSON presets, slider UI |
+| `auto_control_rig/` | AdvancedSkeleton-compatible FK/IK control rig builder for any skeleton |
+| `source2_importer/` | Import Source 2 `.vmdl` models (mesh, skeleton, textures, materials) into Maya |
+| `*.py` (root) | Legacy v1 animation generators, utility scripts, scene cleanup tools |
 
 ---
 
-## Animation Generator Scripts
+## Animation Generator v2 — `anim_gen_v2`
+
+A layered keyframe engine that generates procedural walk cycles on the Auto Control Rig. Each animation layer (Primary, Secondary, Arms) produces a set of channels that the engine batch-keys across the timeline in a single undo chunk.
+
+**Usage:**
+```python
+from anim_gen_v2 import launcher
+launcher.show()
+```
+
+### Architecture
+
+```
+┌──────────────┐
+│   UI Window  │  floatSliderGrp controls, presets, auto-update
+└──────┬───────┘
+       │  _read_fields()
+       ▼
+┌──────────────┐     ┌──────────────┐
+│    Layers    │────►│   Channels   │  ctrl, attr, wave, amplitude, offset, ...
+│  (Primary,   │     └──────┬───────┘
+│  Secondary,  │            │
+│  Arms)       │            ▼
+└──────────────┘     ┌──────────────┐
+                     │    Engine    │  resolve → cutKey → setKeyframe (undo chunk)
+                     └──────┬───────┘
+                            │
+                            ▼
+                     ┌──────────────┐
+                     │  Maya Scene  │  keyframes on rig controls
+                     └──────────────┘
+```
+
+### Core Modules
+
+| Module | Purpose |
+|---|---|
+| `core/engine.py` | Batch keying, timeline helpers, `generate()`, `clear_keys()` |
+| `core/channel.py` | `Channel` dataclass — target control, attribute, wave, amplitude, offset, phase |
+| `core/patterns.py` | `Wave` enum — COSINE, SINE, CONSTANT with `evaluate()` and `sample()` |
+| `core/resolver.py` | Cached case-insensitive Maya node lookup |
+| `core/presets.py` | JSON preset save/load — repo library + project presets with auto-discovery |
+| `layers/__init__.py` | `Layer` base class — `enabled`, `channels()`, `controls()`, `fkik_state()`, `params()` |
+| `ui/window.py` | Tabbed Maya window — sliders, framed sections, mute, presets, auto-update |
+
+### Axis Convention (Joint-Aligned)
+
+All joint-aligned controllers (Root, Hip, Spine, Chest, Neck, Head, Arms) follow:
+
+| Axis | Rotation | Translation (Root) |
+|---|---|---|
+| **X** | Twist (axial roll) | Bounce (up/down) |
+| **Y** | Lean (side bend) | Back-Forth |
+| **Z** | Nod (fore/back pitch) | Left-Right |
+
+IK Legs are **world-aligned** (`ro=(0,0,0)`).
+
+### Rhythm Rules
+
+| Movement Type | Frequency | Keyframes | Subdivision |
+|---|---|---|---|
+| Forward/Back (nod, stride) | 2× per cycle | 5 | Fifths |
+| Side/Twist (lean, twist) | 1× per cycle | 3 | Thirds |
+
+### Walk Cycle Layers
+
+**Primary** — Root translation/rotation, hip swing, IK leg stride, foot roll:
+
+| Parameter | Default | Control | Attribute | Note |
+|---|---|---|---|---|
+| `stride` | 10.0 | IKLeg_R/L | translateZ | Forward/back step |
+| `stride_width` | 2.0 | IKLeg_R/L | translateX | Lateral offset |
+| `stride_height` | 4.0 | IKLeg_R/L | translateY | Vertical step curve |
+| `foot_raise` | 10.0 | IKLeg_R/L | rotateX | Toe lift during swing |
+| `foot_roll_heel` | −8.0 | IKLeg_R/L | Roll | Heel strike angle |
+| `foot_roll_toe` | 40.0 | IKLeg_R/L | Roll | Toe-off angle |
+| `hip_nod` | 10.0 | HipSwinger_M | rotateZ | Hip pitch |
+| `hip_lean` | 5.0 | HipSwinger_M | rotateY | Hip side tilt |
+| `hip_twist` | 0.0 | HipSwinger_M | rotateX | Hip axial rotation |
+| `root_bounce` | 1.5 | RootX_M | translateX | Vertical bounce |
+| `root_nod` | 1.0 | RootX_M | rotateZ | Root pitch |
+| `root_lean` | 2.0 | RootX_M | rotateY | Root side sway |
+| `root_twist` | 0.0 | RootX_M | rotateX | Root axial rotation |
+| `root_lr` | 0.0 | RootX_M | translateZ | Lateral root shift |
+| `root_bf` | 0.0 | RootX_M | translateY | Forward/back root shift |
+| `bounce_offset` | 0.0 | RootX_M | translateX | Phase offset for bounce |
+| `root_nod_offset` | 0.0 | RootX_M | rotateZ | Phase offset for nod |
+
+FKIK: `FKIKLeg_L/R = 10` (full IK). Foot roll drives expression-based heel/ball/toetip pivots.
+
+**Secondary** — Spine chain counter-rotation (spine, chest, neck, head):
+
+| Part | Control | Nod (rZ) | Lean (rY) | Twist (rX) | Nod Offset |
+|---|---|---|---|---|---|
+| Spine | FKSpine_M | 5.0 | 2.0 | 1.5 | 0.0 |
+| Chest | FKChest_M | 7.0 | 3.0 | 2.0 | 0.0 |
+| Neck | FKNeck_M | 4.0 | 2.0 | 1.0 | 0.0 |
+| Head | FKHead_M | 3.0 | 1.5 | 1.5 | 0.0 |
+
+FKIK: `FKIKSpine_M = 0` (full FK). FKSpine_M uses a multiplyDivide node to halve rotation for 50/50 split to both spine joints.
+
+**Arms** — FK arm swing with L/R mirroring:
+
+| Parameter | Default | Axis | Note |
+|---|---|---|---|
+| `shoulder_droop` | −30.0 | rY | Arms hanging position |
+| `shoulder_swing` | 20.0 | rZ | Forward/back arm swing |
+| `shoulder_twist` | 0.0 | rX | Axial arm roll |
+| `scapula_droop` | −15.0 | rY | Scapula offset |
+| `scapula_swing` | 8.0 | rZ | Scapula follow-through |
+| `elbow_bend` | 12.0 | rZ | Elbow flexion |
+| `wrist_swing` | 6.0 | rZ | Wrist follow-through |
+
+FKIK: `FKIKArm_L/R = 0` (full FK). Left arm uses `mir = −1` on rY/rX amplitudes; phase offset `0.5`.
+
+### Preset System
+
+Presets are JSON files discovered from two locations:
+
+| Source | Path | Tag |
+|---|---|---|
+| **Library** (repo) | `anim_gen_v2/presets/<cycle_type>/` | `[lib]` |
+| **Project** | `<maya_workspace>/data/anim_presets/<cycle_type>/` | `[proj]` |
+
+The UI provides Load Selected, Save to Library, Save to Project, Save As..., and Load File... buttons. Presets store all layer parameters grouped by section with metadata (type, name, author, date).
+
+### UI Features
+
+- **Sliders** (`floatSliderGrp`) with sensible min/max ranges and axis colour coding (🔴 rX, 🟢 rY, 🔵 rZ)
+- **Framed sections** per joint group with bold header labels
+- **Select** button per section header — selects controls in viewport for Graph Editor work
+- **Mute** checkbox per section — stores values, zeros + disables sliders; unmute restores
+- **Set to 0** button per major section
+- **Auto-update** — regenerates animation on every slider change/drag
+- **Delete Animation** — clears all keys in the timeline range (including FKIK and Roll)
+- **Preset dropdown** with combined library + project presets
+
+---
+
+## Source 2 Importer — `source2_importer`
+
+Imports Source 2 `.vmdl` character models into Maya — parsing the model definition, importing FBX meshes, converting compiled textures to PNG, and building Maya materials with proper texture connections.
+
+**Usage:**
+```python
+import source2Importer; source2Importer.show()
+```
+
+### Pipeline
+
+```
+.vmdl (KV3 text)
+  │  kv3.parse() — inline prefab references
+  ▼
+Parsed structure (meshes, materials, scale)
+  │  pipeline.import_model()
+  ├──► FBX import (body meshes)
+  ├──► VRF CLI: .vtex_c → PNG (texture export)
+  └──► materials.process_material() → Maya shaders
+```
+
+### Modules
+
+| Module | Purpose |
+|---|---|
+| `pipeline.py` | Orchestrator — parse vmdl → import FBX → convert textures → create materials |
+| `kv3.py` | KV3 (KeyValues 3) text format parser for `.vmdl` and `.vmdl_prefab` files |
+| `materials.py` | Maya material creation from Source 2 textures — exports PNGs, builds shaders |
+| `vrf.py` | Wrapper for VRF Decompiler CLI (locate, download, invoke) |
+| `vrf/` | VRF Decompiler binaries (Source2Viewer-CLI.exe + dependencies) |
+| `ui.py` | Maya window — file browser for `.vmdl` path and texture output directory |
+
+### Key Features
+
+- **KV3 parsing** with inline prefab resolution (follows `Prefab` references)
+- **Automatic texture export** — all `.vtex_c` files converted to PNG via VRF CLI
+- **Material auto-creation** — maps Source 2 material channels to Maya shader nodes
+- **Scale handling** — respects the `ScaleAndMirror` modifier (cm → inches at 0.3937)
+- **Variant filtering** — skips grey/old/young skin variants, imports default textures only
+
+---
+
+## Animation Generator Scripts (Legacy v1)
 
 ### walkcycleGenerator.py — `WalkCycleTool`
 
@@ -312,8 +516,7 @@ The script auto-maps the s&box Citizen skeleton joints to rig slots via case-ins
 | `Main_M` | NURBS Circle | World-space master controller, global scale |
 | `RootX_M` | NURBS Circle | Master root translation |
 | `HipSwinger_M` | NURBS Circle | Hip orientation (parented under RootX_M) |
-| `FKSpine1_M` | NURBS Circle | Spine FK orient |
-| `FKSpine2_M` | NURBS Circle | Spine 1 FK orient |
+| `FKSpine_M` | NURBS Circle | Spine FK orient (single controller, 50/50 split to both spine joints via multiplyDivide) |
 | `FKChest_M` | NURBS Circle | Chest FK orient |
 | `FKNeck_M` | NURBS Circle | Neck FK orient |
 | `FKHead_M` | NURBS Circle | Head FK orient |
@@ -557,15 +760,17 @@ Clothing addons use body groups to hide the body part they replace (e.g., a jack
 
 7 compiled material files (`*.vmat_c`) in the `skin/` directory:
 
-| Material | Purpose |
-|---|---|
-| `citizen_skin.vmat_c` | Default skin (base, remapped to `citizen_skin01`) |
-| `citizen_skin01.vmat_c` | Active skin material (the remap target) |
-| `citizen_skin_grey.vmat_c` | Grey/neutral skin variant |
-| `citizen_skin_greyvmat.vmat_c` | Alternate grey skin |
-| `citizen_eyes.vmat_c` | Simple eye material (remapped to `citizen_eyes_advanced`) |
-| `citizen_eyes_advanced.vmat_c` | Full eye material with iris detail, refraction |
-| `citizen_eyeao.vmat_c` | Eye ambient occlusion overlay (shadow around eye socket) |
+| | Material | Purpose |
+|---|---|---|
+| 🟤 | `citizen_skin.vmat_c` | Default skin (base, remapped to `citizen_skin01`) |
+| 🟤 | `citizen_skin01.vmat_c` | Active skin material (the remap target) |
+| ⚪ | `citizen_skin_grey.vmat_c` | Grey/neutral skin variant |
+| ⚪ | `citizen_skin_greyvmat.vmat_c` | Alternate grey skin |
+| 🔵 | `citizen_eyes.vmat_c` | Simple eye material (remapped to `citizen_eyes_advanced`) |
+| 🔵 | `citizen_eyes_advanced.vmat_c` | Full eye material with iris detail, refraction |
+| 🟣 | `citizen_eyeao.vmat_c` | Eye ambient occlusion overlay (shadow around eye socket) |
+
+> 🟤 Skin &nbsp; ⚪ Skin Variant &nbsp; 🔵 Eyes &nbsp; 🟣 Eye AO
 
 The **MaterialGroupList** defines 3 remaps that upgrade the FBX-embedded material names to the final materials:
 
@@ -577,56 +782,39 @@ The **MaterialGroupList** defines 3 remaps that upgrade the FBX-embedded materia
 
 ### Textures
 
-25 compiled texture files (`*.generated.vtex_c`), plus 1 morph target texture. Grouped by material:
+25 compiled texture files (`*.generated.vtex_c`), plus 1 morph target texture.
 
-**Skin** (citizen_skin / citizen_skin01):
-| Texture | Channel |
-|---|---|
-| `citizen_skin_color_png_*.vtex_c` | Base color (diffuse albedo) |
-| `citizen_skin_normal_png_*.vtex_c` | Normal map (tangent-space) |
-| `citizen_skin_ao_png_*.vtex_c` | Ambient occlusion |
-| `citizen_skin_bentnormal_png_*.vtex_c` | Bent normal (improved AO/GI direction) |
+> 🟤 Default Skin &nbsp; ⚪ Skin Variant &nbsp; 🔵 Eyes (Advanced) &nbsp; ⚫ Eyes (Legacy) &nbsp; 🟣 Eye AO &nbsp; 🟡 Utility
 
-**Skin variants** (old, young, grey):
-| Texture | Channel |
-|---|---|
-| `citizen_skin_old_color_png_*.vtex_c` | Old skin color |
-| `citizen_skin_old_normal_png_*.vtex_c` | Old skin normal |
-| `citizen_skin_young_color_png_*.vtex_c` | Young skin color |
-| `citizen_skin_young_normal_png_*.vtex_c` | Young skin normal |
-| `citizen_skin_young_ao_png_*.vtex_c` | Young skin AO |
-| `citizen_skin_grey_vmat_g_tcolor_*.vtex_c` | Grey skin color |
-| `citizen_skin_grey_vmat_g_tnormal_*.vtex_c` | Grey skin normal |
-| `citizen_skin_grey_vmat_g_tambientocclusion_*.vtex_c` | Grey skin AO |
-| `citizen_skin_grey_vmat_g_tselfillummask_*.vtex_c` | Grey skin self-illumination mask |
+| | Texture | Channel |
+|---|---|---|
+| 🟤 | `citizen_skin_color_png_*` | Base color (diffuse albedo) |
+| 🟤 | `citizen_skin_normal_png_*` | Normal map (tangent-space) |
+| 🟤 | `citizen_skin_ao_png_*` | Ambient occlusion |
+| 🟤 | `citizen_skin_bentnormal_png_*` | Bent normal (improved AO/GI direction) |
+| ⚪ | `citizen_skin_old_color_png_*` | Old skin — color |
+| ⚪ | `citizen_skin_old_normal_png_*` | Old skin — normal |
+| ⚪ | `citizen_skin_young_color_png_*` | Young skin — color |
+| ⚪ | `citizen_skin_young_normal_png_*` | Young skin — normal |
+| ⚪ | `citizen_skin_young_ao_png_*` | Young skin — AO |
+| ⚪ | `citizen_skin_grey_*_tcolor_*` | Grey skin — color |
+| ⚪ | `citizen_skin_grey_*_tnormal_*` | Grey skin — normal |
+| ⚪ | `citizen_skin_grey_*_tambientocclusion_*` | Grey skin — AO |
+| ⚪ | `citizen_skin_grey_*_tselfillummask_*` | Grey skin — self-illumination mask |
+| 🔵 | `citizen_eyes_advanced_color_png_*` | Eye color (sclera + iris) |
+| 🔵 | `citizen_eyes_advanced_normal_png_*` | Eye normal map |
+| 🔵 | `citizen_eyes_advanced_iris_mask_psd_*` | Iris mask (isolates iris region) |
+| 🔵 | `citizen_eyes_advanced_iris_normal_png_*` | Iris-specific normal detail |
+| 🔵 | `citizen_eyes_advanced_*_tocclusion_*` | Eye occlusion |
+| ⚫ | `citizen_eyes_color_png_*` | Simple eye color (legacy) |
+| ⚫ | `citizen_eyes_trans_png_*` | Eye transparency (legacy) |
+| ⚫ | `citizen_eyes_*_tcombinedmasks_*` | Combined channel masks (legacy) |
+| ⚫ | `citizen_eyes_*_tnormal_*` | Eye normal (legacy) |
+| 🟣 | `citizen_eyeao_*_tambientocclusion_*` | Eye socket AO shadow |
+| 🟣 | `citizen_eyeao_*_tnormal_*` | Eye AO normal |
+| 🟡 | `tint_lookup_png_*` | Color tint lookup table (runtime skin tone) |
 
-**Eyes** (citizen_eyes_advanced):
-| Texture | Channel |
-|---|---|
-| `citizen_eyes_advanced_color_png_*.vtex_c` | Eye color (sclera + iris) |
-| `citizen_eyes_advanced_normal_png_*.vtex_c` | Eye normal map |
-| `citizen_eyes_advanced_iris_mask_psd_*.vtex_c` | Iris mask (isolates iris region) |
-| `citizen_eyes_advanced_iris_normal_png_*.vtex_c` | Iris-specific normal detail |
-| `citizen_eyes_advanced_vmat_g_tocclusion_*.vtex_c` | Eye occlusion |
-
-**Eyes legacy** (citizen_eyes):
-| Texture | Channel |
-|---|---|
-| `citizen_eyes_color_png_*.vtex_c` | Simple eye color |
-| `citizen_eyes_trans_png_*.vtex_c` | Eye transparency |
-| `citizen_eyes_vmat_g_tcombinedmasks_*.vtex_c` | Combined channel masks |
-| `citizen_eyes_vmat_g_tnormal_*.vtex_c` | Eye normal |
-
-**Eye AO** (citizen_eyeao):
-| Texture | Channel |
-|---|---|
-| `citizen_eyeao_vmat_g_tambientocclusion_*.vtex_c` | Eye socket AO shadow |
-| `citizen_eyeao_vmat_g_tnormal_*.vtex_c` | Eye AO normal |
-
-**Utility**:
-| Texture | Channel |
-|---|---|
-| `tint_lookup_png_*.vtex_c` | Color tint lookup table (runtime skin tone) |
+All texture filenames end in `.generated.vtex_c` (truncated above for readability).
 
 ### Skeleton & Bone Markup
 
@@ -634,13 +822,15 @@ Root bone: `pelvis`. The skeleton includes IK targets, aim matrices, twist distr
 
 **Bone markup categories** (from `citizen_bonemarkuplist.vmdl_prefab`):
 
-| Category | Purpose |
-|---|---|
-| `BoneMarkup_root_IK` | IK targets (feet, hands), aim matrices, root IK bone |
-| `BoneMarkup_limb_containers` | Parent bones for limb segments — only twist children do actual skinning |
-| `BoneMarkup_helpers` | Helper/corrective bones (e.g., knee caps, elbow positions) |
-| `BoneMarkup_twist_old_discard` | Legacy twist bones marked for removal |
-| `BoneMarkup_twist0` / `twist1` | Active twist distribution bones (upper/lower arm & leg) |
+| | Category | Purpose |
+|---|---|---|
+| 🔴 | `BoneMarkup_root_IK` | IK targets (feet, hands), aim matrices, root IK bone |
+| 🟠 | `BoneMarkup_limb_containers` | Parent bones for limb segments — only twist children do actual skinning |
+| 🟢 | `BoneMarkup_helpers` | Helper/corrective bones (e.g., knee caps, elbow positions) |
+| ⚫ | `BoneMarkup_twist_old_discard` | Legacy twist bones marked for removal |
+| 🔵 | `BoneMarkup_twist0` / `twist1` | Active twist distribution bones (upper/lower arm & leg) |
+
+> 🔴 IK &nbsp; 🟠 Limb Containers &nbsp; 🟢 Helpers &nbsp; ⚫ Deprecated &nbsp; 🔵 Active Twist
 
 ### IK Chains
 
@@ -651,14 +841,27 @@ Root bone: `pelvis`. The skeleton includes IK targets, aim matrices, twist distr
 
 ### Attachment Points
 
-37 named attachment points on the skeleton, including:
+37 named attachment points on the skeleton:
 
-- **Gameplay**: `hat`, `eyes`, `hold_L`, `hold_R`, `hand_L`, `hand_R`
-- **IK targets**: `IK_left_hand`, `IK_right_hand`, `foot_L`, `foot_R`
-- **Aim**: `aim_matrix_01`, `aim_matrix_02a`, `aim_matrix_02b`
-- **Reference**: `forward_reference`, `forward_reference_modelspace`, `middle_of_both_hands`
-- **Twist drivers**: `driver_arm_upper_L_twist1`, `driver_leg_lower_R_twist1`, etc.
-- **Eye forward**: `eye_L_forward`, `eye_R_forward`
+> 🟢 Gameplay &nbsp; 🔴 IK Targets &nbsp; 🟣 Aim &nbsp; 🔵 Reference &nbsp; 🟡 Twist Drivers
+
+| | Attachments | Purpose |
+|---|---|---|
+| 🟢 | `hat`, `eyes` | Wearable / accessory attachment |
+| 🟢 | `hold_L`, `hold_R` | Held-object grip points |
+| 🟢 | `hand_L`, `hand_R` | Hand attachment (general) |
+| 🔴 | `IK_left_hand`, `IK_right_hand` | IK hand targets |
+| 🔴 | `foot_L`, `foot_R` | IK foot targets |
+| 🟣 | `aim_matrix_01` | Primary aim reference |
+| 🟣 | `aim_matrix_02a`, `aim_matrix_02b` | Secondary aim references |
+| 🔵 | `forward_reference` | Forward direction (world) |
+| 🔵 | `forward_reference_modelspace` | Forward direction (model-space) |
+| 🔵 | `middle_of_both_hands` | Midpoint between hands |
+| 🔵 | `eye_L_forward`, `eye_R_forward` | Eye forward vectors |
+| 🟡 | `driver_arm_upper_L/R_twist1` | Upper arm twist driver |
+| 🟡 | `driver_arm_lower_L/R_twist1` | Lower arm twist driver |
+| 🟡 | `driver_leg_upper_L/R_twist1` | Upper leg twist driver |
+| 🟡 | `driver_leg_lower_L/R_twist1` | Lower leg twist driver |
 
 ### Hitboxes
 
@@ -677,19 +880,21 @@ Physics is split across three prefabs:
 
 The animation system uses a **state-machine animation graph** (`citizen.vanmgrph`) with ~293 animation files spread across 5 animation list prefabs:
 
-| Prefab | Content |
-|---|---|
-| `citizen_animationlist.vmdl_prefab` | Main locomotion, actions, idles (~359 AnimFile entries) |
-| `citizen_animationlist_menu.vmdl_prefab` | Menu/UI character poses |
-| `citizen_animationlist_visemes.vmdl_prefab` | Lip-sync viseme shapes |
-| `citizen_animationlist_debug.vmdl_prefab` | Debug/test animations |
-| `citizen_animationlist_unicycle.vmdl_prefab` | Unicycle locomotion set |
+| | Prefab | Content |
+|---|---|---|
+| 🟢 | `citizen_animationlist.vmdl_prefab` | Main locomotion, actions, idles (~359 AnimFile entries) |
+| 🔵 | `citizen_animationlist_menu.vmdl_prefab` | Menu/UI character poses |
+| 🟣 | `citizen_animationlist_visemes.vmdl_prefab` | Lip-sync viseme shapes |
+| 🟡 | `citizen_animationlist_debug.vmdl_prefab` | Debug/test animations |
+| 🟠 | `citizen_animationlist_unicycle.vmdl_prefab` | Unicycle locomotion set |
 
-Animations also reference **processing prefabs** that define post-processing rules:
-- `citizen_ani_process_walk.vmdl_prefab`
-- `citizen_ani_process_run.vmdl_prefab`
-- `citizen_ani_process_crouchwalk.vmdl_prefab`
-- `citizen_ani_process_crouchwalklow.vmdl_prefab`
+> 🟢 Core &nbsp; 🔵 Menu &nbsp; 🟣 Visemes &nbsp; 🟡 Debug &nbsp; 🟠 Special
+
+Animations also reference **processing prefabs** for post-processing rules:
+- `citizen_ani_process_walk.vmdl_prefab` — walk cycle processing
+- `citizen_ani_process_run.vmdl_prefab` — run cycle processing
+- `citizen_ani_process_crouchwalk.vmdl_prefab` — crouch walk processing
+- `citizen_ani_process_crouchwalklow.vmdl_prefab` — low crouch walk processing
 
 ### Key Conventions for s&box Models
 
@@ -717,14 +922,21 @@ Informed by state-of-the-art rigging systems (AdvancedSkeleton, mGear, Rapid Rig
 | **Space Switching** | IK legs: Main / Root. IK arms: Main / Root / Chest / Head. Enum attr with condition-driven parentConstraint weights. | ✅ Done |
 | **IK/FK Snap Matching** | One-click buttons to match FK pose → current IK result and vice versa. Eliminates pose pops when blending. | Planned |
 | **Stretchy IK Limbs** | Distance-based limb stretching via joint scale when IK target exceeds chain length. Soft-IK falloff to prevent pop at full extension. | Planned |
-| **Finger / Hand Controls** | FK chain per finger with master curl, spread, and fist attributes on a single hand control. | Planned |
+| **Finger / Hand Controls** | FK chain per finger with master curl, spread, and fist attributes on a single hand control. | ✅ Done |
 | **Global Scale** | ScaleConstraint from Main_M to root skin joint. Uniform scaling of rig + mesh. | ✅ Done |
+| **Eye Aim / Look-At** | Per-eye aim targets with master control. Space switching (Head/Root/World). Eyelid follow blending. | ✅ Done |
+| **Procedural Walk Cycle** | Layered keyframe engine (anim_gen_v2) with slider UI, presets, foot roll, mute sections. | ✅ Done |
+| **Source 2 Import** | Import `.vmdl` models — parse KV3, import FBX, convert textures via VRF, build Maya materials. | ✅ Done |
 
 ### Medium Priority
 
 | Feature | Description | Status |
 |---|---|---|
 | **IK Spine (Spline IK)** | 3-controller IK spline (bottom/mid/top) with FK/IK blend, chest follow for appendages, advanced twist. | ✅ Done |
+| **Twist Joints** | Twist extraction joints for upper/lower arm and leg segments. Smooth forearm and upper-arm roll. | ✅ Done |
+| **Eyelids** | FK eyelid controls with per-eye groups, eye-follow blending via `EyelidFollow` attribute. | ✅ Done |
+| **Ears** | FK ear controls parented under head for secondary ear animation. | ✅ Done |
+| **IK Foot Roll** | Expression-driven reverse foot (Roll, RollStartAngle, RollEndAngle) with heel/ball/toetip pivots. | ✅ Done |
 | **Head Aim / Look-At** | Aim constraint on head with a world-space target locator. Auto look-at with adjustable blend. | Planned |
 | **Prop / Object Attachment** | Pre-built parent-constraint slots on hand, head, and back joints so props can be parented to the rig with one click. Space-switchable between hands. | Planned |
 | **Soft IK** | Smoothly ease into full extension instead of snapping. Node-based falloff curve before the IK chain reaches max length. | Planned |
