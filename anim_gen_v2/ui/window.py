@@ -129,6 +129,8 @@ class AnimGenWindow:
             f = self._fields.get(k)
             if f:
                 cmds.floatField(f, e=True, v=0)
+        if self._auto_update:
+            self._generate()
 
     # ──────────────────────────────────────────────
     #  Walk Primary section
