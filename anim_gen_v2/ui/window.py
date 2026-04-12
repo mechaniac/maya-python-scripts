@@ -80,6 +80,13 @@ class AnimGenWindow:
         cmds.text(label=l2); self._float_field(k2, d2, c2)
         cmds.setParent('..')
 
+    def _zero_fields(self, keys):
+        """Set all float fields in *keys* to 0."""
+        for k in keys:
+            f = self._fields.get(k)
+            if f:
+                cmds.floatField(f, e=True, v=0)
+
     # ──────────────────────────────────────────────
     #  Walk Primary section
     # ──────────────────────────────────────────────
@@ -110,6 +117,11 @@ class AnimGenWindow:
         self._two_col('Left-Right  tX', 'root_lr', d['root_lr'], CLR_X,
                        'Back-Forth  tZ', 'root_bf', d['root_bf'], CLR_Z)
 
+        cmds.separator(height=6, style='none')
+        cmds.button(label='Set to 0', height=22,
+                    command=lambda *_: self._zero_fields(
+                        list(self.walk_primary.DEFAULTS.keys())))
+
         cmds.setParent(parent)
 
     # ──────────────────────────────────────────────
@@ -134,6 +146,11 @@ class AnimGenWindow:
             self._two_col('Twist  rX', '{}_twist'.format(part), twist, CLR_X,
                            'Twist Offset', '{}_twist_offset'.format(part), twist_off, CLR_X)
 
+        cmds.separator(height=6, style='none')
+        cmds.button(label='Set to 0', height=22,
+                    command=lambda *_: self._zero_fields(
+                        list(self.walk_secondary._params.keys())))
+
         cmds.setParent(parent)
 
     # ──────────────────────────────────────────────
@@ -154,6 +171,11 @@ class AnimGenWindow:
         self._two_col('Scapula Swing  rY', 'scapula_swing', d['scapula_swing'], CLR_Y,
                        'Elbow Bend  rY', 'elbow_bend', d['elbow_bend'], CLR_Y)
         self._row('Wrist Swing  rY', 'wrist_swing', d['wrist_swing'], CLR_Y)
+
+        cmds.separator(height=6, style='none')
+        cmds.button(label='Set to 0', height=22,
+                    command=lambda *_: self._zero_fields(
+                        list(self.walk_arms.DEFAULTS.keys())))
 
         cmds.setParent(parent)
 
