@@ -1,4 +1,12 @@
-"""Walk cycle arm swing layer."""
+"""Walk cycle arm swing layer.
+
+FK arm controls use circle normal (1,0,0) and inherit the skin
+joint's world orientation.  With ``oj='xyz'``:
+
+    rotateX = twist  (axial roll along the bone)
+    rotateY = swing  (forward / back in the sagittal plane)
+    rotateZ = droop  (raise / lower in the frontal plane)
+"""
 
 from ..core.channel import Channel
 from ..core.patterns import Wave
@@ -11,13 +19,13 @@ class WalkArms(Layer):
     name = 'Walk \u2013 Arms'
 
     DEFAULTS = {
-        'shoulder_down':   -30.0,
-        'scapula_down':    -15.0,
-        'shoulder_swing':   20.0,
-        'shoulder_twist':    0.0,
-        'scapula_swing':     8.0,
-        'elbow_bend':       12.0,
-        'wrist_swing':       6.0,
+        'shoulder_droop':  -30.0,   # rotateZ -- arms hanging
+        'scapula_droop':   -15.0,   # rotateZ -- scapula offset
+        'shoulder_swing':   20.0,   # rotateY -- forward/back
+        'shoulder_twist':    0.0,   # rotateX -- axial roll
+        'scapula_swing':     8.0,   # rotateY -- scapula fore/aft
+        'elbow_bend':       12.0,   # rotateY -- flexion
+        'wrist_swing':       6.0,   # rotateY -- follow-through
     }
 
     def __init__(self):
@@ -36,13 +44,13 @@ class WalkArms(Layer):
         sfx = '_' + side
 
         chs = []
-        # Scapula / shoulder static droop (constant at start + end)
+        # Scapula / shoulder static droop (rotateZ, constant)
         chs.append(Channel('FKScapula' + sfx, 'rotateZ', Wave.CONSTANT,
-                           amplitude=p['scapula_down'], n_points=2,
-                           label='{} Scap Down'.format(side)))
+                           amplitude=p['scapula_droop'], n_points=2,
+                           label='{} Scap Droop'.format(side)))
         chs.append(Channel('FKShoulder' + sfx, 'rotateZ', Wave.CONSTANT,
-                           amplitude=p['shoulder_down'], n_points=2,
-                           label='{} Sh Down'.format(side)))
+                           amplitude=p['shoulder_droop'], n_points=2,
+                           label='{} Sh Droop'.format(side)))
 
         # Scapula swing
         chs.append(Channel('FKScapula' + sfx, 'rotateY', Wave.COSINE,

@@ -79,7 +79,11 @@ class WalkPrimary(Layer):
                            label='L Foot Raise'))
 
         # ── hip swing / sway ── 3-point alternating
-        chs.append(Channel('HipSwinger_M', 'rotateX', Wave.COSINE,
+        # HipSwinger_M is world-aligned:
+        #   rotateX = pitch (forward/back tilt)
+        #   rotateY = yaw   (left/right turn)
+        #   rotateZ = roll  (side tilt)
+        chs.append(Channel('HipSwinger_M', 'rotateZ', Wave.COSINE,
                            amplitude=p['hip_swing'], n_points=3,
                            label='Hip Swing'))
         chs.append(Channel('HipSwinger_M', 'rotateY', Wave.COSINE,

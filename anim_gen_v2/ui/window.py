@@ -97,7 +97,7 @@ class AnimGenWindow:
         self._row('Foot Raise  rX', 'foot_raise', d['foot_raise'], CLR_X)
 
         cmds.separator(height=8, style='in')
-        self._two_col('Hip Swing  rX', 'hip_swing', d['hip_swing'], CLR_X,
+        self._two_col('Hip Swing  rZ', 'hip_swing', d['hip_swing'], CLR_Z,
                        'Hip Sway  rY', 'hip_sway', d['hip_sway'], CLR_Y)
 
         cmds.separator(height=8, style='in')
@@ -125,14 +125,14 @@ class AnimGenWindow:
         for part in ('spine1', 'chest', 'neck', 'head'):
             cmds.text(label='  {} :'.format(part.title()), align='left',
                       font='boldLabelFont')
-            rz = self.walk_secondary._params['{}_rz'.format(part)]
-            rx = self.walk_secondary._params['{}_rx'.format(part)]
-            ry = self.walk_secondary._params['{}_ry'.format(part)]
-            ry_off = self.walk_secondary._params['{}_ry_offset'.format(part)]
-            self._two_col('Rotate Z', '{}_rz'.format(part), rz, CLR_Z,
-                           'Rotate X', '{}_rx'.format(part), rx, CLR_X)
-            self._two_col('Rotate Y', '{}_ry'.format(part), ry, CLR_Y,
-                           'Y Offset', '{}_ry_offset'.format(part), ry_off, CLR_Y)
+            nod = self.walk_secondary._params['{}_nod'.format(part)]
+            lean = self.walk_secondary._params['{}_lean'.format(part)]
+            twist = self.walk_secondary._params['{}_twist'.format(part)]
+            twist_off = self.walk_secondary._params['{}_twist_offset'.format(part)]
+            self._two_col('Nod  rZ', '{}_nod'.format(part), nod, CLR_Z,
+                           'Lean  rY', '{}_lean'.format(part), lean, CLR_Y)
+            self._two_col('Twist  rX', '{}_twist'.format(part), twist, CLR_X,
+                           'Twist Offset', '{}_twist_offset'.format(part), twist_off, CLR_X)
 
         cmds.setParent(parent)
 
@@ -147,8 +147,8 @@ class AnimGenWindow:
         cmds.columnLayout(adjustableColumn=True)
 
         d = self.walk_arms.DEFAULTS
-        self._two_col('Shoulder Down  rZ', 'shoulder_down', d['shoulder_down'], CLR_Z,
-                       'Scapula Down  rZ', 'scapula_down', d['scapula_down'], CLR_Z)
+        self._two_col('Shoulder Droop  rZ', 'shoulder_droop', d['shoulder_droop'], CLR_Z,
+                       'Scapula Droop  rZ', 'scapula_droop', d['scapula_droop'], CLR_Z)
         self._two_col('Shoulder Swing  rY', 'shoulder_swing', d['shoulder_swing'], CLR_Y,
                        'Shoulder Twist  rX', 'shoulder_twist', d['shoulder_twist'], CLR_X)
         self._two_col('Scapula Swing  rY', 'scapula_swing', d['scapula_swing'], CLR_Y,

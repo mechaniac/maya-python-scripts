@@ -1,12 +1,19 @@
-"""Walk cycle secondary layer -- spine, chest, neck, head."""
+"""Walk cycle secondary layer -- spine, chest, neck, head.
+
+FK spine controls use circle normal (1,0,0) and inherit the skin
+joint's world orientation.  With ``oj='xyz'`` the local X axis runs
+along the bone (upward through the spine), giving:
+
+    rotateX = twist   (axial roll around the spine)
+    rotateY = lean    (lateral side bend)
+    rotateZ = nod     (forward / back pitch)
+"""
 
 from ..core.channel import Channel
 from ..core.patterns import Wave
 from . import Layer
 
-# Control names and default amplitudes per body part.
-# Parameter naming: {part}_rz -> rotateZ, {part}_rx -> rotateX,
-# {part}_ry -> rotateY, {part}_ry_offset -> rotateY offset.
+# (part_key, ctrl_name, nod, lean, twist, twist_offset)
 _PARTS = (
     ('spine1', 'FKSpine1_M', 5.0, 2.0, 1.5, 0.0),
     ('chest',  'FKChest_M',  7.0, 3.0, 2.0, 0.0),
@@ -24,12 +31,12 @@ class WalkSecondary(Layer):
         super().__init__()
         self._params = {}
         self._ctrl_map = {}
-        for part, ctrl, rz, rx, ry, ry_off in _PARTS:
+        for part, ctrl, nod, lean, twist, twist_off in _PARTS:
             self._ctrl_map[part] = ctrl
-            self._params['{}_rz'.format(part)] = rz
-            self._params['{}_rx'.format(part)] = rx
-            self._params['{}_ry'.format(part)] = ry
-            self._params['{}_ry_offset'.format(part)] = ry_off
+            self._params['{}_nod'.format(part)] = nod
+            self._params['{}_lean'.format(part)] = lean
+            self._params['{}_twist'.format(part)] = twist
+            self._params['{}_twist_offset'.format(part)] = twist_off
 
     def controls(self):
         return list(self._ctrl_map.values())
@@ -38,22 +45,22 @@ class WalkSecondary(Layer):
         p = self._params
         chs = []
         for part, ctrl in self._ctrl_map.items():
-            rz = p['{}_rz'.format(part)]
-            rx = p['{}_rx'.format(part)]
-            ry = p['{}_ry'.format(part)]
-            ry_off = p['{}_ry_offset'.format(part)]
+            nod = p['{}_nod'.format(part)]
+            lean = p['{}_lean'.format(part)]
+            twist = p['{}_twist'.format(part)]
+            twist_off = p['{}_twist_offset'.format(part)]
 
-            # rotateZ -- 3-point alternating (freq 1)
+            # rotateZ = nod (forward/back pitch) -- 3-point, once per cycle
             chs.append(Channel(ctrl, 'rotateZ', Wave.COSINE,
-                               amplitude=rz, frequency=1, n_points=3,
-                               label='{} rZ'.format(part)))
-            # rotateX -- 3-point alternating (freq 1)
-            chs.append(Channel(ctrl, 'rotateX', Wave.COSINE,
-                               amplitude=rx, frequency=1, n_points=3,
-                               label='{} rX'.format(part)))
-            # rotateY -- 5-point alternating (freq 2) with offset
+                               amplitude=nod, frequency=1, n_points=3,
+                               label='{} Nod'.format(part)))
+            # rotateY = lean (lateral side bend) -- 3-point, once per cycle
             chs.append(Channel(ctrl, 'rotateY', Wave.COSINE,
-                               amplitude=ry, offset=ry_off,
+                               amplitude=lean, frequency=1, n_points=3,
+                               label='{} Lean'.format(part)))
+            # rotateX = twist (axial roll) -- 5-point, twice per cycle
+            chs.append(Channel(ctrl, 'rotateX', Wave.COSINE,
+                               amplitude=twist, offset=twist_off,
                                frequency=2, n_points=5,
-                               label='{} rY'.format(part)))
+                               label='{} Twist'.format(part)))
         return chs
