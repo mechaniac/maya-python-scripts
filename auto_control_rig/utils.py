@@ -70,6 +70,16 @@ def shift_cvs(ctrl, dx=0, dy=0, dz=0):
             cmds.setAttr("{}.cp[{}]".format(shp, i), p[0] + dx, p[1] + dy, p[2] + dz)
 
 
+def rotate_cvs(ctrl, rx=0, ry=0, rz=0):
+    for shp in (cmds.listRelatives(ctrl, s=1, f=1) or []):
+        ncv = cmds.getAttr(shp + ".cp", size=1)
+        cvs = ["{}.cv[{}]".format(shp, i) for i in range(ncv)]
+        if cvs:
+            cmds.select(cvs, r=1)
+            cmds.rotate(rx, ry, rz, r=1, os=1)
+            cmds.select(cl=1)
+
+
 def sdk(driven_attr, driver_attr, keys):
     for dv, v in keys:
         cmds.setDrivenKeyframe(driven_attr, cd=driver_attr, dv=dv, v=v)

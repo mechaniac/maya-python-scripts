@@ -110,6 +110,10 @@ def _on_build(*a):
         "scale_taper": cmds.floatField(_ui["taper"], q=1, v=1),
         "show_debug": cmds.checkBox(_ui["dbg"], q=1, v=1),
         "create_twist_drivers": cmds.checkBox(_ui["twist"], q=1, v=1),
+        "create_fingers": cmds.checkBox(_ui["fingers"], q=1, v=1),
+        "create_eye_aim": cmds.checkBox(_ui["eye_aim"], q=1, v=1),
+        "create_eyelids": cmds.checkBox(_ui["eyelids"], q=1, v=1),
+        "create_ears": cmds.checkBox(_ui["ears"], q=1, v=1),
         "roll_start_angle": cmds.floatField(_ui["roll_start"], q=1, v=1),
         "roll_end_angle": cmds.floatField(_ui["roll_end"], q=1, v=1),
     }
@@ -193,6 +197,10 @@ def show_window():
     _ui["ik_s"] = cmds.checkBox(l="IK Spine", v=1)
     _ui["twist"] = cmds.checkBox(l="Twist Joints", v=1)
     _ui["dbg"] = cmds.checkBox(l="Show Debug", v=0)
+    _ui["fingers"] = cmds.checkBox(l="Fingers", v=1)
+    _ui["eye_aim"] = cmds.checkBox(l="Eye Aim", v=1)
+    _ui["eyelids"] = cmds.checkBox(l="Eyelids", v=1)
+    _ui["ears"] = cmds.checkBox(l="Ears", v=1)
     cmds.setParent("..")
     cmds.rowLayout(nc=2, cw2=(130, 100))
     cmds.text(l="Control Size:")

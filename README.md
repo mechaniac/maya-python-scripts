@@ -298,6 +298,12 @@ The script auto-maps the s&box Citizen skeleton joints to rig slots via case-ins
 | `knee_l/r` | Lower Leg | L/R | `calf_l` |
 | `foot_l/r` | Foot | L/R | `foot_l` |
 | `toe_l/r` | Toe | L/R | `ball_l` |
+| `eye_l/r` | Eye | L/R | `eye_l` |
+| `eyelid_upper_l/r` | Eyelid Upper | L/R | `eyelid_upper_l` |
+| `eyelid_lower_l/r` | Eyelid Lower | L/R | `eyelid_lower_l` |
+| `ear_l/r` | Ear | L/R | `ear_l` |
+
+**Fingers** are auto-discovered from child joints under the mapped wrist — no manual slot mapping needed. The system traces branches under each wrist and identifies thumb, index, middle, ring, and pinky chains by keyword matching.
 
 ### Controls Created
 
@@ -329,6 +335,13 @@ The script auto-maps the s&box Citizen skeleton joints to rig slots via case-ins
 | `FKIKSpine_M` | Diamond Curve | Spine FK/IK blend switch (`FKIKBlend` 0–10) |
 | `FKIKLeg_L/R` | Diamond Curve | Leg FK/IK blend switch (`FKIKBlend` 0–10) |
 | `FKIKArm_L/R` | Diamond Curve | Arm FK/IK blend switch (`FKIKBlend` 0–10) |
+| `Fingers_L/R` | Diamond Curve | Master finger control with `Curl`, `Spread`, per-finger curl attrs |
+| `FKFinger{Name}{Idx}_L/R` | NURBS Circle | Individual finger joint FK control (auto-discovered) |
+| `EyeAim_M` | Cross Curve | Master eye aim target, `EyelidFollow` (0–1), `Space` (Head/Root/World) |
+| `EyeAim_L/R` | Diamond Curve | Per-eye aim target (parented under EyeAim_M) |
+| `FKEyelidUpper_L/R` | NURBS Circle | Upper eyelid FK control |
+| `FKEyelidLower_L/R` | NURBS Circle | Lower eyelid FK control |
+| `FKEar_L/R` | NURBS Circle | Ear FK control |
 
 ### Build Options
 
@@ -342,6 +355,10 @@ The script auto-maps the s&box Citizen skeleton joints to rig slots via case-ins
 | FK/IK Blend | On | Create blend switches with visibility toggling and driver chain hiding |
 | Twist Joints | On | Create twist joint drivers for upper/lower arm and leg segments |
 | Show Debug | Off | Create debug locators on all driver joints and foot roll pivots |
+| Fingers | On | Auto-discover and create FK finger controls with master curl/spread |
+| Eye Aim | On | Create eye aim controls with per-eye targets and space switching |
+| Eyelids | On | Create FK eyelid controls with eye-follow blending |
+| Ears | On | Create FK ear controls |
 | Control Size | 1.0 | Global scale for all generated controls |
 | Scale Taper | 1.3 | FK chain controls taper larger toward root |
 
@@ -387,6 +404,40 @@ When **Twist Joints** is enabled, twist extraction joints are created for upper/
 ### Helper Joint Correctives
 
 Automatic corrective helper joints at elbows and knees that activate based on bend angle to maintain volume during extreme poses.
+
+### Finger Controls
+
+When **Fingers** is enabled, the builder auto-discovers finger joint chains under each mapped wrist joint. For each hand:
+
+- **`Fingers_L/R`** — Diamond-shaped master control positioned above the wrist. Provides:
+  - `Curl` (−10 to 10) — drives all fingers simultaneously along the Y axis (×9° per unit)
+  - `Spread` (−10 to 10) — fans fingers apart along the Z axis (weighted per finger: thumb −2.5, index −1.0, middle 0, ring 1.0, pinky 2.0)
+  - Per-finger `ThumbCurl`, `IndexCurl`, `MiddleCurl`, `RingCurl`, `PinkyCurl` — individual curl overrides that add to the master curl
+- **`FKFinger{Name}{Idx}_L/R`** — Individual FK circles per finger joint, parented in chains. Each has a driven `_curl` group for automated curl/spread, plus the FK control itself for manual posing on top.
+
+Finger controls remain visible and functional in both FK and IK arm modes. A `wristFollow` group blends between FK and IK wrist transforms so fingers always track the active hand.
+
+### Eye Aim
+
+When **Eye Aim** is enabled:
+
+- **`EyeAim_M`** — Cross-shaped master aim target, positioned in front of the head. Per-eye diamond targets (`EyeAim_L/R`) are parented under it.
+- **Aim constraint** on each eye driver joint uses auto-detected local axes (the builder queries the eye joint's world matrix at build time to find which axis points forward and which points up).
+- **`Space`** attribute (enum: Head / Root / World) — switches the aim target's parent space. Default is Head (eyes follow head rotation). Set to World for independent aiming.
+- **`EyelidFollow`** attribute (0–1, default 0.5) — controls how much the eyelids track the eye direction.
+
+### Eyelid Controls
+
+When **Eyelids** is enabled:
+
+- **`eyelidGrp_L/R`** — Per-eye group matching the eye driver's orientation, orient-constrained between a rest null (head space) and the eye driver joint. `EyelidFollow` on `EyeAim_M` blends the constraint weights.
+- **`FKEyelidUpper_L/R`**, **`FKEyelidLower_L/R`** — FK circles parented under the eyelid group. Manual rotations for blinks and expressions layer on top of the automatic eye-follow.
+
+### Ear Controls
+
+When **Ears** is enabled:
+
+- **`FKEar_L/R`** — FK circles parented under the head control for secondary ear animation.
 
 ### Post-Rig Utilities
 

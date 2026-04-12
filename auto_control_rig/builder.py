@@ -63,6 +63,11 @@ class AutoControlRigBuilder:
             if self.opts.get("create_ik_legs", True):
                 skeleton.build_ik_driver_leg(self, s)
 
+        # 1.6) Finger driver chains (auto-discovered under wrist)
+        if self.opts.get("create_fingers", True):
+            for s in "LR":
+                skeleton.build_finger_drivers(self, s)
+
         # 2) Controls
         controls.build_root(self)
         controls.build_fk_spine(self)
@@ -77,6 +82,18 @@ class AutoControlRigBuilder:
                 controls.build_ik_leg(self, s)
             if self.opts.get("create_ik_arms", True):
                 controls.build_ik_arm(self, s)
+
+        # 2.5) Fingers, eyes, eyelids, ears
+        if self.opts.get("create_fingers", True):
+            for s in "LR":
+                controls.build_fk_fingers(self, s)
+        if self.opts.get("create_eye_aim", True):
+            controls.build_eye_aim(self)
+        for s in "LR":
+            if self.opts.get("create_eyelids", True):
+                controls.build_fk_eyelids(self, s)
+            if self.opts.get("create_ears", True):
+                controls.build_fk_ears(self, s)
 
         # 3) Bind skin joints to driver
         self._bind_skin()

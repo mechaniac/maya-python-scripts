@@ -2,7 +2,11 @@ import maya.cmds as cmds
 import math
 
 from .constants import SLOT_TO_CTRL, COL_M, COL_IK, COL_R
-from .utils import pos, color, side_color, circle, box, cross, diamond, snap, offset, shift_cvs, pole_pos
+from .utils import pos, color, side_color, circle, box, cross, diamond, snap, offset, shift_cvs, rotate_cvs, pole_pos
+
+
+_SPREAD_WEIGHTS = {"thumb": -2.5, "index": -1.0, "middle": 0.0,
+                   "ring": 1.0, "pinky": 2.0}
 
 
 # ---------------------------------------------------------------------------
@@ -421,6 +425,14 @@ def build_fkik(builder, limb, side):
             if ctrl and cmds.objExists(ctrl):
                 for shp in cmds.listRelatives(ctrl, s=1) or []:
                     cmds.connectAttr(fk_vis + ".outColorR", shp + ".v")
+    elif limb == "Arm":
+        # Arm FK chain parents finger controls under FKWrist,
+        # so hide only the shape nodes to keep fingers visible.
+        for sl in blend_slots:
+            ctrl = SLOT_TO_CTRL.get(sl)
+            if ctrl and cmds.objExists(ctrl):
+                for shp in cmds.listRelatives(ctrl, s=1) or []:
+                    cmds.connectAttr(fk_vis + ".outColorR", shp + ".v")
     else:
         for sl in blend_slots:
             off = builder.fk_offsets.get(sl)
@@ -531,6 +543,29 @@ def build_spaces(builder):
                         [(main_ctrl, "Main"), ("RootX_M", "Root"),
                          (chest_target, "Chest"), ("FKHead_M", "Head")], 0)
 
+    # --- Wrist follow (FK/IK blended) for finger controls ---
+    for side in "LR":
+        s = side.lower()
+        fk_wrist = "FKWrist_" + side
+        ik_wrist = "IKArm_" + side
+        fingers_off = "Fingers_{}_offset".format(side)
+        fkik_norm = "fkikN_Arm_{}".format(side)
+        fkik_rev = "fkikR_Arm_{}".format(side)
+        if not (cmds.objExists(fingers_off) and cmds.objExists(fk_wrist)):
+            continue
+        if cmds.objExists(fkik_norm) and cmds.objExists(ik_wrist):
+            wf = cmds.group(em=1, n="wristFollow_" + side)
+            snap(wf, fk_wrist)
+            cmds.parent(wf, builder.ctrl_grp)
+            con = cmds.parentConstraint(fk_wrist, ik_wrist, wf, mo=1)[0]
+            w = cmds.parentConstraint(con, q=1, wal=1)
+            if len(w) >= 2:
+                cmds.connectAttr(fkik_rev + ".outputX",
+                                 "{}.{}".format(con, w[0]))
+                cmds.connectAttr(fkik_norm + ".outputX",
+                                 "{}.{}".format(con, w[1]))
+            cmds.parent(fingers_off, wf)
+
 
 def _build_ik_space(builder, ik_key, ctrl_name, targets, default_idx):
     offsets = builder.ik_offsets.get(ik_key, [])
@@ -564,3 +599,279 @@ def _build_ik_space(builder, ik_key, ctrl_name, targets, default_idx):
         cmds.setAttr(cond + ".colorIfTrueR", 1)
         cmds.setAttr(cond + ".colorIfFalseR", 0)
         cmds.connectAttr(cond + ".outColorR", "{}.{}".format(con, wa))
+
+
+# ---------------------------------------------------------------------------
+# FK Fingers (auto-discovered chains + master Curl / Spread)
+# ---------------------------------------------------------------------------
+def build_fk_fingers(builder, side):
+    chains = getattr(builder, "finger_chains", {}).get(side, {})
+    if not chains:
+        return
+
+    s = side.lower()
+    col = side_color(side)
+    wrist_ctrl = "FKWrist_" + side
+    par = wrist_ctrl if cmds.objExists(wrist_ctrl) else builder.ctrl_grp
+
+    # Master fingers control with Curl / Spread attributes
+    fingers_ctrl = diamond("Fingers_" + side, sz=builder.sz * 1.2)
+    wrist_dj = builder.dj.get("wrist_" + s)
+    if wrist_dj:
+        snap(fingers_ctrl, wrist_dj)
+        shift_cvs(fingers_ctrl, dy=builder.sz * 4)
+    color(fingers_ctrl, col)
+    fg_off = offset(fingers_ctrl)
+    cmds.parent(fg_off, par)
+
+    cmds.addAttr(fingers_ctrl, ln="Curl", at="float",
+                 min=-10, max=10, dv=0, k=1)
+    cmds.addAttr(fingers_ctrl, ln="Spread", at="float",
+                 min=-10, max=10, dv=0, k=1)
+
+    for fname, slots in chains.items():
+        tag = fname.capitalize()
+        cmds.addAttr(fingers_ctrl, ln=tag + "Curl", at="float",
+                     min=-10, max=10, dv=0, k=1)
+
+        finger_par = fingers_ctrl
+        for i, slot in enumerate(slots):
+            dj = builder.dj.get(slot)
+            if not dj:
+                continue
+
+            ctrl_name = "FKFinger{}{}_{}" .format(tag, i, side)
+            r = builder.sz * 1.0 * (builder.taper ** max(0, len(slots) - 1 - i))
+            c = circle(ctrl_name, r=r, n=(1, 0, 0))
+            snap(c, dj)
+            color(c, col)
+            o = offset(c)
+
+            # Insert a driven group between offset and control for curl/spread
+            curl_grp = cmds.group(em=1, n=ctrl_name + "_curl", p=o)
+            cmds.parent(c, curl_grp)
+
+            cmds.parent(o, finger_par)
+            builder.fk_offsets[slot] = o
+            cmds.parentConstraint(c, dj, mo=1)
+            finger_par = c
+
+            # Curl: (master + per-finger) × 9 → curl_grp.rz
+            pma = cmds.createNode("plusMinusAverage",
+                                  n="curlSum_{}".format(ctrl_name))
+            md_m = cmds.createNode("multiplyDivide",
+                                   n="curlM_{}".format(ctrl_name))
+            cmds.setAttr(md_m + ".input2X", 9.0)
+            cmds.connectAttr(fingers_ctrl + ".Curl", md_m + ".input1X")
+            cmds.connectAttr(md_m + ".outputX", pma + ".input1D[0]")
+
+            md_f = cmds.createNode("multiplyDivide",
+                                   n="curlF_{}".format(ctrl_name))
+            cmds.setAttr(md_f + ".input2X", 9.0)
+            cmds.connectAttr(fingers_ctrl + "." + tag + "Curl",
+                             md_f + ".input1X")
+            cmds.connectAttr(md_f + ".outputX", pma + ".input1D[1]")
+
+            cmds.connectAttr(pma + ".output1D", curl_grp + ".rotateY")
+
+            # Spread: first joint in each finger only
+            if i == 0:
+                sw = _SPREAD_WEIGHTS.get(fname, 0.0)
+                if sw != 0.0:
+                    md_s = cmds.createNode("multiplyDivide",
+                                           n="spread_{}".format(ctrl_name))
+                    cmds.setAttr(md_s + ".input2X", sw)
+                    cmds.connectAttr(fingers_ctrl + ".Spread",
+                                     md_s + ".input1X")
+                    cmds.connectAttr(md_s + ".outputX",
+                                     curl_grp + ".rotateZ")
+
+
+# ---------------------------------------------------------------------------
+# Eye Aim
+# ---------------------------------------------------------------------------
+def build_eye_aim(builder):
+    eye_l_dj = builder.dj.get("eye_l")
+    eye_r_dj = builder.dj.get("eye_r")
+    if not eye_l_dj and not eye_r_dj:
+        return
+
+    head_dj = builder.dj.get("head")
+    head_ctrl = "FKHead_M" if cmds.objExists("FKHead_M") else builder.ctrl_grp
+
+    # Compute aim target position: centered between eyes, projected forward
+    eyes = [dj for dj in (eye_l_dj, eye_r_dj) if dj]
+    positions = [pos(e) for e in eyes]
+    mid = [sum(p[i] for p in positions) / len(positions) for i in range(3)]
+
+    aim_dist = builder.sz * 30
+    aim_master = cross("EyeAim_M", sz=builder.sz * 2)
+    cmds.xform(aim_master, ws=1, t=(mid[0], mid[1], mid[2] + aim_dist))
+    color(aim_master, COL_M)
+    aim_off = offset(aim_master)
+
+    # Space switching: Head (default) / Root / World
+    main_ctrl = getattr(builder, "main", "Main_M")
+    root_ctrl = "RootX_M"
+    space_grp = cmds.group(em=1, n="space_EyeAim_M")
+    cmds.parent(space_grp, builder.ctrl_grp)
+    cmds.parent(aim_off, space_grp)
+
+    targets = [(t, lbl) for t, lbl in [
+        (head_ctrl, "Head"), (root_ctrl, "Root"), (main_ctrl, "World"),
+    ] if cmds.objExists(t)]
+    if targets:
+        enum_str = ":".join(lbl for _, lbl in targets)
+        cmds.addAttr(aim_master, ln="Space", at="enum", en=enum_str, dv=0, k=1)
+        target_nodes = [t for t, _ in targets]
+        con = cmds.parentConstraint(*target_nodes, space_grp, mo=1)[0]
+        w = cmds.parentConstraint(con, q=1, wal=1)
+        for i, wa in enumerate(w):
+            cond = cmds.createNode("condition",
+                                   n="spaceCond_EyeAim_{}".format(targets[i][1]))
+            cmds.connectAttr(aim_master + ".Space", cond + ".firstTerm")
+            cmds.setAttr(cond + ".secondTerm", i)
+            cmds.setAttr(cond + ".operation", 0)
+            cmds.setAttr(cond + ".colorIfTrueR", 1)
+            cmds.setAttr(cond + ".colorIfFalseR", 0)
+            cmds.connectAttr(cond + ".outColorR", "{}.{}".format(con, wa))
+
+    cmds.addAttr(aim_master, ln="EyelidFollow", at="float",
+                 min=0, max=1, dv=0.5, k=1)
+
+    for side_char in "LR":
+        s = side_char.lower()
+        eye_dj = builder.dj.get("eye_" + s)
+        if not eye_dj:
+            continue
+
+        eye_p = pos(eye_dj)
+        tgt = diamond("EyeAim_" + side_char, sz=builder.sz * 0.8)
+        cmds.xform(tgt, ws=1, t=(eye_p[0], eye_p[1], mid[2] + aim_dist))
+        color(tgt, side_color(side_char))
+        to = offset(tgt)
+        cmds.parent(to, aim_master)
+
+        # Determine which local axis of the eye joint points toward the
+        # aim target so the aimConstraint uses the correct vector.
+        tgt_p = pos(tgt)
+        aim_ws = [tgt_p[i] - eye_p[i] for i in range(3)]
+        aim_len = math.sqrt(sum(d * d for d in aim_ws)) or 1.0
+        aim_ws = [d / aim_len for d in aim_ws]
+
+        # Get the eye joint's local-axis directions in world space
+        m = cmds.xform(eye_dj, q=1, ws=1, m=1)  # 4x4 row-major
+        axes = [
+            (m[0], m[1], m[2]),    # +X
+            (m[4], m[5], m[6]),    # +Y
+            (m[8], m[9], m[10]),   # +Z
+        ]
+        best_ax = 0
+        best_dot = 0
+        for i, ax in enumerate(axes):
+            d = sum(ax[j] * aim_ws[j] for j in range(3))
+            if abs(d) > abs(best_dot):
+                best_dot = d
+                best_ax = i
+        aim_vec = [0, 0, 0]
+        aim_vec[best_ax] = 1.0 if best_dot > 0 else -1.0
+
+        # Up vector: pick the axis closest to world-Y that isn't the aim axis
+        world_up = [0, 1, 0]
+        up_ax = 0
+        up_dot = 0
+        for i, ax in enumerate(axes):
+            if i == best_ax:
+                continue
+            d = sum(ax[j] * world_up[j] for j in range(3))
+            if abs(d) > abs(up_dot):
+                up_dot = d
+                up_ax = i
+        up_vec = [0, 0, 0]
+        up_vec[up_ax] = 1.0 if up_dot > 0 else -1.0
+
+        cmds.aimConstraint(
+            tgt, eye_dj, mo=1,
+            aimVector=aim_vec, upVector=up_vec,
+            worldUpType="object",
+            worldUpVector=(0, 1, 0),
+            worldUpObject=head_ctrl,
+        )
+
+
+# ---------------------------------------------------------------------------
+# FK Eyelids
+# ---------------------------------------------------------------------------
+def build_fk_eyelids(builder, side):
+    s = side.lower()
+    col = side_color(side)
+    head_ctrl = "FKHead_M" if cmds.objExists("FKHead_M") else builder.ctrl_grp
+    eye_dj = builder.dj.get("eye_" + s)
+    aim_master = "EyeAim_M"
+
+    # Both eyelidGrp and eyelidRest must share the eye driver's rest
+    # orientation so the orient-constraint blends in the same space.
+    lid_grp = cmds.group(em=1, n="eyelidGrp_" + side, p=head_ctrl)
+    if eye_dj:
+        cmds.xform(lid_grp, ws=1,
+                    t=pos(eye_dj),
+                    ro=cmds.xform(eye_dj, q=1, ws=1, ro=1))
+
+    if eye_dj and cmds.objExists(aim_master):
+        rest_null = cmds.group(em=1, n="eyelidRest_" + side, p=head_ctrl)
+        cmds.xform(rest_null, ws=1,
+                    t=pos(eye_dj),
+                    ro=cmds.xform(eye_dj, q=1, ws=1, ro=1))
+
+        oc = cmds.orientConstraint(rest_null, eye_dj, lid_grp, mo=1)[0]
+        cmds.setAttr(oc + ".interpType", 2)  # shortest
+        w = cmds.orientConstraint(oc, q=1, wal=1)
+        if len(w) >= 2:
+            rev = cmds.createNode("reverse", n="lidFollowRev_" + side)
+            cmds.connectAttr(aim_master + ".EyelidFollow", rev + ".inputX")
+            cmds.connectAttr(rev + ".outputX",
+                             "{}.{}".format(oc, w[0]))
+            cmds.connectAttr(aim_master + ".EyelidFollow",
+                             "{}.{}".format(oc, w[1]))
+
+    for part in ("upper", "lower"):
+        slot = "eyelid_{}_{}".format(part, s)
+        dj = builder.dj.get(slot)
+        if not dj:
+            continue
+        tag = part.capitalize()
+        ctrl_name = "FKEyelid{}_{}".format(tag, side)
+        c = circle(ctrl_name, r=builder.sz * 1.6, n=(0, 1, 0))
+        snap(c, dj)
+        if part == "upper":
+            rotate_cvs(c, rz=-30)
+        else:
+            rotate_cvs(c, rz=90)
+        color(c, col)
+        o = offset(c)
+        cmds.parent(o, lid_grp)
+        builder.fk_offsets[slot] = o
+        cmds.parentConstraint(c, dj, mo=1)
+
+
+# ---------------------------------------------------------------------------
+# FK Ears
+# ---------------------------------------------------------------------------
+def build_fk_ears(builder, side):
+    s = side.lower()
+    slot = "ear_" + s
+    dj = builder.dj.get(slot)
+    if not dj:
+        return
+
+    col = side_color(side)
+    head_ctrl = "FKHead_M" if cmds.objExists("FKHead_M") else builder.ctrl_grp
+
+    c = circle("FKEar_" + side, r=builder.sz * 2.4, n=(0, 0, 1))
+    snap(c, dj)
+    rotate_cvs(c, rx=90)
+    color(c, col)
+    o = offset(c)
+    cmds.parent(o, head_ctrl)
+    builder.fk_offsets[slot] = o
+    cmds.parentConstraint(c, dj, mo=1)

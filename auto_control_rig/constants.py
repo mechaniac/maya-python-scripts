@@ -23,6 +23,14 @@ SLOT_DEFS = [
     ("knee_r",     "Lower Leg R",          "R", ["calf_r","r_calf","lowerleg_r","shin_r","rightleg"]),
     ("foot_r",     "Foot R",               "R", ["foot_r","r_foot","rightfoot"]),
     ("toe_r",      "Toe R",                "R", ["toe_r","r_toe","ball_r","righttoebase"]),
+    ("eye_l",      "Eye L",                "L", ["eye_l","l_eye","lefteye"]),
+    ("eye_r",      "Eye R",                "R", ["eye_r","r_eye","righteye"]),
+    ("eyelid_upper_l", "Eyelid Upper L",   "L", ["eyelid_upper_l","lid_upper_l","upperlid_l"]),
+    ("eyelid_lower_l", "Eyelid Lower L",   "L", ["eyelid_lower_l","lid_lower_l","lowerlid_l"]),
+    ("eyelid_upper_r", "Eyelid Upper R",   "R", ["eyelid_upper_r","lid_upper_r","upperlid_r"]),
+    ("eyelid_lower_r", "Eyelid Lower R",   "R", ["eyelid_lower_r","lid_lower_r","lowerlid_r"]),
+    ("ear_l",      "Ear L",                "L", ["ear_l","l_ear","leftear"]),
+    ("ear_r",      "Ear R",                "R", ["ear_r","r_ear","rightear"]),
 ]
 
 SLOT_TO_CTRL = {
@@ -35,7 +43,13 @@ SLOT_TO_CTRL = {
     "elbow_r": "FKElbow_R", "wrist_r": "FKWrist_R",
     "hip_l": "FKHip_L", "knee_l": "FKKnee_L", "foot_l": "FKFoot_L", "toe_l": "FKToe_L",
     "hip_r": "FKHip_R", "knee_r": "FKKnee_R", "foot_r": "FKFoot_R", "toe_r": "FKToe_R",
+    "eye_l": "EyeAim_L", "eye_r": "EyeAim_R",
+    "eyelid_upper_l": "FKEyelidUpper_L", "eyelid_lower_l": "FKEyelidLower_L",
+    "eyelid_upper_r": "FKEyelidUpper_R", "eyelid_lower_r": "FKEyelidLower_R",
+    "ear_l": "FKEar_L", "ear_r": "FKEar_R",
 }
+
+FINGER_NAMES = ("thumb", "index", "middle", "ring", "pinky")
 
 COL_L = 13
 COL_R = 6

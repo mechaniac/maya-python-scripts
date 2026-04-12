@@ -2,6 +2,7 @@ import maya.cmds as cmds
 import math
 
 from .utils import pos
+from .constants import FINGER_NAMES
 
 
 def make_driver_joint(skin_jnt, name, parent):
@@ -165,3 +166,85 @@ def build_driver_skeleton(builder):
         S = s.upper()
         _driver_arm(builder, s, S)
         _driver_leg(builder, s, S)
+
+    # Eyes, eyelids, ears — parented under head driver
+    head = builder.dj.get("head", builder.drv_grp)
+    for sl in ("eye_l", "eye_r",
+               "eyelid_upper_l", "eyelid_lower_l",
+               "eyelid_upper_r", "eyelid_lower_r",
+               "ear_l", "ear_r"):
+        _drv(builder, sl, head)
+
+
+# ---------------------------------------------------------------------------
+# Finger driver chains (auto-discovered from wrist descendants)
+# ---------------------------------------------------------------------------
+def build_finger_drivers(builder, side):
+    """Auto-discover finger joints under wrist and create driver chains."""
+    s = side.lower()
+    wrist_skin = builder.m.get("wrist_" + s, "")
+    if not wrist_skin or not cmds.objExists(wrist_skin):
+        return
+    wrist_drv = builder.dj.get("wrist_" + s)
+    if not wrist_drv:
+        return
+
+    fingers = _discover_fingers(wrist_skin)
+    if not hasattr(builder, "finger_chains"):
+        builder.finger_chains = {}
+    builder.finger_chains[side] = {}
+
+    for fname, skin_chain in fingers.items():
+        drv_chain = []
+        par = wrist_drv
+        for idx, jnt in enumerate(skin_chain):
+            slot = "finger_{}_{}_{}".format(fname, idx, s)
+            dj = make_driver_joint(jnt, "drv_" + slot, par)
+            cmds.xform(dj, ws=1, ro=cmds.xform(jnt, q=1, ws=1, ro=1))
+            cmds.makeIdentity(dj, a=1, r=1)
+            builder.dj[slot] = dj
+            builder.m[slot] = jnt
+            drv_chain.append(slot)
+            par = dj
+        builder.finger_chains[side][fname] = drv_chain
+
+
+def _discover_fingers(wrist_skin):
+    """Find finger chains as branches under the wrist joint."""
+    children = cmds.listRelatives(wrist_skin, c=True, type="joint") or []
+    kw_map = {
+        "thumb": ["thumb"],
+        "index": ["index"],
+        "middle": ["middle", "mid"],
+        "ring": ["ring"],
+        "pinky": ["pinky", "little"],
+    }
+    fingers = {}
+    for child in children:
+        chain = _trace_chain(child)
+        if len(chain) < 2:
+            continue
+        name = None
+        for fn in FINGER_NAMES:
+            for jnt in chain:
+                if any(kw in jnt.lower() for kw in kw_map.get(fn, [])):
+                    name = fn
+                    break
+            if name:
+                break
+        if name and name not in fingers:
+            fingers[name] = chain
+    return fingers
+
+
+def _trace_chain(root):
+    """Follow first-child joints to build a linear chain."""
+    chain = [root]
+    cur = root
+    while True:
+        ch = cmds.listRelatives(cur, c=True, type="joint") or []
+        if not ch:
+            break
+        chain.append(ch[0])
+        cur = ch[0]
+    return chain
