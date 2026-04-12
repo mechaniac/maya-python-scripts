@@ -34,6 +34,12 @@ class WalkPrimary(Layer):
     def controls(self):
         return ['IKLeg_R', 'IKLeg_L', 'HipSwinger_M', 'RootX_M']
 
+    def fkik_state(self):
+        return {
+            'FKIKLeg_L': 0,   # full IK
+            'FKIKLeg_R': 0,
+        }
+
     def channels(self):
         p = self._params
         chs = []

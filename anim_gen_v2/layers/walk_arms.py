@@ -38,6 +38,12 @@ class WalkArms(Layer):
             'FKScapula_L', 'FKShoulder_L', 'FKElbow_L', 'FKWrist_L',
         ]
 
+    def fkik_state(self):
+        return {
+            'FKIKArm_L': 10,   # full FK
+            'FKIKArm_R': 10,
+        }
+
     def _arm_channels(self, side, phase):
         """Build channels for one arm.  *phase* = 0 for R, 0.5 for L."""
         p = self._params

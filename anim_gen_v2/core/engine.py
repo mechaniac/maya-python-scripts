@@ -71,6 +71,36 @@ def _set_key(node, attr, t, v):
         print('!! key failed {}.{} @ {}: {}'.format(node, attr, t, e))
 
 
+# ── FKIK blend keying ──
+
+def _key_fkik(layers):
+    """Set and key FKIKBlend attributes required by each enabled layer.
+
+    Keyed at start and end of the playback range so the blend holds
+    for the entire cycle.  Also sets the attribute value immediately
+    so the correct controls are visible during generation.
+    """
+    start, end = timeline_range()
+    merged = {}
+    for layer in layers:
+        if not layer.enabled:
+            continue
+        merged.update(layer.fkik_state())
+    for ctrl_name, value in merged.items():
+        node = resolver.resolve(ctrl_name)
+        if not node or not cmds.objExists(node):
+            continue
+        if not cmds.attributeQuery('FKIKBlend', node=node, exists=True):
+            continue
+        full = '{}.FKIKBlend'.format(node)
+        try:
+            cmds.setAttr(full, value)
+            cmds.setKeyframe(node, at='FKIKBlend', t=start, v=float(value))
+            cmds.setKeyframe(node, at='FKIKBlend', t=end, v=float(value))
+        except Exception as e:
+            print('!! FKIK key failed {}: {}'.format(full, e))
+
+
 # ── batch keying ──
 
 def _key_all(channels):
@@ -116,6 +146,7 @@ def generate(layers, clear=True):
     cmds.undoInfo(openChunk=True, chunkName='AnimGenV2')
     try:
         saved = cmds.currentTime(q=True)
+        _key_fkik(layers)
         if clear:
             clear_keys(list(ctrls))
         _key_all(channels)
