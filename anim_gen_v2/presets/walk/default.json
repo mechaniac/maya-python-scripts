@@ -1,0 +1,53 @@
+{
+  "meta": {
+    "type": "walk",
+    "name": "Default",
+    "description": "Standard walk cycle defaults",
+    "author": "chris",
+    "date": "2026-04-12"
+  },
+  "primary": {
+    "stride": 10.0,
+    "stride_width": 2.0,
+    "stride_height": 4.0,
+    "foot_raise": 10.0,
+    "hip_nod": 10.0,
+    "hip_lean": 5.0,
+    "hip_twist": 0.0,
+    "root_bounce": 1.5,
+    "root_nod": 1.0,
+    "root_lean": 2.0,
+    "root_twist": 0.0,
+    "root_lr": 0.0,
+    "root_bf": 0.0,
+    "bounce_offset": 0.0,
+    "root_nod_offset": 0.0
+  },
+  "secondary": {
+    "spine1_nod": 5.0,
+    "spine1_lean": 2.0,
+    "spine1_twist": 1.5,
+    "spine1_nod_offset": 0.0,
+    "chest_nod": 7.0,
+    "chest_lean": 3.0,
+    "chest_twist": 2.0,
+    "chest_nod_offset": 0.0,
+    "neck_nod": 4.0,
+    "neck_lean": 2.0,
+    "neck_twist": 1.0,
+    "neck_nod_offset": 0.0,
+    "head_nod": 3.0,
+    "head_lean": 1.5,
+    "head_twist": 1.5,
+    "head_nod_offset": 0.0
+  },
+  "arms": {
+    "shoulder_droop": -30.0,
+    "scapula_droop": -15.0,
+    "shoulder_swing": 20.0,
+    "shoulder_twist": 0.0,
+    "scapula_swing": 8.0,
+    "elbow_bend": 12.0,
+    "wrist_swing": 6.0
+  }
+}

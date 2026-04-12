@@ -292,15 +292,30 @@ class AnimGenWindow:
                       changeCommand=lambda val: self._toggle_auto(val))
         cmds.setParent('..')
 
+        # ── preset section ──
         cmds.separator(height=8, style='in')
-        cmds.rowLayout(numberOfColumns=3, columnWidth3=(200, 200, 200),
-                       adjustableColumn=3)
-        cmds.button(label='Save Preset',
-                    command=lambda *_: self._save_preset())
-        cmds.button(label='Load Preset',
-                    command=lambda *_: self._load_preset())
+        cmds.text(label='  Presets', align='left', font='boldLabelFont')
+
+        cmds.rowLayout(numberOfColumns=3, columnWidth3=(300, 160, 160),
+                       adjustableColumn=1)
+        self._preset_menu = cmds.optionMenu(label='', changeCommand=lambda *_: None)
+        self._refresh_preset_list()
+        cmds.button(label='Load Selected',
+                    command=lambda *_: self._load_selected_preset())
         cmds.button(label='Print Settings',
                     command=lambda *_: self._print_settings())
+        cmds.setParent('..')
+
+        cmds.rowLayout(numberOfColumns=4, columnWidth4=(155, 155, 155, 155),
+                       adjustableColumn=4)
+        cmds.button(label='Save to Library',
+                    command=lambda *_: self._save_to_library())
+        cmds.button(label='Save to Project',
+                    command=lambda *_: self._save_to_project())
+        cmds.button(label='Save As...',
+                    command=lambda *_: self._save_preset_browse())
+        cmds.button(label='Load File...',
+                    command=lambda *_: self._load_preset_browse())
         cmds.setParent('..')
 
     # ──────────────────────────────────────────────
@@ -362,13 +377,74 @@ class AnimGenWindow:
             'arms': self.walk_arms.params(),
         }
 
-    def _save_preset(self):
+    # ── preset callbacks ──
+
+    def _refresh_preset_list(self):
+        """Rebuild the preset dropdown from library + project presets."""
+        # Remove existing items
+        existing = cmds.optionMenu(self._preset_menu, q=True, ill=True) or []
+        for item in existing:
+            cmds.deleteUI(item)
+        # Populate
+        self._preset_entries = presets.list_presets('walk')
+        for entry in self._preset_entries:
+            tag = '[lib]' if entry['source'] == 'library' else '[proj]'
+            cmds.menuItem(label='{} {}'.format(tag, entry['name']),
+                          parent=self._preset_menu)
+        if not self._preset_entries:
+            cmds.menuItem(label='(no presets found)', parent=self._preset_menu)
+
+    def _load_selected_preset(self):
+        """Load the preset currently selected in the dropdown."""
+        if not self._preset_entries:
+            return
+        idx = cmds.optionMenu(self._preset_menu, q=True, sl=True) - 1
+        if idx < 0 or idx >= len(self._preset_entries):
+            return
+        data = presets.load(self._preset_entries[idx]['path'])
+        self._apply_preset_data(data)
+
+    def _prompt_name(self, title='Preset Name'):
+        """Prompt user for a preset name.  Returns the name or None."""
+        result = cmds.promptDialog(title=title, message='Preset name:',
+                                   button=['OK', 'Cancel'],
+                                   defaultButton='OK',
+                                   cancelButton='Cancel',
+                                   dismissString='Cancel')
+        if result != 'OK':
+            return None
+        name = cmds.promptDialog(q=True, text=True).strip()
+        return name if name else None
+
+    def _save_to_library(self):
+        name = self._prompt_name('Save to Library')
+        if not name:
+            return
+        path = presets.save_to_library(self._all_params(), name)
+        if path:
+            print('// Saved to library: {}'.format(path))
+            self._refresh_preset_list()
+
+    def _save_to_project(self):
+        name = self._prompt_name('Save to Project')
+        if not name:
+            return
+        path = presets.save_to_project(self._all_params(), name)
+        if path:
+            print('// Saved to project: {}'.format(path))
+            self._refresh_preset_list()
+
+    def _save_preset_browse(self):
         presets.browse_save(self._all_params())
 
-    def _load_preset(self):
+    def _load_preset_browse(self):
         data = presets.browse_load()
         if not data:
             return
+        self._apply_preset_data(data)
+
+    def _apply_preset_data(self, data):
+        """Apply a loaded preset dict to all layers and refresh the UI."""
         if 'primary' in data:
             self.walk_primary.set_params(data['primary'])
         if 'secondary' in data:
