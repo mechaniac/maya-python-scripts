@@ -160,8 +160,8 @@ class AnimGenWindow:
         self._row('Hip Twist  rX', 'hip_twist', d['hip_twist'], CLR_X, ctrls=hip)
 
         cmds.separator(height=8, style='in')
-        self._two_col('Bounce  tY', 'root_bounce', d['root_bounce'], CLR_Y,
-                       'Bounce Offset', 'bounce_offset', d['bounce_offset'], CLR_Y,
+        self._two_col('Bounce  tZ', 'root_bounce', d['root_bounce'], CLR_Z,
+                       'Bounce Offset', 'bounce_offset', d['bounce_offset'], CLR_Z,
                        ctrls1=root, ctrls2=root)
         self._two_col('Nod  rZ', 'root_nod', d['root_nod'], CLR_Z,
                        'Nod Offset', 'root_nod_offset', d['root_nod_offset'], CLR_Z,
@@ -170,7 +170,7 @@ class AnimGenWindow:
                        'Twist  rX', 'root_twist', d['root_twist'], CLR_X,
                        ctrls1=root, ctrls2=root)
         self._two_col('Left-Right  tX', 'root_lr', d['root_lr'], CLR_X,
-                       'Back-Forth  tZ', 'root_bf', d['root_bf'], CLR_Z,
+                       'Back-Forth  tY', 'root_bf', d['root_bf'], CLR_Y,
                        ctrls1=root, ctrls2=root)
 
         cmds.separator(height=6, style='none')

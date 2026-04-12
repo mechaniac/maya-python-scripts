@@ -102,20 +102,23 @@ class WalkPrimary(Layer):
                            label='Hip Twist'))
 
         # ── root bounce ── freq-2 cosine (two bounces per cycle)
-        chs.append(Channel('RootX_M', 'translateY', Wave.COSINE,
+        # Joint-aligned: local Z = up/down
+        chs.append(Channel('RootX_M', 'translateZ', Wave.COSINE,
                            amplitude=p['root_bounce'],
                            offset=p['bounce_offset'],
                            frequency=2, n_points=5,
                            label='Bounce'))
 
-        # ── root left-right ── freq-1 cosine at 5 points
+        # ── root left-right ── side movement, freq-1, 3-point
+        # Joint-aligned: local X = left/right
         chs.append(Channel('RootX_M', 'translateX', Wave.COSINE,
                            amplitude=p['root_lr'],
-                           frequency=1, n_points=5,
+                           frequency=1, n_points=3,
                            label='Root LR'))
 
         # ── root back-forth ── freq-2 cosine at 5 points
-        chs.append(Channel('RootX_M', 'translateZ', Wave.COSINE,
+        # Joint-aligned: local Y = forward/back
+        chs.append(Channel('RootX_M', 'translateY', Wave.COSINE,
                            amplitude=p['root_bf'],
                            frequency=2, n_points=5,
                            label='Root BF'))
