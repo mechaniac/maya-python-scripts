@@ -163,10 +163,10 @@ class AnimGenWindow:
                        'Bounce Offset', 'bounce_offset', d['bounce_offset'], CLR_Y,
                        ctrls1=root, ctrls2=root)
         self._two_col('Sway  rY', 'root_sway', d['root_sway'], CLR_Y,
-                       'Rock  rX', 'root_rock', d['root_rock'], CLR_X,
+                       'Rock  rZ', 'root_rock', d['root_rock'], CLR_Z,
                        ctrls1=root, ctrls2=root)
-        self._two_col('Twist  rZ', 'root_twist', d['root_twist'], CLR_Z,
-                       'Rock Offset', 'rock_offset', d['rock_offset'], CLR_X,
+        self._two_col('Twist  rX', 'root_twist', d['root_twist'], CLR_X,
+                       'Rock Offset', 'rock_offset', d['rock_offset'], CLR_Z,
                        ctrls1=root, ctrls2=root)
         self._two_col('Left-Right  tX', 'root_lr', d['root_lr'], CLR_X,
                        'Back-Forth  tZ', 'root_bf', d['root_bf'], CLR_Z,

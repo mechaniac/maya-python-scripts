@@ -84,13 +84,14 @@ class WalkPrimary(Layer):
                            sample_at=[0, 0.25, 0.375, 0.5, 0.75, 1.0],
                            label='L Foot Raise'))
 
-        # ── hip swing / sway ── 3-point alternating
-        # HipSwinger_M is world-aligned:
-        #   rotateX = pitch (forward/back tilt)
-        #   rotateY = yaw   (left/right turn)
-        #   rotateZ = roll  (side tilt)
+        # ── hip swing / sway ──
+        # HipSwinger_M now joint-aligned (same as FK spine):
+        #   rotateX = twist (axial roll)
+        #   rotateY = lean  (lateral side bend)
+        #   rotateZ = nod   (forward/back pitch)
         chs.append(Channel('HipSwinger_M', 'rotateZ', Wave.COSINE,
-                           amplitude=p['hip_swing'], n_points=3,
+                           amplitude=p['hip_swing'],
+                           frequency=2, n_points=5,
                            label='Hip Swing'))
         chs.append(Channel('HipSwinger_M', 'rotateY', Wave.COSINE,
                            amplitude=p['hip_sway'], n_points=3,
@@ -116,7 +117,9 @@ class WalkPrimary(Layer):
                            label='Root BF'))
 
         # ── root rock / sway / twist ──
-        chs.append(Channel('RootX_M', 'rotateX', Wave.COSINE,
+        # RootX_M now joint-aligned (same as FK spine):
+        #   rotateX = twist, rotateY = lean/sway, rotateZ = nod/rock
+        chs.append(Channel('RootX_M', 'rotateZ', Wave.COSINE,
                            amplitude=p['root_rock'],
                            offset=p['rock_offset'],
                            frequency=2, n_points=5,
@@ -125,7 +128,7 @@ class WalkPrimary(Layer):
                            amplitude=p['root_sway'],
                            frequency=1, n_points=3,
                            label='Root Sway'))
-        chs.append(Channel('RootX_M', 'rotateZ', Wave.COSINE,
+        chs.append(Channel('RootX_M', 'rotateX', Wave.COSINE,
                            amplitude=p['root_twist'],
                            frequency=1, n_points=3,
                            label='Root Twist'))

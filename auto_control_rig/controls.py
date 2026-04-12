@@ -30,18 +30,16 @@ def build_root(builder):
     dj = builder.dj.get("root")
     if not dj:
         return
-    c = circle("RootX_M", r=builder.sz * 8)
+    c = circle("RootX_M", r=builder.sz * 8, n=(1, 0, 0))
     snap(c, dj)
     color(c, COL_M)
-    cmds.xform(c, ws=1, ro=(0, 0, 0))
     o = offset(c)
     cmds.parent(o, builder.ctrl_grp)
     cmds.pointConstraint(c, dj, mo=1)
 
-    h = circle("HipSwinger_M", r=builder.sz * 5)
+    h = circle("HipSwinger_M", r=builder.sz * 5, n=(1, 0, 0))
     snap(h, dj)
     color(h, COL_M)
-    cmds.xform(h, ws=1, ro=(0, 0, 0))
     ho = offset(h)
     cmds.parent(ho, c)
     cmds.orientConstraint(h, dj, mo=1)
