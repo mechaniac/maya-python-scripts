@@ -37,8 +37,6 @@ class AnimGenWindow:
         self.walk_secondary = WalkSecondary()
         self.walk_arms = WalkArms()
         self._fields = {}        # key -> widget handle
-        self._plain_fields = set()  # keys using floatField (vs floatSliderGrp)
-        self._nod_keys = set()      # plain-field keys with self-managed sync
         self._auto_update = False
         self._mute_cbs = {}      # section_name -> checkBox
 
@@ -91,77 +89,14 @@ class AnimGenWindow:
         self._fields[key] = f
         return f
 
-    def _nod_range(self, key_back, key_front, def_back, def_front, color=None):
-        """Single range slider (floatSlider2) with back/front handles."""
-        form = cmds.formLayout(height=26)
-        lbl = cmds.text(label='Nod  rZ', width=80, align='left')
-        fb = cmds.floatField(v=def_back, precision=1, width=50)
-        ff = cmds.floatField(v=def_front, precision=1, width=50)
-        sl = cmds.floatSlider2(minimum=-60, maximum=60,
-                               value1=def_back, value2=def_front)
-
-        # Bidirectional sync — slider handles ↔ float fields
-        def _sl_changed(*_):
-            cmds.floatField(fb, e=True,
-                            v=cmds.floatSlider2(sl, q=True, value1=True))
-            cmds.floatField(ff, e=True,
-                            v=cmds.floatSlider2(sl, q=True, value2=True))
-            if self._auto_update:
-                self._generate()
-
-        def _fb_changed(val):
-            cmds.floatSlider2(sl, e=True, value1=val)
-            if self._auto_update:
-                self._generate()
-
-        def _ff_changed(val):
-            cmds.floatSlider2(sl, e=True, value2=val)
-            if self._auto_update:
-                self._generate()
-
-        cmds.floatSlider2(sl, e=True,
-                          changeCommand1=_sl_changed,
-                          changeCommand2=_sl_changed)
-        cmds.floatField(fb, e=True, changeCommand=_fb_changed)
-        cmds.floatField(ff, e=True, changeCommand=_ff_changed)
-
-        cmds.formLayout(form, e=True,
-            attachForm=[(lbl, 'left', 0), (lbl, 'top', 3),
-                        (fb, 'top', 0),
-                        (ff, 'top', 0), (ff, 'right', 0),
-                        (sl, 'top', 2)],
-            attachNone=[(lbl, 'right'), (fb, 'right'),
-                        (ff, 'left')],
-            attachControl=[(fb, 'left', 4, lbl),
-                           (sl, 'left', 2, fb),
-                           (sl, 'right', 2, ff)])
-        cmds.setParent('..')
-        self._fields[key_back] = fb
-        self._fields[key_front] = ff
-        self._plain_fields.add(key_back)
-        self._plain_fields.add(key_front)
-        self._nod_keys.add(key_back)
-        self._nod_keys.add(key_front)
-
     def _get_val(self, key):
-        h = self._fields[key]
-        if key in self._plain_fields:
-            return cmds.floatField(h, q=True, v=True)
-        return cmds.floatSliderGrp(h, q=True, v=True)
+        return cmds.floatSliderGrp(self._fields[key], q=True, v=True)
 
     def _set_val(self, key, val):
-        h = self._fields[key]
-        if key in self._plain_fields:
-            cmds.floatField(h, e=True, v=val)
-        else:
-            cmds.floatSliderGrp(h, e=True, v=val)
+        cmds.floatSliderGrp(self._fields[key], e=True, v=val)
 
     def _set_field_enabled(self, key, enabled):
-        h = self._fields[key]
-        if key in self._plain_fields:
-            cmds.floatField(h, e=True, enable=enabled)
-        else:
-            cmds.floatSliderGrp(h, e=True, enable=enabled)
+        cmds.floatSliderGrp(self._fields[key], e=True, enable=enabled)
 
     def _section_header(self, label, ctrls, mute_key):
         """Joint header: big label + select button + mute checkbox."""
@@ -252,8 +187,8 @@ class AnimGenWindow:
         self._section_header('Root', root, 'root')
         self._slider('Bounce  tX', 'root_bounce', d['root_bounce'], RNG_TRANS, CLR_X)
         self._slider('Bounce Offset', 'bounce_offset', d['bounce_offset'], RNG_OFF, CLR_X)
-        self._nod_range('root_nod_back', 'root_nod_front',
-                        d['root_nod_back'], d['root_nod_front'], CLR_Z)
+        self._slider('Nod Back  rZ', 'root_nod_back', d['root_nod_back'], RNG_AMP, CLR_Z)
+        self._slider('Nod Front  rZ', 'root_nod_front', d['root_nod_front'], RNG_AMP, CLR_Z)
         self._slider('Lean  rY', 'root_lean', d['root_lean'], RNG_AMP, CLR_Y)
         self._slider('Twist  rX', 'root_twist', d['root_twist'], RNG_AMP, CLR_X)
         self._slider('Left-Right  tZ', 'root_lr', d['root_lr'], RNG_TRANS, CLR_Z)
@@ -300,9 +235,8 @@ class AnimGenWindow:
             lean = self.walk_secondary._params['{}_lean'.format(part)]
             twist = self.walk_secondary._params['{}_twist'.format(part)]
 
-            self._nod_range('{}_nod_back'.format(part),
-                            '{}_nod_front'.format(part),
-                            nod_b, nod_f, CLR_Z)
+            self._slider('Nod Back  rZ', '{}_nod_back'.format(part), nod_b, RNG_AMP, CLR_Z)
+            self._slider('Nod Front  rZ', '{}_nod_front'.format(part), nod_f, RNG_AMP, CLR_Z)
             self._slider('Lean  rY', '{}_lean'.format(part), lean, RNG_AMP, CLR_Y)
             self._slider('Twist  rX', '{}_twist'.format(part), twist, RNG_AMP, CLR_X)
 
@@ -470,15 +404,10 @@ class AnimGenWindow:
     def _toggle_auto(self, val):
         self._auto_update = val
         cb = (lambda *_: self._generate()) if val else (lambda *_: None)
-        for key, f in self._fields.items():
-            if key in self._nod_keys:
-                continue  # nod fields self-manage via _nod_range callbacks
+        for f in self._fields.values():
             try:
-                if key in self._plain_fields:
-                    cmds.floatField(f, e=True, changeCommand=cb)
-                else:
-                    cmds.floatSliderGrp(f, e=True, changeCommand=cb,
-                                        dragCommand=cb)
+                cmds.floatSliderGrp(f, e=True, changeCommand=cb,
+                                    dragCommand=cb)
             except Exception:
                 pass
 
