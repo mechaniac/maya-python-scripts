@@ -86,11 +86,12 @@ class AnimGenWindow:
         return f
 
     def _row(self, label, key, default, color=None, ctrls=None):
-        nc = 3 if ctrls else 2
-        cmds.rowLayout(numberOfColumns=nc,
-                       columnWidth2=(200, 100) if nc == 2 else None,
-                       columnWidth3=(200, 100, 24) if nc == 3 else None,
-                       adjustableColumn=2)
+        if ctrls:
+            cmds.rowLayout(numberOfColumns=3, columnWidth3=(200, 100, 24),
+                           adjustableColumn=2)
+        else:
+            cmds.rowLayout(numberOfColumns=2, columnWidth2=(200, 100),
+                           adjustableColumn=2)
         cmds.text(label=label)
         self._float_field(key, default, color)
         if ctrls:
