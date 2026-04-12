@@ -1,11 +1,11 @@
 """Walk cycle arm swing layer.
 
 FK arm controls use circle normal (1,0,0) and inherit the skin
-joint's world orientation.  With ``oj='xyz'``:
+joint's world orientation:
 
     rotateX = twist  (axial roll along the bone)
-    rotateY = swing  (forward / back in the sagittal plane)
-    rotateZ = droop  (raise / lower in the frontal plane)
+    rotateY = droop  (up / down in the frontal plane)
+    rotateZ = swing  (forward / back in the sagittal plane)
 """
 
 from ..core.channel import Channel
@@ -19,13 +19,13 @@ class WalkArms(Layer):
     name = 'Walk \u2013 Arms'
 
     DEFAULTS = {
-        'shoulder_droop':  -30.0,   # rotateZ -- arms hanging
-        'scapula_droop':   -15.0,   # rotateZ -- scapula offset
-        'shoulder_swing':   20.0,   # rotateY -- forward/back
+        'shoulder_droop':  -30.0,   # rotateY -- arms hanging
+        'scapula_droop':   -15.0,   # rotateY -- scapula offset
+        'shoulder_swing':   20.0,   # rotateZ -- forward/back
         'shoulder_twist':    0.0,   # rotateX -- axial roll
-        'scapula_swing':     8.0,   # rotateY -- scapula fore/aft
-        'elbow_bend':       12.0,   # rotateY -- flexion
-        'wrist_swing':       6.0,   # rotateY -- follow-through
+        'scapula_swing':     8.0,   # rotateZ -- scapula fore/aft
+        'elbow_bend':       12.0,   # rotateZ -- flexion
+        'wrist_swing':       6.0,   # rotateZ -- follow-through
     }
 
     def __init__(self):
@@ -44,16 +44,16 @@ class WalkArms(Layer):
         sfx = '_' + side
 
         chs = []
-        # Scapula / shoulder static droop (rotateZ, constant)
-        chs.append(Channel('FKScapula' + sfx, 'rotateZ', Wave.CONSTANT,
+        # Scapula / shoulder static droop (rotateY, constant)
+        chs.append(Channel('FKScapula' + sfx, 'rotateY', Wave.CONSTANT,
                            amplitude=p['scapula_droop'], n_points=2,
                            label='{} Scap Droop'.format(side)))
-        chs.append(Channel('FKShoulder' + sfx, 'rotateZ', Wave.CONSTANT,
+        chs.append(Channel('FKShoulder' + sfx, 'rotateY', Wave.CONSTANT,
                            amplitude=p['shoulder_droop'], n_points=2,
                            label='{} Sh Droop'.format(side)))
 
-        # Scapula swing
-        chs.append(Channel('FKScapula' + sfx, 'rotateY', Wave.COSINE,
+        # Scapula swing (rotateZ)
+        chs.append(Channel('FKScapula' + sfx, 'rotateZ', Wave.COSINE,
                            amplitude=p['scapula_swing'], phase=phase,
                            frequency=1, n_points=3,
                            label='{} Scap Swing'.format(side)))
@@ -63,22 +63,22 @@ class WalkArms(Layer):
                            amplitude=p['shoulder_twist'], phase=phase,
                            frequency=1, n_points=3,
                            label='{} Sh Twist'.format(side)))
-        chs.append(Channel('FKShoulder' + sfx, 'rotateY', Wave.COSINE,
+        chs.append(Channel('FKShoulder' + sfx, 'rotateZ', Wave.COSINE,
                            amplitude=p['shoulder_swing'], phase=phase,
                            frequency=1, n_points=3,
                            label='{} Sh Swing'.format(side)))
 
-        # Elbow bend -- peaks at mid-swing (explicit values)
+        # Elbow bend -- peaks at mid-swing (explicit values, rotateZ)
         if side == 'R':
             elb = [0, p['elbow_bend'], 0]
         else:
             elb = [p['elbow_bend'], 0, p['elbow_bend']]
-        chs.append(Channel('FKElbow' + sfx, 'rotateY',
+        chs.append(Channel('FKElbow' + sfx, 'rotateZ',
                            values=elb,
                            label='{} Elbow'.format(side)))
 
-        # Wrist swing
-        chs.append(Channel('FKWrist' + sfx, 'rotateY', Wave.COSINE,
+        # Wrist swing (rotateZ)
+        chs.append(Channel('FKWrist' + sfx, 'rotateZ', Wave.COSINE,
                            amplitude=p['wrist_swing'], phase=phase,
                            frequency=1, n_points=3,
                            label='{} Wrist'.format(side)))

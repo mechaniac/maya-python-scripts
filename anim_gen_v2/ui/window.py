@@ -164,13 +164,13 @@ class AnimGenWindow:
         cmds.columnLayout(adjustableColumn=True)
 
         d = self.walk_arms.DEFAULTS
-        self._two_col('Shoulder Droop  rZ', 'shoulder_droop', d['shoulder_droop'], CLR_Z,
-                       'Scapula Droop  rZ', 'scapula_droop', d['scapula_droop'], CLR_Z)
-        self._two_col('Shoulder Swing  rY', 'shoulder_swing', d['shoulder_swing'], CLR_Y,
+        self._two_col('Shoulder Droop  rY', 'shoulder_droop', d['shoulder_droop'], CLR_Y,
+                       'Scapula Droop  rY', 'scapula_droop', d['scapula_droop'], CLR_Y)
+        self._two_col('Shoulder Swing  rZ', 'shoulder_swing', d['shoulder_swing'], CLR_Z,
                        'Shoulder Twist  rX', 'shoulder_twist', d['shoulder_twist'], CLR_X)
-        self._two_col('Scapula Swing  rY', 'scapula_swing', d['scapula_swing'], CLR_Y,
-                       'Elbow Bend  rY', 'elbow_bend', d['elbow_bend'], CLR_Y)
-        self._row('Wrist Swing  rY', 'wrist_swing', d['wrist_swing'], CLR_Y)
+        self._two_col('Scapula Swing  rZ', 'scapula_swing', d['scapula_swing'], CLR_Z,
+                       'Elbow Bend  rZ', 'elbow_bend', d['elbow_bend'], CLR_Z)
+        self._row('Wrist Swing  rZ', 'wrist_swing', d['wrist_swing'], CLR_Z)
 
         cmds.separator(height=6, style='none')
         cmds.button(label='Set to 0', height=22,
