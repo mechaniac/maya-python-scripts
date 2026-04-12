@@ -279,10 +279,12 @@ class AnimGenWindow:
         cmds.setParent(parent)
         cmds.separator(height=12, style='in')
 
-        cmds.rowLayout(numberOfColumns=3, columnWidth3=(250, 200, 150),
+        cmds.rowLayout(numberOfColumns=4, columnWidth4=(220, 170, 170, 150),
                        adjustableColumn=1)
         cmds.button(label='Generate Walk Cycle', height=36,
                     command=lambda *_: self._generate())
+        cmds.button(label='Delete Animation', height=36,
+                    command=lambda *_: self._delete_anim())
         cmds.button(label='Select All Controls', height=36,
                     command=lambda *_: self._sel_all())
         cmds.checkBox(label='Auto-update', value=False,
@@ -314,6 +316,20 @@ class AnimGenWindow:
                 self.walk_secondary._params[key] = val
             elif key in self.walk_arms.DEFAULTS:
                 self.walk_arms._params[key] = val
+
+    def _delete_anim(self):
+        """Delete all keys within the playback range for every layer control."""
+        all_ctrls = set()
+        fkik_ctrls = set()
+        for layer in (self.walk_primary, self.walk_secondary, self.walk_arms):
+            all_ctrls.update(layer.controls())
+            fkik_ctrls.update(layer.fkik_state().keys())
+        cmds.undoInfo(openChunk=True, chunkName='AnimGenV2_delete')
+        try:
+            engine.clear_keys(list(all_ctrls))
+            engine.clear_keys(list(fkik_ctrls), attrs=['FKIKBlend'])
+        finally:
+            cmds.undoInfo(closeChunk=True)
 
     def _generate(self):
         self._read_fields()
