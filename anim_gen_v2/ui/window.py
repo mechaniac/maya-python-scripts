@@ -38,6 +38,7 @@ class AnimGenWindow:
         self.walk_arms = WalkArms()
         self._fields = {}        # key -> widget handle
         self._plain_fields = set()  # keys using floatField (vs floatSliderGrp)
+        self._slider2_widgets = []  # floatSlider2 handles for auto-update
         self._auto_update = False
         self._mute_cbs = {}      # section_name -> checkBox
 
@@ -90,21 +91,30 @@ class AnimGenWindow:
         self._fields[key] = f
         return f
 
-    def _nod_range(self, key_front, key_back, def_front, def_back, color=None):
-        """Compact Nod row: label + Front field + Back field on one line."""
-        bg = dict(backgroundColor=color) if color else {}
-        cmds.rowLayout(numberOfColumns=5, columnWidth5=(130, 35, 60, 35, 60),
-                       adjustableColumn=5, height=22)
-        cmds.text(label='Nod  rZ', align='left', **bg)
-        cmds.text(label='Front:', align='right', font='smallPlainLabelFont')
-        ff = cmds.floatField(v=def_front, precision=2, width=55)
-        cmds.text(label='Back:', align='right', font='smallPlainLabelFont')
-        fb = cmds.floatField(v=def_back, precision=2, width=55)
+    def _nod_range(self, key_back, key_front, def_back, def_front, color=None):
+        """Single range slider (floatSlider2) with back/front handles."""
+        form = cmds.formLayout(height=26)
+        lbl = cmds.text(label='Nod  rZ', width=80, align='left')
+        fb = cmds.floatField(v=def_back, precision=1, width=50)
+        ff = cmds.floatField(v=def_front, precision=1, width=50)
+        sl = cmds.floatSlider2(minimum=-60, maximum=60,
+                               positionControl1=fb, positionControl2=ff)
+        cmds.formLayout(form, e=True,
+            attachForm=[(lbl, 'left', 0), (lbl, 'top', 3),
+                        (fb, 'top', 0),
+                        (ff, 'top', 0), (ff, 'right', 0),
+                        (sl, 'top', 2)],
+            attachNone=[(lbl, 'right'), (fb, 'right'),
+                        (ff, 'left')],
+            attachControl=[(fb, 'left', 4, lbl),
+                           (sl, 'left', 2, fb),
+                           (sl, 'right', 2, ff)])
         cmds.setParent('..')
-        self._fields[key_front] = ff
         self._fields[key_back] = fb
-        self._plain_fields.add(key_front)
+        self._fields[key_front] = ff
         self._plain_fields.add(key_back)
+        self._plain_fields.add(key_front)
+        self._slider2_widgets.append(sl)
 
     def _get_val(self, key):
         h = self._fields[key]
@@ -215,8 +225,8 @@ class AnimGenWindow:
         self._section_header('Root', root, 'root')
         self._slider('Bounce  tX', 'root_bounce', d['root_bounce'], RNG_TRANS, CLR_X)
         self._slider('Bounce Offset', 'bounce_offset', d['bounce_offset'], RNG_OFF, CLR_X)
-        self._nod_range('root_nod_front', 'root_nod_back',
-                        d['root_nod_front'], d['root_nod_back'], CLR_Z)
+        self._nod_range('root_nod_back', 'root_nod_front',
+                        d['root_nod_back'], d['root_nod_front'], CLR_Z)
         self._slider('Lean  rY', 'root_lean', d['root_lean'], RNG_AMP, CLR_Y)
         self._slider('Twist  rX', 'root_twist', d['root_twist'], RNG_AMP, CLR_X)
         self._slider('Left-Right  tZ', 'root_lr', d['root_lr'], RNG_TRANS, CLR_Z)
@@ -263,9 +273,9 @@ class AnimGenWindow:
             lean = self.walk_secondary._params['{}_lean'.format(part)]
             twist = self.walk_secondary._params['{}_twist'.format(part)]
 
-            self._nod_range('{}_nod_front'.format(part),
-                            '{}_nod_back'.format(part),
-                            nod_f, nod_b, CLR_Z)
+            self._nod_range('{}_nod_back'.format(part),
+                            '{}_nod_front'.format(part),
+                            nod_b, nod_f, CLR_Z)
             self._slider('Lean  rY', '{}_lean'.format(part), lean, RNG_AMP, CLR_Y)
             self._slider('Twist  rX', '{}_twist'.format(part), twist, RNG_AMP, CLR_X)
 
@@ -440,6 +450,12 @@ class AnimGenWindow:
                 else:
                     cmds.floatSliderGrp(f, e=True, changeCommand=cb,
                                         dragCommand=cb)
+            except Exception:
+                pass
+        for sl in self._slider2_widgets:
+            try:
+                cmds.floatSlider2(sl, e=True,
+                                  changeCommand1=cb, changeCommand2=cb)
             except Exception:
                 pass
 
