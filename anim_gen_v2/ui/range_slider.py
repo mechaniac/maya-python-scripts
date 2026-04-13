@@ -45,15 +45,16 @@ def _draw_notches(p, minimum, maximum, pad, usable, track_y, track_h, val_to_x):
 
 
 def _color_brushes(color):
-    """Return (bar_clr, handle_clr) from a 0-1 RGB tuple, or defaults."""
+    """Return (bar_clr, handle_clr) from a 0-1 RGB tuple, or defaults.
+
+    The bar stays neutral; only the handle is tinted.
+    """
+    bar = QtGui.QColor(100, 100, 100, 180)
     if color:
         r, g, b = [int(c * 255) for c in color]
-        bar = QtGui.QColor(min(r + 60, 200), min(g + 60, 200),
-                           min(b + 60, 200), 180)
-        handle = QtGui.QColor(min(r + 100, 220), min(g + 100, 220),
-                              min(b + 100, 220))
+        handle = QtGui.QColor(min(r + 120, 235), min(g + 120, 235),
+                              min(b + 120, 235))
     else:
-        bar = QtGui.QColor(100, 100, 100, 180)
         handle = QtGui.QColor(158, 158, 158)
     return bar, handle
 
