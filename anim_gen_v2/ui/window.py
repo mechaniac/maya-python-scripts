@@ -206,8 +206,22 @@ class AnimGenWindow:
         else:
             cmds.floatSliderGrp(self._fields[key], e=True, enable=enabled)
 
+    def _category_header(self, label, all_ctrls, reset_keys, mute_sections):
+        """Category-level header: label + Reset + Select Controls + Mute."""
+        cmds.rowLayout(numberOfColumns=4, columnWidth4=(200, 60, 110, 60),
+                       adjustableColumn=1, height=26)
+        cmds.text(label='  ' + label, align='left', font='boldLabelFont')
+        cmds.button(label='Reset', height=20, width=55,
+                    command=lambda *_: self._zero_fields(reset_keys))
+        cmds.button(label='Select Controls', height=20, width=105,
+                    command=lambda *_, c=list(all_ctrls): self._sel(c))
+        cb = cmds.checkBox(label='Mute', value=False,
+                           changeCommand=lambda val, s=list(mute_sections):
+                               self._toggle_mute_category(s, val))
+        cmds.setParent('..')
+
     def _section_header(self, label, ctrls, mute_key):
-        """Joint header: big label + select button + mute checkbox."""
+        """Sub-section header: label + select button + mute checkbox."""
         cmds.rowLayout(numberOfColumns=3, columnWidth3=(200, 60, 80),
                        adjustableColumn=1, height=24)
         cmds.text(label='  ' + label, align='left', font='boldLabelFont')
@@ -255,6 +269,14 @@ class AnimGenWindow:
         if self._auto_update:
             self._generate()
 
+    def _toggle_mute_category(self, sections, val):
+        """Mute/unmute all sub-sections of a category at once."""
+        for s in sections:
+            cb = self._mute_cbs.get(s)
+            if cb:
+                cmds.checkBox(cb, e=True, value=val)
+            self._toggle_mute(s, val)
+
     # ──────────────────────────────────────────────
     #  Walk Primary section
     # ──────────────────────────────────────────────
@@ -267,13 +289,15 @@ class AnimGenWindow:
 
         d = self.walk_primary.DEFAULTS
 
-        # Track which keys belong to which mute section
         if not hasattr(self, '_section_keys'):
             self._section_keys = {}
 
         legs = ['IKLeg_R', 'IKLeg_L']
         hip = ['HipSwinger_M']
         root = ['RootX_M']
+
+        self._category_header('Primary', legs + hip + root,
+                              list(d.keys()), ['legs', 'hip', 'root'])
 
         # ── Legs ──
         cmds.frameLayout(label='', borderVisible=True,
@@ -323,16 +347,6 @@ class AnimGenWindow:
                                        'root_lean', 'root_twist',
                                        'root_lr', 'root_bf']
         cmds.setParent(col)
-
-        # Bottom buttons
-        cmds.rowLayout(numberOfColumns=2, columnWidth2=(300, 280),
-                       adjustableColumn=2, height=26)
-        cmds.button(label='Set All to 0', height=22,
-                    command=lambda *_: self._zero_fields(
-                        list(self.walk_primary.DEFAULTS.keys())))
-        cmds.button(label='Select All Primary', height=22,
-                    command=lambda *_: self._sel(legs + hip + root))
-        cmds.setParent('..')
         cmds.setParent(parent)
 
     # ──────────────────────────────────────────────
@@ -349,6 +363,10 @@ class AnimGenWindow:
             'spine': 'FKSpine_M', 'chest': 'FKChest_M',
             'neck': 'FKNeck_M', 'head': 'FKHead_M',
         }
+
+        self._category_header('Secondary', list(part_ctrls.values()),
+                              list(self.walk_secondary._params.keys()),
+                              list(part_ctrls.keys()))
 
         for part in ('spine', 'chest', 'neck', 'head'):
             ctrl = [part_ctrls[part]]
@@ -374,14 +392,6 @@ class AnimGenWindow:
                                          '{}_twist'.format(part)]
             cmds.setParent(col)
 
-        cmds.rowLayout(numberOfColumns=2, columnWidth2=(300, 280),
-                       adjustableColumn=2, height=26)
-        cmds.button(label='Set All to 0', height=22,
-                    command=lambda *_: self._zero_fields(
-                        list(self.walk_secondary._params.keys())))
-        cmds.button(label='Select All Secondary', height=22,
-                    command=lambda *_: self._sel(list(part_ctrls.values())))
-        cmds.setParent('..')
         cmds.setParent(parent)
 
     # ──────────────────────────────────────────────
@@ -401,6 +411,10 @@ class AnimGenWindow:
         all_arm = sc + sh + el + wr
 
         d = self.walk_arms.DEFAULTS
+
+        self._category_header('Arms', all_arm,
+                              list(d.keys()),
+                              ['shoulder', 'scapula', 'elbow', 'wrist'])
 
         # ── Shoulder ──
         cmds.frameLayout(label='', borderVisible=True,
@@ -447,14 +461,6 @@ class AnimGenWindow:
         self._section_keys['wrist'] = ['wrist_swing_front', 'wrist_swing_back']
         cmds.setParent(col)
 
-        cmds.rowLayout(numberOfColumns=2, columnWidth2=(300, 280),
-                       adjustableColumn=2, height=26)
-        cmds.button(label='Set All to 0', height=22,
-                    command=lambda *_: self._zero_fields(
-                        list(self.walk_arms.DEFAULTS.keys())))
-        cmds.button(label='Select All Arms', height=22,
-                    command=lambda *_: self._sel(all_arm))
-        cmds.setParent('..')
         cmds.setParent(parent)
 
     # ──────────────────────────────────────────────
