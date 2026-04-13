@@ -59,10 +59,10 @@ class WalkPrimary(Layer):
 
         # ── feet width (translateX) ── constant
         chs.append(Channel('IKLeg_R', 'translateX', Wave.CONSTANT,
-                           amplitude=p['stride_width'], n_points=3,
+                           amplitude=-p['stride_width'], n_points=3,
                            label='R Width'))
         chs.append(Channel('IKLeg_L', 'translateX', Wave.CONSTANT,
-                           amplitude=-p['stride_width'], n_points=3,
+                           amplitude=p['stride_width'], n_points=3,
                            label='L Width'))
 
         # ── foot lift (translateY) ── pulse at passing position
@@ -79,12 +79,12 @@ class WalkPrimary(Layer):
         # V1 keys at 6 points with a mid-between peak.
         # Right: peak at (three_quarter + end) / 2 = t 0.875
         chs.append(Channel('IKLeg_R', 'rotateX',
-                           values=[0, 0, 0, 0, p['foot_raise'], 0],
+                           values=[0, 0, 0, 0, -p['foot_raise'], 0],
                            sample_at=[0, 0.25, 0.5, 0.75, 0.875, 1.0],
                            label='R Foot Raise'))
         # Left: peak at (quarter + mid) / 2 = t 0.375
         chs.append(Channel('IKLeg_L', 'rotateX',
-                           values=[0, 0, p['foot_raise'], 0, 0, 0],
+                           values=[0, 0, -p['foot_raise'], 0, 0, 0],
                            sample_at=[0, 0.25, 0.375, 0.5, 0.75, 1.0],
                            label='L Foot Raise'))
 

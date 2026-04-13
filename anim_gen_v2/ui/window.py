@@ -7,6 +7,7 @@ Usage in Maya::
 """
 
 import json
+import os
 
 import maya.cmds as cmds
 
@@ -24,16 +25,27 @@ from PySide6 import QtWidgets
 WINDOW_NAME = 'animGenV2Win'
 WINDOW_TITLE = 'Animation Generator v2'
 
+# Absolute path to the single source of truth for slider ranges.
+_SETTINGS_JSON = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              'settings.json')
+
 # Axis colour coding (RGB = XYZ)
 CLR_X = (0.45, 0.18, 0.18)
 CLR_Y = (0.18, 0.45, 0.18)
 CLR_Z = (0.18, 0.18, 0.45)
 
-# Slider range presets  (min, max, field_min, field_max)
-RNG_AMP   = (-60, 60, -180, 180)   # general rotation amplitude
-RNG_TRANS = (-20, 20, -100, 100)   # translation
-RNG_OFF   = (-30, 30, -90, 90)     # offset
-RNG_ROLL  = (-90, 90, -120, 120)   # foot roll
+# Dim yellow for Select buttons
+CLR_SELECT_BTN = (0.45, 0.42, 0.22)
+
+# Range category labels for the settings editor
+_RANGE_LABELS = {
+    'rotation':    'Rotation (nod, lean, twist, swing, droop, bend)',
+    'translation': 'Translation (bounce, LR, BF)',
+    'roll':        'Foot Roll',
+    'stride':      'Stride Length',
+    'stride_wh':   'Stride Width / Height',
+    'foot_raise':  'Foot Raise',
+}
 
 
 class AnimGenWindow:
@@ -48,6 +60,20 @@ class AnimGenWindow:
         self._single_keys = {}   # key -> SingleSlider widget
         self._auto_update = False
         self._mute_cbs = {}      # section_name -> checkBox
+        self._ranges = self._load_ranges()
+
+    @staticmethod
+    def _load_ranges():
+        """Read ranges from settings.json — the only source of truth."""
+        print('// AnimGenV2: reading ranges from {}'.format(_SETTINGS_JSON))
+        with open(_SETTINGS_JSON, 'r') as f:
+            data = json.load(f)['ranges']
+        print('// AnimGenV2: loaded ranges = {}'.format(data))
+        return data
+
+    def _rng(self, name):
+        """Return (min, max) for a range category."""
+        return tuple(self._ranges[name])
 
     # ──────────────────────────────────────────────
     #  Show
@@ -66,6 +92,7 @@ class AnimGenWindow:
         self._build_walk_secondary(walk_col)
         self._build_walk_arms(walk_col)
         self._build_actions(walk_col)
+        self._build_range_settings(walk_col)
 
         cmds.tabLayout(tabs, e=True, tabLabel=[(walk_col, 'Walk Cycle')])
         cmds.showWindow(win)
@@ -86,6 +113,18 @@ class AnimGenWindow:
             cmds.select(nodes, r=True)
 
     @staticmethod
+    def _style_field_zero(fld):
+        """Dim field text when value is 0, normal otherwise."""
+        v = cmds.floatField(fld, q=True, v=True)
+        ptr = omui.MQtUtil.findControl(fld)
+        if ptr:
+            qt_w = wrapInstance(int(ptr), QtWidgets.QWidget)
+            if v == 0.0:
+                qt_w.setStyleSheet('color: rgb(90,90,90);')
+            else:
+                qt_w.setStyleSheet('')
+
+    @staticmethod
     def _tint_label(widget, color):
         """Set the font colour of a cmds.text widget via Qt."""
         if not color:
@@ -96,18 +135,20 @@ class AnimGenWindow:
             qt_w = wrapInstance(int(ptr), QtWidgets.QWidget)
             qt_w.setStyleSheet('color: rgb({},{},{});'.format(r, g, b))
 
-    def _slider(self, label, key, default, rng=RNG_AMP, color=None):
+    def _slider(self, label, key, default, rng=None, color=None):
         """Compact slider row: label [field] ═══slider═══."""
+        if rng is None:
+            rng = self._rng('rotation')
         form = cmds.formLayout(height=22)
         lbl = cmds.text(label=label, width=130, align='right')
         self._tint_label(lbl, color)
         fld = cmds.floatField(v=default, precision=2, width=50,
-                              minValue=rng[2], maxValue=rng[3])
+                              minValue=rng[0], maxValue=rng[1])
         holder = cmds.columnLayout(adjustableColumn=True, height=20)
         cmds.setParent(form)
         cmds.formLayout(form, e=True,
-            attachForm=[(lbl, 'left', 0), (lbl, 'top', 2), (lbl, 'bottom', 2),
-                        (fld, 'top', 0),
+            attachForm=[(lbl, 'left', 0), (lbl, 'top', 0), (lbl, 'bottom', 0),
+                        (fld, 'top', 0), (fld, 'bottom', 0),
                         (holder, 'top', 0), (holder, 'bottom', 0),
                         (holder, 'right', 0)],
             attachNone=[(lbl, 'right'), (fld, 'right')],
@@ -118,38 +159,44 @@ class AnimGenWindow:
 
         def _slider_changed(v):
             cmds.floatField(fld, e=True, v=v)
+            self._style_field_zero(fld)
             if self._auto_update:
                 self._generate()
 
         def _field_changed(v):
             sl.setValue(v)
+            self._style_field_zero(fld)
             if self._auto_update:
                 self._generate()
 
         sl.valueChanged.connect(_slider_changed)
         cmds.floatField(fld, e=True, changeCommand=_field_changed)
+        self._style_field_zero(fld)
         cmds.setParent('..')
         self._fields[key] = fld
         self._single_keys[key] = sl
 
     def _range_slider(self, label, key_lo, key_hi, def_lo, def_hi,
-                      rng=RNG_AMP, color=None):
+                      rng=None, color=None):
         """Compact range row: label [lo field] ═══slider═══ [hi field]."""
+        if rng is None:
+            rng = self._rng('rotation')
         form = cmds.formLayout(height=22)
         lbl = cmds.text(label=label, width=130, align='right')
         self._tint_label(lbl, color)
         f_lo = cmds.floatField(v=def_lo, precision=2, width=50,
-                               minValue=rng[2], maxValue=rng[3])
+                               minValue=rng[0], maxValue=rng[1])
         # placeholder for the Qt slider
         holder = cmds.columnLayout(adjustableColumn=True, height=20)
         cmds.setParent(form)
         f_hi = cmds.floatField(v=def_hi, precision=2, width=50,
-                               minValue=rng[2], maxValue=rng[3])
+                               minValue=rng[0], maxValue=rng[1])
         cmds.formLayout(form, e=True,
-            attachForm=[(lbl, 'left', 0), (lbl, 'top', 2), (lbl, 'bottom', 2),
-                        (f_lo, 'top', 0),
+            attachForm=[(lbl, 'left', 0), (lbl, 'top', 0), (lbl, 'bottom', 0),
+                        (f_lo, 'top', 0), (f_lo, 'bottom', 0),
                         (holder, 'top', 0), (holder, 'bottom', 0),
-                        (f_hi, 'top', 0), (f_hi, 'right', 0)],
+                        (f_hi, 'top', 0), (f_hi, 'bottom', 0),
+                        (f_hi, 'right', 0)],
             attachNone=[(lbl, 'right'), (f_lo, 'right'), (f_hi, 'left')],
             attachControl=[(f_lo, 'left', 4, lbl),
                            (holder, 'left', 2, f_lo),
@@ -163,22 +210,28 @@ class AnimGenWindow:
         def _slider_changed(lo, hi):
             cmds.floatField(f_lo, e=True, v=lo)
             cmds.floatField(f_hi, e=True, v=hi)
+            self._style_field_zero(f_lo)
+            self._style_field_zero(f_hi)
             if self._auto_update:
                 self._generate()
 
         def _lo_field_changed(val):
             sl.setLow(val)
+            self._style_field_zero(f_lo)
             if self._auto_update:
                 self._generate()
 
         def _hi_field_changed(val):
             sl.setHigh(val)
+            self._style_field_zero(f_hi)
             if self._auto_update:
                 self._generate()
 
         sl.rangeChanged.connect(_slider_changed)
         cmds.floatField(f_lo, e=True, changeCommand=_lo_field_changed)
         cmds.floatField(f_hi, e=True, changeCommand=_hi_field_changed)
+        self._style_field_zero(f_lo)
+        self._style_field_zero(f_hi)
 
         # highlight active field while dragging
         _HL = (0.35, 0.35, 0.40)   # subtle highlight bg
@@ -233,6 +286,8 @@ class AnimGenWindow:
             cmds.floatField(self._fields[key], e=True, v=val)
         else:
             cmds.floatSliderGrp(self._fields[key], e=True, v=val)
+        if key in self._fields:
+            self._style_field_zero(self._fields[key])
 
     def _set_field_enabled(self, key, enabled):
         if key in self._range_keys:
@@ -253,6 +308,7 @@ class AnimGenWindow:
         cmds.button(label='Reset', height=20, width=55,
                     command=lambda *_: self._zero_fields(reset_keys))
         cmds.button(label='Select Controls', height=20, width=105,
+                    backgroundColor=CLR_SELECT_BTN,
                     command=lambda *_, c=list(all_ctrls): self._sel(c))
         cb = cmds.checkBox(label='Mute', value=False,
                            changeCommand=lambda val, s=list(mute_sections):
@@ -265,6 +321,7 @@ class AnimGenWindow:
                        adjustableColumn=1, height=24)
         cmds.text(label='  ' + label, align='left', font='boldLabelFont')
         cmds.button(label='Select', height=20, width=50,
+                    backgroundColor=CLR_SELECT_BTN,
                     command=lambda *_, c=list(ctrls): self._sel(c))
         cb = cmds.checkBox(label='Mute', value=False,
                            changeCommand=lambda val, k=mute_key: self._toggle_mute(k, val))
@@ -279,8 +336,10 @@ class AnimGenWindow:
             self._generate()
 
     def _slider_pair(self, label_a, key_a, def_a, label_b, key_b, def_b,
-                     rng=RNG_AMP, color_a=None, color_b=None):
+                     rng=None, color_a=None, color_b=None):
         """Two sliders side by side, each getting 50 % of the width."""
+        if rng is None:
+            rng = self._rng('rotation')
         form = cmds.formLayout(height=22)
         cmds.setParent(form)
         self._slider(label_a, key_a, def_a, rng, color_a)
@@ -353,14 +412,14 @@ class AnimGenWindow:
         # ── Legs ──
         cmds.separator(height=6, style='none')
         self._section_header('Legs', legs, 'legs')
-        self._slider('Stride Length', 'stride', d['stride'], (0, 40, 0, 300))
+        self._slider('Stride Length', 'stride', d['stride'], self._rng('stride'))
         self._slider_pair('Stride Width', 'stride_width', d['stride_width'],
                           'Stride Height', 'stride_height', d['stride_height'],
-                          (0, 20, 0, 50))
-        self._slider('Foot Raise', 'foot_raise', d['foot_raise'], (0, 40, 0, 90))
+                          self._rng('stride_wh'))
+        self._slider('Foot Raise', 'foot_raise', d['foot_raise'], self._rng('foot_raise'))
         self._slider_pair('Roll Heel', 'foot_roll_heel', d['foot_roll_heel'],
                           'Roll Toe', 'foot_roll_toe', d['foot_roll_toe'],
-                          RNG_ROLL)
+                          self._rng('roll'))
         self._section_keys['legs'] = ['stride', 'stride_width', 'stride_height',
                                        'foot_raise', 'foot_roll_heel', 'foot_roll_toe']
 
@@ -368,10 +427,11 @@ class AnimGenWindow:
         cmds.separator(height=4, style='in')
         self._section_header('Hip', hip, 'hip')
         self._range_slider('Nod  rZ', 'hip_nod_back', 'hip_nod_front',
-                           d['hip_nod_back'], d['hip_nod_front'], RNG_AMP, CLR_Z)
+                           d['hip_nod_back'], d['hip_nod_front'],
+                           self._rng('rotation'), CLR_Z)
         self._slider_pair('Lean  rY', 'hip_lean', d['hip_lean'],
                           'Twist  rX', 'hip_twist', d['hip_twist'],
-                          RNG_AMP, CLR_Y, CLR_X)
+                          self._rng('rotation'), CLR_Y, CLR_X)
         self._section_keys['hip'] = ['hip_nod_front', 'hip_nod_back',
                                       'hip_lean', 'hip_twist']
 
@@ -379,15 +439,17 @@ class AnimGenWindow:
         cmds.separator(height=4, style='in')
         self._section_header('Root', root, 'root')
         self._range_slider('Bounce  tX', 'root_bounce_lo', 'root_bounce_hi',
-                           d['root_bounce_lo'], d['root_bounce_hi'], RNG_TRANS, CLR_X)
+                           d['root_bounce_lo'], d['root_bounce_hi'],
+                           self._rng('translation'), CLR_X)
         self._range_slider('Nod  rZ', 'root_nod_back', 'root_nod_front',
-                           d['root_nod_back'], d['root_nod_front'], RNG_AMP, CLR_Z)
+                           d['root_nod_back'], d['root_nod_front'],
+                           self._rng('rotation'), CLR_Z)
         self._slider_pair('Lean  rY', 'root_lean', d['root_lean'],
                           'Twist  rX', 'root_twist', d['root_twist'],
-                          RNG_AMP, CLR_Y, CLR_X)
+                          self._rng('rotation'), CLR_Y, CLR_X)
         self._slider_pair('Left-Right  tZ', 'root_lr', d['root_lr'],
                           'Back-Forth  tY', 'root_bf', d['root_bf'],
-                          RNG_TRANS, CLR_Z, CLR_Y)
+                          self._rng('translation'), CLR_Z, CLR_Y)
         self._section_keys['root'] = ['root_bounce_lo', 'root_bounce_hi',
                                        'root_nod_front', 'root_nod_back',
                                        'root_lean', 'root_twist',
@@ -425,10 +487,10 @@ class AnimGenWindow:
 
             self._range_slider('Nod  rZ', '{}_nod_back'.format(part),
                                '{}_nod_front'.format(part),
-                               nod_b, nod_f, RNG_AMP, CLR_Z)
+                               nod_b, nod_f, self._rng('rotation'), CLR_Z)
             self._slider_pair('Lean  rY', '{}_lean'.format(part), lean,
                               'Twist  rX', '{}_twist'.format(part), twist,
-                              RNG_AMP, CLR_Y, CLR_X)
+                              self._rng('rotation'), CLR_Y, CLR_X)
 
             self._section_keys[part] = ['{}_nod_front'.format(part),
                                          '{}_nod_back'.format(part),
@@ -464,20 +526,20 @@ class AnimGenWindow:
         self._section_header('Shoulder', sh, 'shoulder')
         self._range_slider('Swing  rZ', 'shoulder_swing_back', 'shoulder_swing_front',
                            d['shoulder_swing_back'], d['shoulder_swing_front'],
-                           RNG_AMP, CLR_Z)
+                           self._rng('rotation'), CLR_Z)
         self._slider_pair('Droop  rY', 'shoulder_droop', d['shoulder_droop'],
                           'Twist  rX', 'shoulder_twist', d['shoulder_twist'],
-                          RNG_AMP, CLR_Y, CLR_X)
+                          self._rng('rotation'), CLR_Y, CLR_X)
         self._section_keys['shoulder'] = ['shoulder_swing_front', 'shoulder_swing_back',
                                            'shoulder_droop', 'shoulder_twist']
 
         # ── Scapula ──
         cmds.separator(height=4, style='in')
         self._section_header('Scapula', sc, 'scapula')
-        self._slider('Droop  rY', 'scapula_droop', d['scapula_droop'], RNG_AMP, CLR_Y)
+        self._slider('Droop  rY', 'scapula_droop', d['scapula_droop'], self._rng('rotation'), CLR_Y)
         self._range_slider('Swing  rZ', 'scapula_swing_back', 'scapula_swing_front',
                            d['scapula_swing_back'], d['scapula_swing_front'],
-                           RNG_AMP, CLR_Z)
+                           self._rng('rotation'), CLR_Z)
         self._section_keys['scapula'] = ['scapula_droop', 'scapula_swing_front',
                                           'scapula_swing_back']
 
@@ -485,7 +547,7 @@ class AnimGenWindow:
         cmds.separator(height=4, style='in')
         self._section_header('Elbow', el, 'elbow')
         self._range_slider('Bend  rZ', 'elbow_bend_lo', 'elbow_bend_hi',
-                           d['elbow_bend_lo'], d['elbow_bend_hi'], RNG_AMP, CLR_Z)
+                           d['elbow_bend_lo'], d['elbow_bend_hi'], self._rng('rotation'), CLR_Z)
         self._section_keys['elbow'] = ['elbow_bend_lo', 'elbow_bend_hi']
 
         # ── Wrist ──
@@ -493,10 +555,75 @@ class AnimGenWindow:
         self._section_header('Wrist', wr, 'wrist')
         self._range_slider('Swing  rZ', 'wrist_swing_back', 'wrist_swing_front',
                            d['wrist_swing_back'], d['wrist_swing_front'],
-                           RNG_AMP, CLR_Z)
+                           self._rng('rotation'), CLR_Z)
         self._section_keys['wrist'] = ['wrist_swing_front', 'wrist_swing_back']
 
         cmds.setParent(parent)
+
+    # ──────────────────────────────────────────────
+    #  Range Settings (collapsed section at bottom)
+    # ──────────────────────────────────────────────
+
+    def _build_range_settings(self, parent):
+        cmds.setParent(parent)
+        cmds.frameLayout(label='Range Settings', collapsable=True,
+                         collapse=True, marginHeight=6, marginWidth=6)
+        col = cmds.columnLayout(adjustableColumn=True)
+
+        self._rng_fields = {}  # name -> (min_fld, max_fld)
+        for name in ('rotation', 'translation', 'roll',
+                     'stride', 'stride_wh', 'foot_raise'):
+            label = _RANGE_LABELS.get(name, name)
+            rng = self._rng(name)
+            cmds.text(label=label, align='left', font='boldLabelFont')
+            row = cmds.rowLayout(numberOfColumns=4, columnWidth4=(
+                40, 60, 10, 60), adjustableColumn=4)
+            cmds.text(label='Min:')
+            f_min = cmds.floatField(v=rng[0], precision=1, width=55)
+            cmds.text(label='Max:')
+            f_max = cmds.floatField(v=rng[1], precision=1, width=55)
+            cmds.setParent(col)
+            self._rng_fields[name] = (f_min, f_max)
+            cmds.separator(height=4, style='none')
+
+        cmds.separator(height=6, style='in')
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=(150, 150),
+                       adjustableColumn=2)
+        cmds.button(label='Save Range Settings',
+                    command=lambda *_: self._save_range_settings())
+        cmds.button(label='Reset to Defaults',
+                    command=lambda *_: self._reset_range_settings())
+        cmds.setParent(parent)
+
+    def _settings_path(self):
+        return _SETTINGS_JSON
+
+    def _save_range_settings(self):
+        new_ranges = {}
+        for name, (f_min, f_max) in self._rng_fields.items():
+            new_ranges[name] = [
+                cmds.floatField(f_min, q=True, v=True),
+                cmds.floatField(f_max, q=True, v=True),
+            ]
+        with open(_SETTINGS_JSON, 'w') as f:
+            json.dump({'ranges': new_ranges}, f, indent=2)
+            f.write('\n')
+        self._ranges = self._load_ranges()
+        cmds.confirmDialog(title='Saved', message='Range settings saved.\n'
+                           'Reopen the window to apply new ranges.',
+                           button=['OK'])
+
+    def _reset_range_settings(self):
+        # Read the defaults from settings.py (the template)
+        from . import settings as _s
+        with open(_SETTINGS_JSON, 'w') as f:
+            json.dump({'ranges': dict(_s._DEFAULTS)}, f, indent=2)
+            f.write('\n')
+        self._ranges = self._load_ranges()
+        for name, (f_min, f_max) in self._rng_fields.items():
+            rng = self._rng(name)
+            cmds.floatField(f_min, e=True, v=rng[0])
+            cmds.floatField(f_max, e=True, v=rng[1])
 
     # ──────────────────────────────────────────────
     #  Actions
@@ -515,6 +642,7 @@ class AnimGenWindow:
                     backgroundColor=(0.55, 0.22, 0.22),
                     command=lambda *_: self._delete_anim())
         cmds.button(label='Select All Controls', height=36,
+                    backgroundColor=CLR_SELECT_BTN,
                     command=lambda *_: self._sel_all())
         cmds.checkBox(label='Auto', value=False,
                       changeCommand=lambda val: self._toggle_auto(val))
