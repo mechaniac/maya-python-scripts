@@ -241,12 +241,24 @@ class AnimGenWindow:
 
     def _slider_pair(self, label_a, key_a, def_a, label_b, key_b, def_b,
                      rng=RNG_AMP, color_a=None, color_b=None):
-        """Two compact floatSliderGrp side by side in a single row."""
-        cmds.rowLayout(numberOfColumns=2, adjustableColumn2=True,
-                       columnAttach2=('both', 'both'),
-                       columnOffset2=(0, 4))
+        """Two sliders side by side, each getting 50 % of the width."""
+        form = cmds.formLayout(height=22)
+        cmds.setParent(form)
         self._slider(label_a, key_a, def_a, rng, color_a)
+        sl_a = self._fields[key_a]          # floatField just registered
+        # the formLayout wrapping sl_a is its direct parent
+        frm_a = cmds.floatField(sl_a, q=True, parent=True)
+        cmds.setParent(form)
         self._slider(label_b, key_b, def_b, rng, color_b)
+        sl_b = self._fields[key_b]
+        frm_b = cmds.floatField(sl_b, q=True, parent=True)
+        cmds.formLayout(form, e=True,
+            attachForm=[(frm_a, 'left', 0), (frm_a, 'top', 0),
+                        (frm_a, 'bottom', 0),
+                        (frm_b, 'right', 0), (frm_b, 'top', 0),
+                        (frm_b, 'bottom', 0)],
+            attachPosition=[(frm_a, 'right', 2, 50),
+                            (frm_b, 'left', 2, 50)])
         cmds.setParent('..')
 
     def _toggle_mute(self, section, val):
