@@ -1,5 +1,7 @@
 # Maya Python Animation Scripts
 
+![Preview](documentation/maya_python_animation_scripts_preview_01.png)
+
 A collection of Maya Python scripts for procedural animation generation, rigging, scene cleanup, and Source 2 model import. Designed for **Maya 2026** (Python 3.10, `maya.cmds` only). Built around the **AdvancedSkeleton** rig naming convention and the custom **Auto Control Rig** system.
 
 ### Quick Start
