@@ -19,17 +19,21 @@ class WalkArms(Layer):
     name = 'Walk \u2013 Arms'
 
     DEFAULTS = {
-        'shoulder_droop':        -30.0,   # rotateY -- arms hanging
-        'scapula_droop':         -15.0,   # rotateY -- scapula offset
-        'shoulder_swing_front':   20.0,   # rotateZ -- forward swing
-        'shoulder_swing_back':   -10.0,   # rotateZ -- back swing
+        'shoulder_droop':         20.0,   # rotateY -- arms hanging
+        'scapula_droop':          15.0,   # rotateY -- scapula offset
+        'shoulder_swing_front':   15.0,   # rotateZ -- forward swing
+        'shoulder_swing_back':   -25.0,   # rotateZ -- back swing
         'shoulder_twist':          0.0,   # rotateX -- axial roll
-        'scapula_swing_front':     8.0,   # rotateZ -- scapula fore
-        'scapula_swing_back':     -4.0,   # rotateZ -- scapula aft
-        'elbow_bend_hi':          12.0,   # rotateZ -- max flexion
+        'scapula_swing_front':     0.0,   # rotateZ -- scapula fore
+        'scapula_swing_back':      0.0,   # rotateZ -- scapula aft
+        'elbow_bend_hi':           0.0,   # rotateZ -- max flexion
         'elbow_bend_lo':           0.0,   # rotateZ -- min flexion
-        'wrist_swing_front':       6.0,   # rotateZ -- wrist fore
-        'wrist_swing_back':       -3.0,   # rotateZ -- wrist aft
+        'wrist_swing_front':       0.0,   # rotateZ -- wrist fore
+        'wrist_swing_back':        0.0,   # rotateZ -- wrist aft
+        'shoulder_offset':         0,
+        'scapula_offset':          0,
+        'elbow_offset':            0,
+        'wrist_offset':            0,
     }
 
     def __init__(self):
@@ -62,14 +66,20 @@ class WalkArms(Layer):
         p = self._params
         sfx = '_' + side
         mir = 1 if side == 'R' else -1
+        scap_off_f = int(p.get('scapula_offset', 0))
+        sh_off_f   = int(p.get('shoulder_offset', 0))
+        elb_off_f  = int(p.get('elbow_offset', 0))
+        wr_off_f   = int(p.get('wrist_offset', 0))
 
         chs = []
         # Scapula / shoulder static droop (rotateY, constant)
         chs.append(Channel('FKScapula' + sfx, 'rotateY', Wave.CONSTANT,
                            amplitude=p['scapula_droop'] * mir, n_points=2,
+                           frame_offset=scap_off_f,
                            label='{} Scap Droop'.format(side)))
         chs.append(Channel('FKShoulder' + sfx, 'rotateY', Wave.CONSTANT,
                            amplitude=p['shoulder_droop'] * mir, n_points=2,
+                           frame_offset=sh_off_f,
                            label='{} Sh Droop'.format(side)))
 
         # Scapula swing (rotateZ) -- range slider
@@ -78,18 +88,21 @@ class WalkArms(Layer):
         chs.append(Channel('FKScapula' + sfx, 'rotateZ', Wave.COSINE,
                            amplitude=scap_amp, offset=scap_off,
                            phase=phase, frequency=1, n_points=3,
+                           frame_offset=scap_off_f,
                            label='{} Scap Swing'.format(side)))
 
         # Shoulder twist / swing
         chs.append(Channel('FKShoulder' + sfx, 'rotateX', Wave.COSINE,
                            amplitude=p['shoulder_twist'] * mir, phase=phase,
                            frequency=1, n_points=3,
+                           frame_offset=sh_off_f,
                            label='{} Sh Twist'.format(side)))
         sh_amp = (p['shoulder_swing_front'] - p['shoulder_swing_back']) / 2.0
         sh_off = (p['shoulder_swing_front'] + p['shoulder_swing_back']) / 2.0
         chs.append(Channel('FKShoulder' + sfx, 'rotateZ', Wave.COSINE,
                            amplitude=sh_amp, offset=sh_off,
                            phase=phase, frequency=1, n_points=3,
+                           frame_offset=sh_off_f,
                            label='{} Sh Swing'.format(side)))
 
         # Elbow bend -- peaks at mid-swing (explicit values, rotateZ)
@@ -101,6 +114,7 @@ class WalkArms(Layer):
             elb = [elb_hi, elb_lo, elb_hi]
         chs.append(Channel('FKElbow' + sfx, 'rotateZ',
                            values=elb,
+                           frame_offset=elb_off_f,
                            label='{} Elbow'.format(side)))
 
         # Wrist swing (rotateZ) -- range slider
@@ -109,6 +123,7 @@ class WalkArms(Layer):
         chs.append(Channel('FKWrist' + sfx, 'rotateZ', Wave.COSINE,
                            amplitude=wr_amp, offset=wr_off,
                            phase=phase, frequency=1, n_points=3,
+                           frame_offset=wr_off_f,
                            label='{} Wrist'.format(side)))
         return chs
 

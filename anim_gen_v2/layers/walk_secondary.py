@@ -15,10 +15,10 @@ from . import Layer
 
 # (part_key, ctrl_name, nod_front, nod_back, lean, twist)
 _PARTS = (
-    ('spine', 'FKSpine_M',  5.0, -5.0, 2.0, 1.5),
-    ('chest',  'FKChest_M',  7.0, -7.0, 3.0, 2.0),
-    ('neck',   'FKNeck_M',   4.0, -4.0, 2.0, 1.0),
-    ('head',   'FKHead_M',   3.0, -3.0, 1.5, 1.5),
+    ('spine', 'FKSpine_M',  5.0,  0.0, 0.0, 0.0),
+    ('chest',  'FKChest_M',  0.0,  0.0, 0.0, 0.0),
+    ('neck',   'FKNeck_M',   0.0,  0.0, 0.0, 0.0),
+    ('head',   'FKHead_M',   0.0,  0.0, 0.0, 0.0),
 )
 
 
@@ -37,6 +37,7 @@ class WalkSecondary(Layer):
             self._params['{}_nod_back'.format(part)] = nod_b
             self._params['{}_lean'.format(part)] = lean
             self._params['{}_twist'.format(part)] = twist
+            self._params['{}_offset'.format(part)] = 0
 
     def controls(self):
         return list(self._ctrl_map.values())
@@ -52,6 +53,7 @@ class WalkSecondary(Layer):
             nod_b = p['{}_nod_back'.format(part)]
             lean = p['{}_lean'.format(part)]
             twist = p['{}_twist'.format(part)]
+            off = int(p.get('{}_offset'.format(part), 0))
             nod_amp = (nod_f - nod_b) / 2.0
             nod_off = (nod_f + nod_b) / 2.0
 
@@ -59,14 +61,17 @@ class WalkSecondary(Layer):
             chs.append(Channel(ctrl, 'rotateZ', Wave.COSINE,
                                amplitude=nod_amp, offset=nod_off,
                                frequency=2, n_points=5,
+                               frame_offset=off,
                                label='{} Nod'.format(part)))
             # rotateY = lean (lateral side bend) -- 3-point, once per cycle
             chs.append(Channel(ctrl, 'rotateY', Wave.COSINE,
                                amplitude=lean, frequency=1, n_points=3,
+                               frame_offset=off,
                                label='{} Lean'.format(part)))
             # rotateX = twist (axial roll) -- 3-point, once per cycle
             chs.append(Channel(ctrl, 'rotateX', Wave.COSINE,
                                amplitude=twist,
                                frequency=1, n_points=3,
+                               frame_offset=off,
                                label='{} Twist'.format(part)))
         return chs

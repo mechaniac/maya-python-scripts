@@ -26,11 +26,15 @@ def frame_times(normalized, start=None, end=None):
 # ── clear ──
 
 def clear_keys(ctrls, attrs=None):
-    """Cut keys and reset attrs on *ctrls* within the playback range."""
+    """Cut keys and reset attrs on *ctrls*, covering the extended range."""
     if attrs is None:
         attrs = ['translateX', 'translateY', 'translateZ',
                  'rotateX', 'rotateY', 'rotateZ', 'Roll']
     start, end = timeline_range()
+    span = end - start
+    # clear generously: half the span beyond each side covers any offset
+    clear_start = start - span
+    clear_end = end + span
     for name in ctrls:
         node = resolver.resolve(name) or name
         if not cmds.objExists(node):
@@ -39,7 +43,7 @@ def clear_keys(ctrls, attrs=None):
             if not cmds.attributeQuery(attr, node=node, exists=True):
                 continue
             full = '{}.{}'.format(node, attr)
-            cmds.cutKey(node, at=attr, time=(start, end))
+            cmds.cutKey(node, at=attr, time=(clear_start, clear_end))
             if not cmds.getAttr(full, lock=True) \
                and not cmds.connectionInfo(full, isDestination=True):
                 try:
@@ -104,17 +108,21 @@ def _key_fkik(layers):
 # ── batch keying ──
 
 def _key_all(channels):
-    """Set keyframes for every channel (no undo-chunk management)."""
+    """Set keyframes for every channel (no undo-chunk management).
+
+    Each channel gets one extra key before and after the timeline range
+    to fake a looping curve.  If *frame_offset* is set, all keys shift.
+    """
     for ch in channels:
         node = resolver.resolve(ch.ctrl)
         if not node:
             continue
         if not cmds.attributeQuery(ch.attr, node=node, exists=True):
             continue
-        values = ch.evaluate()
-        times = frame_times(ch.normalized_times())
+        values = ch.extended_evaluate()
+        times = frame_times(ch.extended_normalized_times())
         for t, v in zip(times, values):
-            _set_key(node, ch.attr, t, v)
+            _set_key(node, ch.attr, t + ch.frame_offset, v)
 
 
 def key_channels(channels):

@@ -20,7 +20,7 @@ from .range_slider import (RangeSlider, SingleSlider,
 
 import maya.OpenMayaUI as omui
 from shiboken6 import wrapInstance
-from PySide6 import QtWidgets
+from PySide6 import QtWidgets, QtGui
 
 WINDOW_NAME = 'animGenV2Win'
 WINDOW_TITLE = 'Animation Generator v2'
@@ -36,6 +36,10 @@ CLR_Z = (0.18, 0.18, 0.45)
 
 # Dim yellow for Select buttons
 CLR_SELECT_BTN = (0.45, 0.42, 0.22)
+
+# Subtle tints for Library vs Project presets
+CLR_LIB  = (0.25, 0.38, 0.55)   # distinct blue
+CLR_PROJ = (0.55, 0.38, 0.18)   # distinct orange
 
 # Range category labels for the settings editor
 _RANGE_LABELS = {
@@ -82,6 +86,10 @@ class AnimGenWindow:
     def show(self):
         if cmds.window(WINDOW_NAME, exists=True):
             cmds.deleteUI(WINDOW_NAME)
+        span = (cmds.playbackOptions(q=True, max=True)
+                - cmds.playbackOptions(q=True, min=True))
+        self._off_half = max(1, int(span / 2))
+        self._off_quarter = max(1, int(span / 4))
         win = cmds.window(WINDOW_NAME, title=WINDOW_TITLE,
                           widthHeight=(600, 780), sizeable=True)
         cmds.scrollLayout(childResizable=True)
@@ -135,15 +143,17 @@ class AnimGenWindow:
             qt_w = wrapInstance(int(ptr), QtWidgets.QWidget)
             qt_w.setStyleSheet('color: rgb({},{},{});'.format(r, g, b))
 
-    def _slider(self, label, key, default, rng=None, color=None):
+    def _slider(self, label, key, default, rng=None, color=None, tip=''):
         """Compact slider row: label [field] ═══slider═══."""
         if rng is None:
             rng = self._rng('rotation')
         form = cmds.formLayout(height=22)
-        lbl = cmds.text(label=label, width=130, align='right')
+        lbl = cmds.text(label=label, width=130, align='right',
+                        annotation=tip)
         self._tint_label(lbl, color)
         fld = cmds.floatField(v=default, precision=2, width=50,
-                              minValue=rng[0], maxValue=rng[1])
+                              minValue=rng[0], maxValue=rng[1],
+                              annotation=tip)
         holder = cmds.columnLayout(adjustableColumn=True, height=20)
         cmds.setParent(form)
         cmds.formLayout(form, e=True,
@@ -156,6 +166,8 @@ class AnimGenWindow:
                            (holder, 'left', 2, fld)])
         sl = embed_single_in_layout(holder, minimum=rng[0], maximum=rng[1],
                                     value=default, color=color)
+        if tip:
+            sl.setToolTip(tip)
 
         def _slider_changed(v):
             cmds.floatField(fld, e=True, v=v)
@@ -177,20 +189,23 @@ class AnimGenWindow:
         self._single_keys[key] = sl
 
     def _range_slider(self, label, key_lo, key_hi, def_lo, def_hi,
-                      rng=None, color=None):
+                      rng=None, color=None, tip=''):
         """Compact range row: label [lo field] ═══slider═══ [hi field]."""
         if rng is None:
             rng = self._rng('rotation')
         form = cmds.formLayout(height=22)
-        lbl = cmds.text(label=label, width=130, align='right')
+        lbl = cmds.text(label=label, width=130, align='right',
+                        annotation=tip)
         self._tint_label(lbl, color)
         f_lo = cmds.floatField(v=def_lo, precision=2, width=50,
-                               minValue=rng[0], maxValue=rng[1])
+                               minValue=rng[0], maxValue=rng[1],
+                               annotation=tip)
         # placeholder for the Qt slider
         holder = cmds.columnLayout(adjustableColumn=True, height=20)
         cmds.setParent(form)
         f_hi = cmds.floatField(v=def_hi, precision=2, width=50,
-                               minValue=rng[0], maxValue=rng[1])
+                               minValue=rng[0], maxValue=rng[1],
+                               annotation=tip)
         cmds.formLayout(form, e=True,
             attachForm=[(lbl, 'left', 0), (lbl, 'top', 0), (lbl, 'bottom', 0),
                         (f_lo, 'top', 0), (f_lo, 'bottom', 0),
@@ -205,6 +220,8 @@ class AnimGenWindow:
         # embed Qt range slider into the cmds holder layout
         sl = embed_in_layout(holder, minimum=rng[0], maximum=rng[1],
                              low=def_lo, high=def_hi, color=color)
+        if tip:
+            sl.setToolTip(tip)
 
         # bidirectional sync
         def _slider_changed(lo, hi):
@@ -306,11 +323,14 @@ class AnimGenWindow:
                        adjustableColumn=1, height=26)
         cmds.text(label='  ' + label, align='left', font='boldLabelFont')
         cmds.button(label='Reset', height=20, width=55,
+                    annotation='Reset all sliders in this category to zero',
                     command=lambda *_: self._zero_fields(reset_keys))
         cmds.button(label='Select Controls', height=20, width=105,
                     backgroundColor=CLR_SELECT_BTN,
+                    annotation='Select all rig controls belonging to this category',
                     command=lambda *_, c=list(all_ctrls): self._sel(c))
         cb = cmds.checkBox(label='Mute', value=False,
+                           annotation='Mute all sections: store current values, set to zero, and disable sliders',
                            changeCommand=lambda val, s=list(mute_sections):
                                self._toggle_mute_category(s, val))
         cmds.setParent('..')
@@ -322,8 +342,10 @@ class AnimGenWindow:
         cmds.text(label='  ' + label, align='left', font='boldLabelFont')
         cmds.button(label='Select', height=20, width=50,
                     backgroundColor=CLR_SELECT_BTN,
+                    annotation='Select the {} rig controls in the viewport'.format(label),
                     command=lambda *_, c=list(ctrls): self._sel(c))
         cb = cmds.checkBox(label='Mute', value=False,
+                           annotation='Mute {}: store values, zero out, and disable sliders'.format(label),
                            changeCommand=lambda val, k=mute_key: self._toggle_mute(k, val))
         self._mute_cbs[mute_key] = cb
         cmds.setParent('..')
@@ -336,18 +358,19 @@ class AnimGenWindow:
             self._generate()
 
     def _slider_pair(self, label_a, key_a, def_a, label_b, key_b, def_b,
-                     rng=None, color_a=None, color_b=None):
+                     rng=None, color_a=None, color_b=None,
+                     tip_a='', tip_b=''):
         """Two sliders side by side, each getting 50 % of the width."""
         if rng is None:
             rng = self._rng('rotation')
         form = cmds.formLayout(height=22)
         cmds.setParent(form)
-        self._slider(label_a, key_a, def_a, rng, color_a)
+        self._slider(label_a, key_a, def_a, rng, color_a, tip=tip_a)
         sl_a = self._fields[key_a]          # floatField just registered
         # the formLayout wrapping sl_a is its direct parent
         frm_a = cmds.floatField(sl_a, q=True, parent=True)
         cmds.setParent(form)
-        self._slider(label_b, key_b, def_b, rng, color_b)
+        self._slider(label_b, key_b, def_b, rng, color_b, tip=tip_b)
         sl_b = self._fields[key_b]
         frm_b = cmds.floatField(sl_b, q=True, parent=True)
         cmds.formLayout(form, e=True,
@@ -358,6 +381,48 @@ class AnimGenWindow:
             attachPosition=[(frm_a, 'right', 2, 50),
                             (frm_b, 'left', 2, 50)])
         cmds.setParent('..')
+
+    def _offset_slider(self, key, max_off):
+        """Integer offset slider row for shifting curves in time."""
+        tip = ('Shift this section\u2019s animation curves forward or backward '
+               'in time (frames). Extended keys keep the cycle seamless.')
+        mn, mx = -max_off, max_off
+        form = cmds.formLayout(height=22)
+        lbl = cmds.text(label='Offset', width=130, align='right',
+                        annotation=tip)
+        fld = cmds.floatField(v=0, precision=0, width=50,
+                              minValue=mn, maxValue=mx,
+                              annotation=tip)
+        holder = cmds.columnLayout(adjustableColumn=True, height=20)
+        cmds.setParent(form)
+        cmds.formLayout(form, e=True,
+            attachForm=[(lbl, 'left', 0), (lbl, 'top', 0), (lbl, 'bottom', 0),
+                        (fld, 'top', 0), (fld, 'bottom', 0),
+                        (holder, 'top', 0), (holder, 'bottom', 0),
+                        (holder, 'right', 0)],
+            attachNone=[(lbl, 'right'), (fld, 'right')],
+            attachControl=[(fld, 'left', 4, lbl),
+                           (holder, 'left', 2, fld)])
+        sl = embed_single_in_layout(holder, minimum=mn, maximum=mx,
+                                    value=0, color=None)
+        sl.setToolTip(tip)
+
+        def _slider_changed(v):
+            cmds.floatField(fld, e=True, v=round(v))
+            if self._auto_update:
+                self._generate()
+
+        def _field_changed(v):
+            v = round(v)
+            sl.setValue(v)
+            if self._auto_update:
+                self._generate()
+
+        sl.valueChanged.connect(_slider_changed)
+        cmds.floatField(fld, e=True, changeCommand=_field_changed)
+        cmds.setParent('..')
+        self._fields[key] = fld
+        self._single_keys[key] = sl
 
     def _toggle_mute(self, section, val):
         """Mute/unmute a section by setting all its sliders to 0 or restoring."""
@@ -412,48 +477,69 @@ class AnimGenWindow:
         # ── Legs ──
         cmds.separator(height=6, style='none')
         self._section_header('Legs', legs, 'legs')
-        self._slider('Stride Length', 'stride', d['stride'], self._rng('stride'))
+        self._offset_slider('legs_offset', self._off_half)
+        self._slider('Stride Length', 'stride', d['stride'], self._rng('stride'),
+                     tip='Forward distance (translateZ) the foot travels per step')
         self._slider_pair('Stride Width', 'stride_width', d['stride_width'],
                           'Stride Height', 'stride_height', d['stride_height'],
-                          self._rng('stride_wh'))
-        self._slider('Foot Raise', 'foot_raise', d['foot_raise'], self._rng('foot_raise'))
+                          self._rng('stride_wh'),
+                          tip_a='Lateral spread (translateX) between the feet',
+                          tip_b='Vertical lift of the IK leg goal at mid-stride (translateY)')
+        self._slider('Foot Raise', 'foot_raise', d['foot_raise'], self._rng('foot_raise'),
+                     tip='Peak height the foot reaches during the passing position')
         self._slider_pair('Roll Heel', 'foot_roll_heel', d['foot_roll_heel'],
                           'Roll Toe', 'foot_roll_toe', d['foot_roll_toe'],
-                          self._rng('roll'))
+                          self._rng('roll'),
+                          tip_a='Heel-strike roll angle at the start of contact phase',
+                          tip_b='Toe-off roll angle at the end of contact phase')
         self._section_keys['legs'] = ['stride', 'stride_width', 'stride_height',
-                                       'foot_raise', 'foot_roll_heel', 'foot_roll_toe']
+                                       'foot_raise', 'foot_roll_heel', 'foot_roll_toe',
+                                       'legs_offset']
 
         # ── Hip ──
         cmds.separator(height=4, style='in')
         self._section_header('Hip', hip, 'hip')
+        self._offset_slider('hip_offset', self._off_quarter)
         self._range_slider('Nod  rZ', 'hip_nod_back', 'hip_nod_front',
                            d['hip_nod_back'], d['hip_nod_front'],
-                           self._rng('rotation'), CLR_Z)
+                           self._rng('rotation'), CLR_Z,
+                           tip='Forward/back pitch of the hip swinger (rotateZ). Range sets front and back extremes.')
         self._slider_pair('Lean  rY', 'hip_lean', d['hip_lean'],
                           'Twist  rX', 'hip_twist', d['hip_twist'],
-                          self._rng('rotation'), CLR_Y, CLR_X)
+                          self._rng('rotation'), CLR_Y, CLR_X,
+                          tip_a='Lateral side-to-side tilt of the hips (rotateY)',
+                          tip_b='Axial rotation of the hips around the spine (rotateX)')
         self._section_keys['hip'] = ['hip_nod_front', 'hip_nod_back',
-                                      'hip_lean', 'hip_twist']
+                                      'hip_lean', 'hip_twist',
+                                      'hip_offset']
 
         # ── Root ──
         cmds.separator(height=4, style='in')
         self._section_header('Root', root, 'root')
+        self._offset_slider('root_offset', self._off_quarter)
         self._range_slider('Bounce  tX', 'root_bounce_lo', 'root_bounce_hi',
                            d['root_bounce_lo'], d['root_bounce_hi'],
-                           self._rng('translation'), CLR_X)
+                           self._rng('translation'), CLR_X,
+                           tip='Vertical bounce of the root (translateX). Low = contact, High = passing position.')
         self._range_slider('Nod  rZ', 'root_nod_back', 'root_nod_front',
                            d['root_nod_back'], d['root_nod_front'],
-                           self._rng('rotation'), CLR_Z)
+                           self._rng('rotation'), CLR_Z,
+                           tip='Forward/back pitch of the root control (rotateZ)')
         self._slider_pair('Lean  rY', 'root_lean', d['root_lean'],
                           'Twist  rX', 'root_twist', d['root_twist'],
-                          self._rng('rotation'), CLR_Y, CLR_X)
+                          self._rng('rotation'), CLR_Y, CLR_X,
+                          tip_a='Lateral side-to-side tilt of the root (rotateY)',
+                          tip_b='Axial rotation of the root around the spine (rotateX)')
         self._slider_pair('Left-Right  tZ', 'root_lr', d['root_lr'],
                           'Back-Forth  tY', 'root_bf', d['root_bf'],
-                          self._rng('translation'), CLR_Z, CLR_Y)
+                          self._rng('translation'), CLR_Z, CLR_Y,
+                          tip_a='Lateral sway of the root centre of mass (translateZ)',
+                          tip_b='Forward lean of the root centre of mass (translateY)')
         self._section_keys['root'] = ['root_bounce_lo', 'root_bounce_hi',
                                        'root_nod_front', 'root_nod_back',
                                        'root_lean', 'root_twist',
-                                       'root_lr', 'root_bf']
+                                       'root_lr', 'root_bf',
+                                       'root_offset']
         cmds.setParent(parent)
 
     # ──────────────────────────────────────────────
@@ -479,6 +565,7 @@ class AnimGenWindow:
             ctrl = [part_ctrls[part]]
             cmds.separator(height=4, style='in')
             self._section_header(part.title(), ctrl, part)
+            self._offset_slider('{}_offset'.format(part), self._off_quarter)
 
             nod_f = self.walk_secondary._params['{}_nod_front'.format(part)]
             nod_b = self.walk_secondary._params['{}_nod_back'.format(part)]
@@ -487,15 +574,20 @@ class AnimGenWindow:
 
             self._range_slider('Nod  rZ', '{}_nod_back'.format(part),
                                '{}_nod_front'.format(part),
-                               nod_b, nod_f, self._rng('rotation'), CLR_Z)
+                               nod_b, nod_f, self._rng('rotation'), CLR_Z,
+                               tip='Forward/back pitch of the {} (rotateZ). '
+                                   'Counters walk rhythm twice per cycle.'.format(part))
             self._slider_pair('Lean  rY', '{}_lean'.format(part), lean,
                               'Twist  rX', '{}_twist'.format(part), twist,
-                              self._rng('rotation'), CLR_Y, CLR_X)
+                              self._rng('rotation'), CLR_Y, CLR_X,
+                              tip_a='Lateral side bend of the {} (rotateY)'.format(part),
+                              tip_b='Axial roll of the {} around the spine axis (rotateX)'.format(part))
 
             self._section_keys[part] = ['{}_nod_front'.format(part),
                                          '{}_nod_back'.format(part),
                                          '{}_lean'.format(part),
-                                         '{}_twist'.format(part)]
+                                         '{}_twist'.format(part),
+                                         '{}_offset'.format(part)]
 
         cmds.setParent(parent)
 
@@ -524,39 +616,54 @@ class AnimGenWindow:
         # ── Shoulder ──
         cmds.separator(height=6, style='none')
         self._section_header('Shoulder', sh, 'shoulder')
+        self._offset_slider('shoulder_offset', self._off_half)
         self._range_slider('Swing  rZ', 'shoulder_swing_back', 'shoulder_swing_front',
                            d['shoulder_swing_back'], d['shoulder_swing_front'],
-                           self._rng('rotation'), CLR_Z)
+                           self._rng('rotation'), CLR_Z,
+                           tip='Forward/back arm swing arc (rotateZ). Back extreme and front extreme.')
         self._slider_pair('Droop  rY', 'shoulder_droop', d['shoulder_droop'],
                           'Twist  rX', 'shoulder_twist', d['shoulder_twist'],
-                          self._rng('rotation'), CLR_Y, CLR_X)
+                          self._rng('rotation'), CLR_Y, CLR_X,
+                          tip_a='Resting angle of the upper arm hanging down (rotateY). Mirrored between sides.',
+                          tip_b='Axial twist of the upper arm bone (rotateX). Mirrored between sides.')
         self._section_keys['shoulder'] = ['shoulder_swing_front', 'shoulder_swing_back',
-                                           'shoulder_droop', 'shoulder_twist']
+                                           'shoulder_droop', 'shoulder_twist',
+                                           'shoulder_offset']
 
         # ── Scapula ──
         cmds.separator(height=4, style='in')
         self._section_header('Scapula', sc, 'scapula')
-        self._slider('Droop  rY', 'scapula_droop', d['scapula_droop'], self._rng('rotation'), CLR_Y)
+        self._offset_slider('scapula_offset', self._off_half)
+        self._slider('Droop  rY', 'scapula_droop', d['scapula_droop'], self._rng('rotation'), CLR_Y,
+                     tip='Resting down-angle of the scapula (rotateY). Mirrored between sides.')
         self._range_slider('Swing  rZ', 'scapula_swing_back', 'scapula_swing_front',
                            d['scapula_swing_back'], d['scapula_swing_front'],
-                           self._rng('rotation'), CLR_Z)
+                           self._rng('rotation'), CLR_Z,
+                           tip='Forward/back scapula swing linked to arm movement (rotateZ)')
         self._section_keys['scapula'] = ['scapula_droop', 'scapula_swing_front',
-                                          'scapula_swing_back']
+                                          'scapula_swing_back',
+                                          'scapula_offset']
 
         # ── Elbow ──
         cmds.separator(height=4, style='in')
         self._section_header('Elbow', el, 'elbow')
+        self._offset_slider('elbow_offset', self._off_half)
         self._range_slider('Bend  rZ', 'elbow_bend_lo', 'elbow_bend_hi',
-                           d['elbow_bend_lo'], d['elbow_bend_hi'], self._rng('rotation'), CLR_Z)
-        self._section_keys['elbow'] = ['elbow_bend_lo', 'elbow_bend_hi']
+                           d['elbow_bend_lo'], d['elbow_bend_hi'], self._rng('rotation'), CLR_Z,
+                           tip='Elbow flexion range (rotateZ). Lo = arm extended, Hi = arm bent at mid-swing.')
+        self._section_keys['elbow'] = ['elbow_bend_lo', 'elbow_bend_hi',
+                                        'elbow_offset']
 
         # ── Wrist ──
         cmds.separator(height=4, style='in')
         self._section_header('Wrist', wr, 'wrist')
+        self._offset_slider('wrist_offset', self._off_half)
         self._range_slider('Swing  rZ', 'wrist_swing_back', 'wrist_swing_front',
                            d['wrist_swing_back'], d['wrist_swing_front'],
-                           self._rng('rotation'), CLR_Z)
-        self._section_keys['wrist'] = ['wrist_swing_front', 'wrist_swing_back']
+                           self._rng('rotation'), CLR_Z,
+                           tip='Wrist fore/aft swing following the arm arc (rotateZ)')
+        self._section_keys['wrist'] = ['wrist_swing_front', 'wrist_swing_back',
+                                        'wrist_offset']
 
         cmds.setParent(parent)
 
@@ -567,7 +674,8 @@ class AnimGenWindow:
     def _build_range_settings(self, parent):
         cmds.setParent(parent)
         cmds.frameLayout(label='Range Settings', collapsable=True,
-                         collapse=True, marginHeight=6, marginWidth=6)
+                         collapse=True, marginHeight=6, marginWidth=6,
+                         annotation='Configure the min/max limits for each slider category')
         col = cmds.columnLayout(adjustableColumn=True)
 
         self._rng_fields = {}  # name -> (min_fld, max_fld)
@@ -590,8 +698,10 @@ class AnimGenWindow:
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(150, 150),
                        adjustableColumn=2)
         cmds.button(label='Save Range Settings',
+                    annotation='Write the current min/max values to settings.json on disk',
                     command=lambda *_: self._save_range_settings())
         cmds.button(label='Reset to Defaults',
+                    annotation='Restore all range limits to their factory defaults',
                     command=lambda *_: self._reset_range_settings())
         cmds.setParent(parent)
 
@@ -633,43 +743,102 @@ class AnimGenWindow:
         cmds.setParent(parent)
         cmds.separator(height=10, style='in')
 
+        # ── Main actions ──
         cmds.rowLayout(numberOfColumns=4, columnWidth4=(200, 150, 150, 100),
                        adjustableColumn=1)
         cmds.button(label='Generate Walk Cycle', height=36,
                     backgroundColor=(0.22, 0.55, 0.22),
+                    annotation='Key all layers on the current timeline range using the slider values above',
                     command=lambda *_: self._generate())
         cmds.button(label='Delete Animation', height=36,
                     backgroundColor=(0.55, 0.22, 0.22),
+                    annotation='Remove all keyframes set by this tool from every affected control',
                     command=lambda *_: self._delete_anim())
         cmds.button(label='Select All Controls', height=36,
                     backgroundColor=CLR_SELECT_BTN,
+                    annotation='Select every rig control used by all layers in the viewport',
                     command=lambda *_: self._sel_all())
         cmds.checkBox(label='Auto', value=False,
+                      annotation='Automatically regenerate the walk cycle whenever any slider changes',
                       changeCommand=lambda val: self._toggle_auto(val))
         cmds.setParent('..')
 
-        cmds.separator(height=6, style='in')
-        cmds.rowLayout(numberOfColumns=3, columnWidth3=(280, 150, 150),
-                       adjustableColumn=1)
-        self._preset_menu = cmds.optionMenu(label='Preset:', changeCommand=lambda *_: None)
-        self._refresh_preset_list()
-        cmds.button(label='Load Selected',
-                    command=lambda *_: self._load_selected_preset())
-        cmds.button(label='Print Settings',
-                    command=lambda *_: self._print_settings())
-        cmds.setParent('..')
+        # ── Presets ──
+        cmds.separator(height=8, style='in')
+        cmds.frameLayout(label='Presets', collapsable=True,
+                         marginHeight=4, marginWidth=4)
+        pre_col = cmds.columnLayout(adjustableColumn=True)
 
-        cmds.rowLayout(numberOfColumns=4, columnWidth4=(150, 150, 150, 150),
-                       adjustableColumn=4)
-        cmds.button(label='Save to Library',
+        form_pre = cmds.formLayout(height=24)
+        lbl_pre = cmds.text(label='Preset:', align='right', width=50)
+        combo_holder = cmds.columnLayout(adjustableColumn=True, height=22)
+        self._preset_combo = QtWidgets.QComboBox()
+        self._preset_combo.setToolTip('Choose a saved preset from the library or project')
+        ptr = omui.MQtUtil.findControl(combo_holder)
+        if ptr:
+            qt_parent = wrapInstance(int(ptr), QtWidgets.QWidget)
+            lay = qt_parent.layout() or QtWidgets.QVBoxLayout(qt_parent)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lay.addWidget(self._preset_combo)
+        cmds.setParent(form_pre)
+        self._refresh_preset_list()
+        btn_save = cmds.button(label='Save', width=55,
+                    backgroundColor=(0.45, 0.45, 0.22),
+                    annotation='Overwrite the selected preset file with current settings',
+                    command=lambda *_: self._save_selected_preset())
+        btn_load = cmds.button(label='Load', width=55,
+                    backgroundColor=(0.22, 0.55, 0.22),
+                    annotation='Apply the selected preset, updating all sliders to its stored values',
+                    command=lambda *_: self._load_selected_preset())
+        btn_del = cmds.button(label='Delete', width=55,
+                    backgroundColor=(0.55, 0.22, 0.22),
+                    annotation='Permanently delete the selected preset file from disk',
+                    command=lambda *_: self._delete_selected_preset())
+        cmds.formLayout(form_pre, e=True,
+            attachForm=[(lbl_pre, 'left', 0), (lbl_pre, 'top', 0), (lbl_pre, 'bottom', 0),
+                        (combo_holder, 'top', 0), (combo_holder, 'bottom', 0),
+                        (btn_save, 'top', 0), (btn_save, 'bottom', 0),
+                        (btn_load, 'top', 0), (btn_load, 'bottom', 0),
+                        (btn_del, 'top', 0), (btn_del, 'bottom', 0),
+                        (btn_del, 'right', 0)],
+            attachNone=[(lbl_pre, 'right'), (btn_save, 'left'),
+                        (btn_load, 'left'), (btn_del, 'left')],
+            attachControl=[(combo_holder, 'left', 4, lbl_pre),
+                           (combo_holder, 'right', 4, btn_save),
+                           (btn_save, 'right', 2, btn_load),
+                           (btn_load, 'right', 2, btn_del)])
+        cmds.setParent(pre_col)
+
+        cmds.separator(height=4, style='none')
+        form_save = cmds.formLayout(height=26)
+        btn_lib = cmds.button(label='Save to Library',
+                    backgroundColor=CLR_LIB,
+                    annotation='Save current settings as a named preset in the global library folder',
                     command=lambda *_: self._save_to_library())
-        cmds.button(label='Save to Project',
+        btn_proj = cmds.button(label='Save to Project',
+                    backgroundColor=CLR_PROJ,
+                    annotation='Save current settings as a named preset inside the active Maya project',
                     command=lambda *_: self._save_to_project())
+        cmds.formLayout(form_save, e=True,
+            attachForm=[(btn_lib, 'left', 0), (btn_lib, 'top', 0), (btn_lib, 'bottom', 0),
+                        (btn_proj, 'right', 0), (btn_proj, 'top', 0), (btn_proj, 'bottom', 0)],
+            attachPosition=[(btn_lib, 'right', 2, 50),
+                            (btn_proj, 'left', 2, 50)])
+        cmds.setParent(pre_col)
+
+        cmds.separator(height=4, style='none')
+        cmds.rowLayout(numberOfColumns=3, columnWidth3=(190, 190, 190),
+                       adjustableColumn=3)
         cmds.button(label='Save As...',
+                    annotation='Browse for a location and save current settings as a JSON preset file',
                     command=lambda *_: self._save_preset_browse())
         cmds.button(label='Load File...',
+                    annotation='Browse for and load a JSON preset file from disk',
                     command=lambda *_: self._load_preset_browse())
-        cmds.setParent('..')
+        cmds.button(label='Print Settings',
+                    annotation='Print all current slider values to the Script Editor as JSON',
+                    command=lambda *_: self._print_settings())
+        cmds.setParent(parent)
 
     # ──────────────────────────────────────────────
     #  Callbacks
@@ -726,25 +895,79 @@ class AnimGenWindow:
     # ── preset callbacks ──
 
     def _refresh_preset_list(self):
-        existing = cmds.optionMenu(self._preset_menu, q=True, ill=True) or []
-        for item in existing:
-            cmds.deleteUI(item)
+        combo = self._preset_combo
+        combo.clear()
         self._preset_entries = presets.list_presets('walk')
-        for entry in self._preset_entries:
-            tag = '[lib]' if entry['source'] == 'library' else '[proj]'
-            cmds.menuItem(label='{} {}'.format(tag, entry['name']),
-                          parent=self._preset_menu)
+        for i, entry in enumerate(self._preset_entries):
+            is_lib = entry['source'] == 'library'
+            clr = CLR_LIB if is_lib else CLR_PROJ
+            r, g, b = [int(c * 255) for c in clr]
+            # Colored square icon, plain text name
+            px = QtGui.QPixmap(12, 12)
+            px.fill(QtGui.QColor(r, g, b))
+            combo.addItem(QtGui.QIcon(px), entry['name'])
         if not self._preset_entries:
-            cmds.menuItem(label='(no presets found)', parent=self._preset_menu)
+            combo.addItem('(no presets found)')
+
+    def _save_selected_preset(self):
+        if not self._preset_entries:
+            return
+        idx = self._preset_combo.currentIndex()
+        if idx < 0 or idx >= len(self._preset_entries):
+            return
+        entry = self._preset_entries[idx]
+        result = cmds.confirmDialog(
+            title='Overwrite Preset',
+            message='Overwrite "{}" ({})\n\n{}?'.format(
+                entry['name'], entry['source'], entry['path']),
+            button=['Save', 'Cancel'],
+            defaultButton='Cancel',
+            cancelButton='Cancel',
+            dismissString='Cancel')
+        if result != 'Save':
+            return
+        data = self._all_params()
+        existing = presets.load(entry['path'])
+        meta = existing.get('meta', {})
+        meta['date'] = __import__('datetime').date.today().isoformat()
+        data['meta'] = meta
+        presets.save(entry['path'], data)
+        print('// Overwritten preset: {}'.format(entry['path']))
 
     def _load_selected_preset(self):
         if not self._preset_entries:
             return
-        idx = cmds.optionMenu(self._preset_menu, q=True, sl=True) - 1
+        idx = self._preset_combo.currentIndex()
         if idx < 0 or idx >= len(self._preset_entries):
             return
         data = presets.load(self._preset_entries[idx]['path'])
         self._apply_preset_data(data)
+
+    def _delete_selected_preset(self):
+        if not self._preset_entries:
+            return
+        idx = self._preset_combo.currentIndex()
+        if idx < 0 or idx >= len(self._preset_entries):
+            return
+        entry = self._preset_entries[idx]
+        result = cmds.confirmDialog(
+            title='Delete Preset',
+            message='Delete "{}" from {}?\n\n{}'.format(
+                entry['name'], entry['source'], entry['path']),
+            button=['Delete', 'Cancel'],
+            defaultButton='Cancel',
+            cancelButton='Cancel',
+            dismissString='Cancel')
+        if result != 'Delete':
+            return
+        import os
+        try:
+            os.remove(entry['path'])
+            print('// Deleted preset: {}'.format(entry['path']))
+        except OSError as e:
+            cmds.warning('Could not delete preset: {}'.format(e))
+            return
+        self._refresh_preset_list()
 
     def _prompt_name(self, title='Preset Name'):
         result = cmds.promptDialog(title=title, message='Preset name:',

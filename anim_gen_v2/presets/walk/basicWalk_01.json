@@ -1,11 +1,4 @@
 {
-  "meta": {
-    "type": "walk",
-    "name": "Default",
-    "description": "Standard walk cycle defaults",
-    "author": "chris",
-    "date": "2026-04-13"
-  },
   "primary": {
     "stride": 70.0,
     "stride_width": -3.0,
@@ -25,31 +18,31 @@
     "root_twist": 0.0,
     "root_lr": 0.0,
     "root_bf": 4.0,
-    "legs_offset": 0,
-    "hip_offset": 0,
-    "root_offset": 0
+    "legs_offset": 0.0,
+    "hip_offset": 0.0,
+    "root_offset": 0.0
   },
   "secondary": {
     "spine_nod_front": 5.0,
     "spine_nod_back": 0.0,
     "spine_lean": 0.0,
     "spine_twist": 0.0,
-    "spine_offset": 0,
+    "spine_offset": 0.0,
     "chest_nod_front": 0.0,
     "chest_nod_back": 0.0,
     "chest_lean": 0.0,
     "chest_twist": 0.0,
-    "chest_offset": 0,
+    "chest_offset": 0.0,
     "neck_nod_front": 0.0,
     "neck_nod_back": 0.0,
     "neck_lean": 0.0,
     "neck_twist": 0.0,
-    "neck_offset": 0,
+    "neck_offset": 0.0,
     "head_nod_front": 0.0,
     "head_nod_back": 0.0,
     "head_lean": 0.0,
     "head_twist": 0.0,
-    "head_offset": 0
+    "head_offset": 0.0
   },
   "arms": {
     "shoulder_droop": 20.0,
@@ -63,9 +56,16 @@
     "elbow_bend_lo": 0.0,
     "wrist_swing_front": 0.0,
     "wrist_swing_back": 0.0,
-    "shoulder_offset": 0,
-    "scapula_offset": 0,
-    "elbow_offset": 0,
-    "wrist_offset": 0
+    "shoulder_offset": 0.0,
+    "scapula_offset": 0.0,
+    "elbow_offset": 0.0,
+    "wrist_offset": 0.0
+  },
+  "meta": {
+    "type": "walk",
+    "name": "basicWalk_01",
+    "description": "",
+    "author": "chris",
+    "date": "2026-04-13"
   }
 }
