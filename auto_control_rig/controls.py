@@ -330,7 +330,8 @@ def build_ik_leg(builder, side):
 
     # Stretchy IK
     if builder.opts.get("create_stretchy_ik", True):
-        setup_stretchy_ik(c, hip, knee, foot, "Leg_" + side, builder)
+        setup_stretchy_ik(c, hip, knee, foot, "Leg_" + side, builder,
+                          skin_slots=["hip_" + s, "knee_" + s])
 
 
 # ---------------------------------------------------------------------------
@@ -378,7 +379,8 @@ def build_ik_arm(builder, side):
 
     # Stretchy IK
     if builder.opts.get("create_stretchy_ik", True):
-        setup_stretchy_ik(c, sho, elb, wri, "Arm_" + side, builder)
+        setup_stretchy_ik(c, sho, elb, wri, "Arm_" + side, builder,
+                          skin_slots=["shoulder_" + s, "elbow_" + s])
 
 
 # ---------------------------------------------------------------------------

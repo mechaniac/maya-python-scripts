@@ -9,6 +9,14 @@ def setup_twist_joints(builder):
         ("knee", "foot", "LowerLeg", "Leg"),
     ]
 
+    # Default twist fraction overrides per segment label and index.
+    # Keys: (label, index) → fraction.  Unlisted indices use the
+    # auto-computed value  (n - i) / (n + 1).
+    dv_overrides = {
+        ("LowerArm", 0): 0.111,
+        ("LowerArm", 1): 0.666,
+    }
+
     sep_added = set()
     for s in ("l", "r"):
         S = s.upper()
@@ -65,7 +73,7 @@ def setup_twist_joints(builder):
 
             n = len(twist_jnts)
             for i, tj in enumerate(twist_jnts):
-                frac = (n - i) / float(n + 1)
+                frac = dv_overrides.get((label, i), (n - i) / float(n + 1))
 
                 bind_rx = cmds.getAttr(tj + ".rx")
                 builder.bind_pose[tj] = {
