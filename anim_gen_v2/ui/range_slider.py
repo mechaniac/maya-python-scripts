@@ -14,7 +14,7 @@ class RangeSlider(QtWidgets.QWidget):
     rangeChanged = QtCore.Signal(float, float)
 
     def __init__(self, parent=None, minimum=-60, maximum=60,
-                 low=-5, high=5):
+                 low=-5, high=5, color=None):
         super().__init__(parent)
         self.setFixedHeight(20)
         self.setMinimumWidth(60)
@@ -25,6 +25,21 @@ class RangeSlider(QtWidgets.QWidget):
         self._dragging = None
         self._drag_offset = 0
         self.setMouseTracking(True)
+
+        # color tint — expects (r, g, b) floats 0-1 or None
+        if color:
+            r, g, b = [int(c * 255) for c in color]
+            self._track_bg = QtGui.QColor(max(r, 35), max(g, 35), max(b, 35))
+            self._bar_clr = QtGui.QColor(min(r + 60, 200),
+                                         min(g + 60, 200),
+                                         min(b + 60, 200), 180)
+            self._handle_clr = QtGui.QColor(min(r + 100, 220),
+                                            min(g + 100, 220),
+                                            min(b + 100, 220))
+        else:
+            self._track_bg = QtGui.QColor(42, 42, 42)
+            self._bar_clr = QtGui.QColor(100, 100, 100, 180)
+            self._handle_clr = QtGui.QColor(158, 158, 158)
 
     # ── public API ──
 
@@ -42,6 +57,13 @@ class RangeSlider(QtWidgets.QWidget):
     def setValue(self, low, high):
         self.low = max(self.minimum, min(float(low), float(high)))
         self.high = min(self.maximum, max(float(high), float(low)))
+        self.update()
+
+    def setRange(self, mn, mx):
+        self.minimum = float(mn)
+        self.maximum = float(mx)
+        self.low = max(self.minimum, self.low)
+        self.high = min(self.maximum, self.high)
         self.update()
 
     # ── coordinate helpers ──
@@ -71,22 +93,47 @@ class RangeSlider(QtWidgets.QWidget):
         track_h = 5
         handle_w = 8
         handle_h = h - 4
+        usable = w - 2 * pad
 
         # background track
         p.setPen(QtCore.Qt.NoPen)
-        p.setBrush(QtGui.QColor(42, 42, 42))
-        p.drawRect(pad, track_y, w - 2 * pad, track_h)
+        p.setBrush(self._track_bg)
+        p.drawRect(pad, track_y, usable, track_h)
+
+        # notches — integer steps
+        if usable > 0 and (self.maximum - self.minimum) > 0:
+            step = 1
+            # avoid drawing too many notches when range is huge
+            total_steps = int(self.maximum - self.minimum)
+            if total_steps > 200:
+                step = total_steps // 40
+            elif total_steps > 60:
+                step = 5
+            first = int(self.minimum) if self.minimum == int(self.minimum) \
+                else int(self.minimum) + 1
+            v = first
+            while v <= self.maximum:
+                x = int(self._val_to_x(v))
+                if v == 0:
+                    # bold center notch
+                    p.setPen(QtGui.QPen(QtGui.QColor(180, 180, 180, 140), 1))
+                    p.drawLine(x, track_y - 1, x, track_y + track_h + 1)
+                else:
+                    p.setPen(QtGui.QPen(QtGui.QColor(80, 80, 80, 100), 1))
+                    p.drawLine(x, track_y, x, track_y + track_h)
+                v += step
+            p.setPen(QtCore.Qt.NoPen)
 
         # selected range bar
         x1 = int(self._val_to_x(self.low))
         x2 = int(self._val_to_x(self.high))
         if x2 > x1:
-            p.setBrush(QtGui.QColor(100, 100, 100))
+            p.setBrush(self._bar_clr)
             p.drawRect(x1, track_y, x2 - x1, track_h)
 
         # handles — small vertical tabs
         hy = (h - handle_h) // 2
-        p.setBrush(QtGui.QColor(158, 158, 158))
+        p.setBrush(self._handle_clr)
         p.setPen(QtGui.QPen(QtGui.QColor(90, 90, 90), 1))
         p.drawRect(x1 - handle_w // 2, hy, handle_w, handle_h)
         p.drawRect(x2 - handle_w // 2, hy, handle_w, handle_h)

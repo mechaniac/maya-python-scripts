@@ -117,7 +117,7 @@ class AnimGenWindow:
 
         # embed Qt range slider into the cmds holder layout
         sl = embed_in_layout(holder, minimum=rng[0], maximum=rng[1],
-                             low=def_lo, high=def_hi)
+                             low=def_lo, high=def_hi, color=color)
 
         # bidirectional sync
         def _slider_changed(lo, hi):
@@ -192,6 +192,16 @@ class AnimGenWindow:
         if self._auto_update:
             self._generate()
 
+    def _slider_pair(self, label_a, key_a, def_a, label_b, key_b, def_b,
+                     rng=RNG_AMP, color_a=None, color_b=None):
+        """Two compact floatSliderGrp side by side in a single row."""
+        cmds.rowLayout(numberOfColumns=2, adjustableColumn2=True,
+                       columnAttach2=('both', 'both'),
+                       columnOffset2=(0, 4))
+        self._slider(label_a, key_a, def_a, rng, color_a)
+        self._slider(label_b, key_b, def_b, rng, color_b)
+        cmds.setParent('..')
+
     def _toggle_mute(self, section, val):
         """Mute/unmute a section by setting all its sliders to 0 or restoring."""
         if val:
@@ -237,11 +247,13 @@ class AnimGenWindow:
                          marginHeight=3, marginWidth=4, collapsable=False)
         self._section_header('Legs', legs, 'legs')
         self._slider('Stride Length', 'stride', d['stride'], RNG_TRANS)
-        self._slider('Stride Width', 'stride_width', d['stride_width'], (0, 10, 0, 30))
-        self._slider('Stride Height', 'stride_height', d['stride_height'], (0, 20, 0, 50))
+        self._slider_pair('Stride Width', 'stride_width', d['stride_width'],
+                          'Stride Height', 'stride_height', d['stride_height'],
+                          (0, 20, 0, 50))
         self._slider('Foot Raise', 'foot_raise', d['foot_raise'], (0, 40, 0, 90))
-        self._slider('Roll Heel', 'foot_roll_heel', d['foot_roll_heel'], RNG_ROLL)
-        self._slider('Roll Toe', 'foot_roll_toe', d['foot_roll_toe'], RNG_ROLL)
+        self._slider_pair('Roll Heel', 'foot_roll_heel', d['foot_roll_heel'],
+                          'Roll Toe', 'foot_roll_toe', d['foot_roll_toe'],
+                          RNG_ROLL)
         self._section_keys['legs'] = ['stride', 'stride_width', 'stride_height',
                                        'foot_raise', 'foot_roll_heel', 'foot_roll_toe']
         cmds.setParent(col)
@@ -250,26 +262,32 @@ class AnimGenWindow:
         cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
                          marginHeight=3, marginWidth=4, collapsable=False)
         self._section_header('Hip', hip, 'hip')
-        self._slider('Nod  rZ', 'hip_nod', d['hip_nod'], RNG_AMP, CLR_Z)
-        self._slider('Lean  rY', 'hip_lean', d['hip_lean'], RNG_AMP, CLR_Y)
-        self._slider('Twist  rX', 'hip_twist', d['hip_twist'], RNG_AMP, CLR_X)
-        self._section_keys['hip'] = ['hip_nod', 'hip_lean', 'hip_twist']
+        self._range_slider('Nod  rZ', 'hip_nod_back', 'hip_nod_front',
+                           d['hip_nod_back'], d['hip_nod_front'], RNG_AMP, CLR_Z)
+        self._slider_pair('Lean  rY', 'hip_lean', d['hip_lean'],
+                          'Twist  rX', 'hip_twist', d['hip_twist'],
+                          RNG_AMP, CLR_Y, CLR_X)
+        self._section_keys['hip'] = ['hip_nod_front', 'hip_nod_back',
+                                      'hip_lean', 'hip_twist']
         cmds.setParent(col)
 
         # ── Root ──
         cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
                          marginHeight=3, marginWidth=4, collapsable=False)
         self._section_header('Root', root, 'root')
-        self._slider('Bounce  tX', 'root_bounce', d['root_bounce'], RNG_TRANS, CLR_X)
-        self._slider('Bounce Offset', 'bounce_offset', d['bounce_offset'], RNG_OFF, CLR_X)
+        self._range_slider('Bounce  tX', 'root_bounce_lo', 'root_bounce_hi',
+                           d['root_bounce_lo'], d['root_bounce_hi'], RNG_TRANS, CLR_X)
         self._range_slider('Nod  rZ', 'root_nod_back', 'root_nod_front',
                            d['root_nod_back'], d['root_nod_front'], RNG_AMP, CLR_Z)
-        self._slider('Lean  rY', 'root_lean', d['root_lean'], RNG_AMP, CLR_Y)
-        self._slider('Twist  rX', 'root_twist', d['root_twist'], RNG_AMP, CLR_X)
-        self._slider('Left-Right  tZ', 'root_lr', d['root_lr'], RNG_TRANS, CLR_Z)
-        self._slider('Back-Forth  tY', 'root_bf', d['root_bf'], RNG_TRANS, CLR_Y)
-        self._section_keys['root'] = ['root_bounce', 'bounce_offset', 'root_nod_front',
-                                       'root_nod_back', 'root_lean', 'root_twist',
+        self._slider_pair('Lean  rY', 'root_lean', d['root_lean'],
+                          'Twist  rX', 'root_twist', d['root_twist'],
+                          RNG_AMP, CLR_Y, CLR_X)
+        self._slider_pair('Left-Right  tZ', 'root_lr', d['root_lr'],
+                          'Back-Forth  tY', 'root_bf', d['root_bf'],
+                          RNG_TRANS, CLR_Z, CLR_Y)
+        self._section_keys['root'] = ['root_bounce_lo', 'root_bounce_hi',
+                                       'root_nod_front', 'root_nod_back',
+                                       'root_lean', 'root_twist',
                                        'root_lr', 'root_bf']
         cmds.setParent(col)
 
@@ -313,8 +331,9 @@ class AnimGenWindow:
             self._range_slider('Nod  rZ', '{}_nod_back'.format(part),
                                '{}_nod_front'.format(part),
                                nod_b, nod_f, RNG_AMP, CLR_Z)
-            self._slider('Lean  rY', '{}_lean'.format(part), lean, RNG_AMP, CLR_Y)
-            self._slider('Twist  rX', '{}_twist'.format(part), twist, RNG_AMP, CLR_X)
+            self._slider_pair('Lean  rY', '{}_lean'.format(part), lean,
+                              'Twist  rX', '{}_twist'.format(part), twist,
+                              RNG_AMP, CLR_Y, CLR_X)
 
             self._section_keys[part] = ['{}_nod_front'.format(part),
                                          '{}_nod_back'.format(part),
@@ -354,10 +373,14 @@ class AnimGenWindow:
         cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
                          marginHeight=3, marginWidth=4, collapsable=False)
         self._section_header('Shoulder', sh, 'shoulder')
-        self._slider('Droop  rY', 'shoulder_droop', d['shoulder_droop'], RNG_AMP, CLR_Y)
-        self._slider('Swing  rZ', 'shoulder_swing', d['shoulder_swing'], RNG_AMP, CLR_Z)
-        self._slider('Twist  rX', 'shoulder_twist', d['shoulder_twist'], RNG_AMP, CLR_X)
-        self._section_keys['shoulder'] = ['shoulder_droop', 'shoulder_swing', 'shoulder_twist']
+        self._range_slider('Swing  rZ', 'shoulder_swing_back', 'shoulder_swing_front',
+                           d['shoulder_swing_back'], d['shoulder_swing_front'],
+                           RNG_AMP, CLR_Z)
+        self._slider_pair('Droop  rY', 'shoulder_droop', d['shoulder_droop'],
+                          'Twist  rX', 'shoulder_twist', d['shoulder_twist'],
+                          RNG_AMP, CLR_Y, CLR_X)
+        self._section_keys['shoulder'] = ['shoulder_swing_front', 'shoulder_swing_back',
+                                           'shoulder_droop', 'shoulder_twist']
         cmds.setParent(col)
 
         # ── Scapula ──
@@ -365,24 +388,30 @@ class AnimGenWindow:
                          marginHeight=3, marginWidth=4, collapsable=False)
         self._section_header('Scapula', sc, 'scapula')
         self._slider('Droop  rY', 'scapula_droop', d['scapula_droop'], RNG_AMP, CLR_Y)
-        self._slider('Swing  rZ', 'scapula_swing', d['scapula_swing'], RNG_AMP, CLR_Z)
-        self._section_keys['scapula'] = ['scapula_droop', 'scapula_swing']
+        self._range_slider('Swing  rZ', 'scapula_swing_back', 'scapula_swing_front',
+                           d['scapula_swing_back'], d['scapula_swing_front'],
+                           RNG_AMP, CLR_Z)
+        self._section_keys['scapula'] = ['scapula_droop', 'scapula_swing_front',
+                                          'scapula_swing_back']
         cmds.setParent(col)
 
         # ── Elbow ──
         cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
                          marginHeight=3, marginWidth=4, collapsable=False)
         self._section_header('Elbow', el, 'elbow')
-        self._slider('Bend  rZ', 'elbow_bend', d['elbow_bend'], RNG_AMP, CLR_Z)
-        self._section_keys['elbow'] = ['elbow_bend']
+        self._range_slider('Bend  rZ', 'elbow_bend_lo', 'elbow_bend_hi',
+                           d['elbow_bend_lo'], d['elbow_bend_hi'], RNG_AMP, CLR_Z)
+        self._section_keys['elbow'] = ['elbow_bend_lo', 'elbow_bend_hi']
         cmds.setParent(col)
 
         # ── Wrist ──
         cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
                          marginHeight=3, marginWidth=4, collapsable=False)
         self._section_header('Wrist', wr, 'wrist')
-        self._slider('Swing  rZ', 'wrist_swing', d['wrist_swing'], RNG_AMP, CLR_Z)
-        self._section_keys['wrist'] = ['wrist_swing']
+        self._range_slider('Swing  rZ', 'wrist_swing_back', 'wrist_swing_front',
+                           d['wrist_swing_back'], d['wrist_swing_front'],
+                           RNG_AMP, CLR_Z)
+        self._section_keys['wrist'] = ['wrist_swing_front', 'wrist_swing_back']
         cmds.setParent(col)
 
         cmds.rowLayout(numberOfColumns=2, columnWidth2=(300, 280),

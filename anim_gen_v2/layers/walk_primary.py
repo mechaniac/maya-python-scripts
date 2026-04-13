@@ -17,17 +17,18 @@ class WalkPrimary(Layer):
         'foot_raise':      10.0,
         'foot_roll_heel':  -8.0,
         'foot_roll_toe':   40.0,
-        'hip_nod':         10.0,
+        'hip_nod_front':   10.0,
+        'hip_nod_back':    -5.0,
         'hip_lean':         5.0,
         'hip_twist':        0.0,
-        'root_bounce':      1.5,
+        'root_bounce_hi':   1.5,
+        'root_bounce_lo':   0.0,
         'root_nod_front':   1.0,
         'root_nod_back':   -1.0,
         'root_lean':        2.0,
         'root_twist':       0.0,
         'root_lr':          0.0,
         'root_bf':          0.0,
-        'bounce_offset':    0.0,
     }
 
     def __init__(self):
@@ -103,10 +104,10 @@ class WalkPrimary(Layer):
                            label='L Foot Roll'))
 
         # ── hip nod / lean / twist ──
-        # HipSwinger_M joint-aligned (same as FK spine):
-        #   rotateZ = nod (forward/back), rotateY = lean (side), rotateX = twist
+        hip_nod_amp = (p['hip_nod_front'] - p['hip_nod_back']) / 2.0
+        hip_nod_off = (p['hip_nod_front'] + p['hip_nod_back']) / 2.0
         chs.append(Channel('HipSwinger_M', 'rotateZ', Wave.COSINE,
-                           amplitude=p['hip_nod'],
+                           amplitude=hip_nod_amp, offset=hip_nod_off,
                            frequency=2, n_points=5,
                            label='Hip Nod'))
         chs.append(Channel('HipSwinger_M', 'rotateY', Wave.COSINE,
@@ -120,9 +121,11 @@ class WalkPrimary(Layer):
 
         # ── root bounce ── freq-2 cosine (two bounces per cycle)
         # Joint-aligned: local X = up/down
+        bounce_amp = (p['root_bounce_hi'] - p['root_bounce_lo']) / 2.0
+        bounce_off = (p['root_bounce_hi'] + p['root_bounce_lo']) / 2.0
         chs.append(Channel('RootX_M', 'translateX', Wave.COSINE,
-                           amplitude=p['root_bounce'],
-                           offset=p['bounce_offset'],
+                           amplitude=bounce_amp,
+                           offset=bounce_off,
                            frequency=2, n_points=5,
                            label='Bounce'))
 
