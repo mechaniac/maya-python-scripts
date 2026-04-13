@@ -243,7 +243,7 @@ class AnimGenWindow:
         root = ['RootX_M']
 
         # ── Legs ──
-        cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
+        cmds.frameLayout(label='', borderVisible=True,
                          marginHeight=3, marginWidth=4, collapsable=False)
         self._section_header('Legs', legs, 'legs')
         self._slider('Stride Length', 'stride', d['stride'], RNG_TRANS)
@@ -259,7 +259,7 @@ class AnimGenWindow:
         cmds.setParent(col)
 
         # ── Hip ──
-        cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
+        cmds.frameLayout(label='', borderVisible=True,
                          marginHeight=3, marginWidth=4, collapsable=False)
         self._section_header('Hip', hip, 'hip')
         self._range_slider('Nod  rZ', 'hip_nod_back', 'hip_nod_front',
@@ -272,7 +272,7 @@ class AnimGenWindow:
         cmds.setParent(col)
 
         # ── Root ──
-        cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
+        cmds.frameLayout(label='', borderVisible=True,
                          marginHeight=3, marginWidth=4, collapsable=False)
         self._section_header('Root', root, 'root')
         self._range_slider('Bounce  tX', 'root_bounce_lo', 'root_bounce_hi',
@@ -319,7 +319,7 @@ class AnimGenWindow:
 
         for part in ('spine', 'chest', 'neck', 'head'):
             ctrl = [part_ctrls[part]]
-            cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
+            cmds.frameLayout(label='', borderVisible=True,
                              marginHeight=3, marginWidth=4, collapsable=False)
             self._section_header(part.title(), ctrl, part)
 
@@ -370,7 +370,7 @@ class AnimGenWindow:
         d = self.walk_arms.DEFAULTS
 
         # ── Shoulder ──
-        cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
+        cmds.frameLayout(label='', borderVisible=True,
                          marginHeight=3, marginWidth=4, collapsable=False)
         self._section_header('Shoulder', sh, 'shoulder')
         self._range_slider('Swing  rZ', 'shoulder_swing_back', 'shoulder_swing_front',
@@ -384,7 +384,7 @@ class AnimGenWindow:
         cmds.setParent(col)
 
         # ── Scapula ──
-        cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
+        cmds.frameLayout(label='', borderVisible=True,
                          marginHeight=3, marginWidth=4, collapsable=False)
         self._section_header('Scapula', sc, 'scapula')
         self._slider('Droop  rY', 'scapula_droop', d['scapula_droop'], RNG_AMP, CLR_Y)
@@ -396,7 +396,7 @@ class AnimGenWindow:
         cmds.setParent(col)
 
         # ── Elbow ──
-        cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
+        cmds.frameLayout(label='', borderVisible=True,
                          marginHeight=3, marginWidth=4, collapsable=False)
         self._section_header('Elbow', el, 'elbow')
         self._range_slider('Bend  rZ', 'elbow_bend_lo', 'elbow_bend_hi',
@@ -405,7 +405,7 @@ class AnimGenWindow:
         cmds.setParent(col)
 
         # ── Wrist ──
-        cmds.frameLayout(label='', borderVisible=True, borderStyle='etchedIn',
+        cmds.frameLayout(label='', borderVisible=True,
                          marginHeight=3, marginWidth=4, collapsable=False)
         self._section_header('Wrist', wr, 'wrist')
         self._range_slider('Swing  rZ', 'wrist_swing_back', 'wrist_swing_front',
