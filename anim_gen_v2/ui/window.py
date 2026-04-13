@@ -329,7 +329,7 @@ class AnimGenWindow:
         # ── Legs ──
         cmds.separator(height=6, style='none')
         self._section_header('Legs', legs, 'legs')
-        self._slider('Stride Length', 'stride', d['stride'], RNG_TRANS)
+        self._slider('Stride Length', 'stride', d['stride'], (0, 40, 0, 300))
         self._slider_pair('Stride Width', 'stride_width', d['stride_width'],
                           'Stride Height', 'stride_height', d['stride_height'],
                           (0, 20, 0, 50))
