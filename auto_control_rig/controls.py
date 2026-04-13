@@ -3,6 +3,7 @@ import math
 
 from .constants import SLOT_TO_CTRL, COL_M, COL_IK, COL_R
 from .utils import pos, color, side_color, circle, box, cross, diamond, snap, offset, shift_cvs, rotate_cvs, pole_pos
+from .stretchy import setup_stretchy_ik
 
 
 _SPREAD_WEIGHTS = {"thumb": -2.5, "index": -1.0, "middle": 0.0,
@@ -327,6 +328,10 @@ def build_ik_leg(builder, side):
     builder.ik_offsets[ik_key].append(po)
     cmds.poleVectorConstraint(pole, ikh)
 
+    # Stretchy IK
+    if builder.opts.get("create_stretchy_ik", True):
+        setup_stretchy_ik(c, hip, knee, foot, "Leg_" + side, builder)
+
 
 # ---------------------------------------------------------------------------
 # IK Arm
@@ -370,6 +375,10 @@ def build_ik_arm(builder, side):
     ik_orient_wrist = cmds.group(em=1, n="ikOrientWrist_" + side, p=c)
     cmds.xform(ik_orient_wrist, ws=1, ro=wri_rest_ro)
     cmds.orientConstraint(ik_orient_wrist, wri, mo=1)
+
+    # Stretchy IK
+    if builder.opts.get("create_stretchy_ik", True):
+        setup_stretchy_ik(c, sho, elb, wri, "Arm_" + side, builder)
 
 
 # ---------------------------------------------------------------------------
