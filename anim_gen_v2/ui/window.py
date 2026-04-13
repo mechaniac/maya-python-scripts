@@ -96,15 +96,15 @@ class AnimGenWindow:
                       rng=RNG_AMP, color=None):
         """Compact range row: label [lo field] ═══slider═══ [hi field]."""
         bg = dict(backgroundColor=color) if color else {}
-        form = cmds.formLayout(height=22)
+        form = cmds.formLayout(height=22, **bg)
         lbl = cmds.text(label=label, width=130, align='right', **bg)
         f_lo = cmds.floatField(v=def_lo, precision=2, width=50,
-                               minValue=rng[2], maxValue=rng[3])
+                               minValue=rng[2], maxValue=rng[3], **bg)
         # placeholder for the Qt slider
         holder = cmds.columnLayout(adjustableColumn=True, height=20)
         cmds.setParent(form)
         f_hi = cmds.floatField(v=def_hi, precision=2, width=50,
-                               minValue=rng[2], maxValue=rng[3])
+                               minValue=rng[2], maxValue=rng[3], **bg)
         cmds.formLayout(form, e=True,
             attachForm=[(lbl, 'left', 0), (lbl, 'top', 2), (lbl, 'bottom', 2),
                         (f_lo, 'top', 0),
