@@ -17,6 +17,10 @@ from ..layers.walk_arms import WalkArms
 from .range_slider import (RangeSlider, SingleSlider,
                            embed_in_layout, embed_single_in_layout)
 
+import maya.OpenMayaUI as omui
+from shiboken6 import wrapInstance
+from PySide6 import QtWidgets
+
 WINDOW_NAME = 'animGenV2Win'
 WINDOW_TITLE = 'Animation Generator v2'
 
@@ -81,10 +85,22 @@ class AnimGenWindow:
         if nodes:
             cmds.select(nodes, r=True)
 
+    @staticmethod
+    def _tint_label(widget, color):
+        """Set the font colour of a cmds.text widget via Qt."""
+        if not color:
+            return
+        r, g, b = [min(int(c * 255) + 120, 235) for c in color]
+        ptr = omui.MQtUtil.findControl(widget)
+        if ptr:
+            qt_w = wrapInstance(int(ptr), QtWidgets.QWidget)
+            qt_w.setStyleSheet('color: rgb({},{},{});'.format(r, g, b))
+
     def _slider(self, label, key, default, rng=RNG_AMP, color=None):
         """Compact slider row: label [field] ═══slider═══."""
         form = cmds.formLayout(height=22)
         lbl = cmds.text(label=label, width=130, align='right')
+        self._tint_label(lbl, color)
         fld = cmds.floatField(v=default, precision=2, width=50,
                               minValue=rng[2], maxValue=rng[3])
         holder = cmds.columnLayout(adjustableColumn=True, height=20)
@@ -121,6 +137,7 @@ class AnimGenWindow:
         """Compact range row: label [lo field] ═══slider═══ [hi field]."""
         form = cmds.formLayout(height=22)
         lbl = cmds.text(label=label, width=130, align='right')
+        self._tint_label(lbl, color)
         f_lo = cmds.floatField(v=def_lo, precision=2, width=50,
                                minValue=rng[2], maxValue=rng[3])
         # placeholder for the Qt slider
