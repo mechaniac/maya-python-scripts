@@ -63,6 +63,7 @@ class RangeSlider(QtWidgets.QWidget):
     """Dual-handle range slider styled like Maya's native sliders."""
 
     rangeChanged = QtCore.Signal(float, float)
+    handleChanged = QtCore.Signal(str)   # 'low', 'high', or ''
 
     def __init__(self, parent=None, minimum=-60, maximum=60,
                  low=-5, high=5, color=None):
@@ -75,6 +76,7 @@ class RangeSlider(QtWidgets.QWidget):
         self.high = float(high)
         self._dragging = None
         self._drag_offset = 0
+        self._active = None          # 'low' | 'high' | None
         self.setMouseTracking(True)
 
         self._track_bg = _TRACK_BG
@@ -150,11 +152,14 @@ class RangeSlider(QtWidgets.QWidget):
             p.setBrush(self._bar_clr)
             p.drawRect(x1, track_y, x2 - x1, track_h)
 
-        # handles — small vertical tabs
+        # handles — small vertical tabs (highlight active)
         hy = (h - handle_h) // 2
+        active_pen = QtGui.QPen(QtGui.QColor(200, 200, 200), 1)
+        normal_pen = QtGui.QPen(QtGui.QColor(90, 90, 90), 1)
         p.setBrush(self._handle_clr)
-        p.setPen(QtGui.QPen(QtGui.QColor(90, 90, 90), 1))
+        p.setPen(active_pen if self._active == 'low' else normal_pen)
         p.drawRect(x1 - handle_w // 2, hy, handle_w, handle_h)
+        p.setPen(active_pen if self._active == 'high' else normal_pen)
         p.drawRect(x2 - handle_w // 2, hy, handle_w, handle_h)
         p.end()
 
@@ -167,15 +172,24 @@ class RangeSlider(QtWidgets.QWidget):
         lx = self._val_to_x(self.low)
         hx = self._val_to_x(self.high)
 
-        if abs(mx - lx) < 10:
+        if abs(mx - lx) < 10 and abs(mx - hx) < 10:
+            # handles overlap — pick based on which side of center
             self._dragging = 'low'
+            self._active = 'low'
+        elif abs(mx - lx) < 10:
+            self._dragging = 'low'
+            self._active = 'low'
         elif abs(mx - hx) < 10:
             self._dragging = 'high'
+            self._active = 'high'
         elif lx < mx < hx:
             self._dragging = 'range'
             self._drag_offset = mx - lx
+            self._active = None
         else:
             self._dragging = None
+            self._active = None
+        self.handleChanged.emit(self._active or '')
         self.update()
 
     def mouseMoveEvent(self, event):
@@ -185,10 +199,26 @@ class RangeSlider(QtWidgets.QWidget):
 
         if self._dragging == 'low':
             v = self._x_to_val(mx)
-            self.low = max(self.minimum, min(v, self.high))
+            if v > self.high:
+                # auto-switch: promote low drag to high
+                self.low = self.high
+                self.high = min(self.maximum, v)
+                self._dragging = 'high'
+                self._active = 'high'
+                self.handleChanged.emit('high')
+            else:
+                self.low = max(self.minimum, v)
         elif self._dragging == 'high':
             v = self._x_to_val(mx)
-            self.high = min(self.maximum, max(v, self.low))
+            if v < self.low:
+                # auto-switch: demote high drag to low
+                self.high = self.low
+                self.low = max(self.minimum, v)
+                self._dragging = 'low'
+                self._active = 'low'
+                self.handleChanged.emit('low')
+            else:
+                self.high = min(self.maximum, v)
         elif self._dragging == 'range':
             span = self.high - self.low
             new_low = self._x_to_val(mx - self._drag_offset)
@@ -201,6 +231,9 @@ class RangeSlider(QtWidgets.QWidget):
 
     def mouseReleaseEvent(self, event):
         self._dragging = None
+        self._active = None
+        self.handleChanged.emit('')
+        self.update()
 
 
 # ────────────────────────────────────────────────────────────

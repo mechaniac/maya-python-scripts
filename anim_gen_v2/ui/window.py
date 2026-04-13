@@ -180,6 +180,30 @@ class AnimGenWindow:
         cmds.floatField(f_lo, e=True, changeCommand=_lo_field_changed)
         cmds.floatField(f_hi, e=True, changeCommand=_hi_field_changed)
 
+        # highlight active field while dragging
+        _HL = (0.35, 0.35, 0.40)   # subtle highlight bg
+        def _lo_bg():
+            return cmds.floatField(f_lo, q=True, backgroundColor=True)
+        def _hi_bg():
+            return cmds.floatField(f_hi, q=True, backgroundColor=True)
+        _default_bg = [None, None]  # [lo, hi] captured on first use
+
+        def _handle_changed(which):
+            if _default_bg[0] is None:
+                _default_bg[0] = _lo_bg()
+                _default_bg[1] = _hi_bg()
+            if which == 'low':
+                cmds.floatField(f_lo, e=True, backgroundColor=_HL)
+                cmds.floatField(f_hi, e=True, backgroundColor=_default_bg[1])
+            elif which == 'high':
+                cmds.floatField(f_hi, e=True, backgroundColor=_HL)
+                cmds.floatField(f_lo, e=True, backgroundColor=_default_bg[0])
+            else:
+                cmds.floatField(f_lo, e=True, backgroundColor=_default_bg[0])
+                cmds.floatField(f_hi, e=True, backgroundColor=_default_bg[1])
+
+        sl.handleChanged.connect(_handle_changed)
+
         cmds.setParent('..')
         self._fields[key_lo] = f_lo
         self._fields[key_hi] = f_hi
