@@ -509,10 +509,10 @@ class AnimGenWindow:
         cmds.rowLayout(numberOfColumns=4, columnWidth4=(200, 150, 150, 100),
                        adjustableColumn=1)
         cmds.button(label='Generate Walk Cycle', height=36,
-                    backgroundColor=(0.2, 0.55, 0.2),
+                    backgroundColor=(0.22, 0.55, 0.22),
                     command=lambda *_: self._generate())
         cmds.button(label='Delete Animation', height=36,
-                    backgroundColor=(0.55, 0.2, 0.2),
+                    backgroundColor=(0.55, 0.22, 0.22),
                     command=lambda *_: self._delete_anim())
         cmds.button(label='Select All Controls', height=36,
                     command=lambda *_: self._sel_all())
