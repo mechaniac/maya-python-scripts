@@ -28,7 +28,7 @@ DEFAULT_CLIPS = [
     {'name': 'land_light',      'frames': 30, 'loop': False, 'category': 'action'},
 ]
 
-DEFAULT_BUFFER = 30     # frames between clips (prevents key overlap from anim generators)
+DEFAULT_BUFFER = 60     # frames between clips (must exceed worst-case extended key overshoot)
 DEFAULT_START = 100     # first clip starts at this frame (leave room for T-pose / rest at 0)
 
 

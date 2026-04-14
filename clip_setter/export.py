@@ -174,16 +174,17 @@ def setup_timeline(layout):
 
 # ── Bind pose separators ──────────────────────────────────────────
 
-def _default_value(node_attr):
+def _default_value(node, attr):
     """Return the bind/default value for a channel.
 
     Transform channels: 0 for translate/rotate, 1 for scale.
     Custom attrs: query the default value set at creation time.
     """
-    node, attr = node_attr.rsplit('.', 1)
-    if attr in ('sx', 'sy', 'sz'):
+    if attr in ('sx', 'sy', 'sz', 'scaleX', 'scaleY', 'scaleZ'):
         return 1.0
-    if attr in ('tx', 'ty', 'tz', 'rx', 'ry', 'rz'):
+    if attr in ('tx', 'ty', 'tz', 'rx', 'ry', 'rz',
+                'translateX', 'translateY', 'translateZ',
+                'rotateX', 'rotateY', 'rotateZ'):
         return 0.0
     # Custom / user-defined attr — query default
     try:
@@ -220,6 +221,38 @@ def _separator_frames(layout):
     return sorted(set(frames))
 
 
+def _gather_charset_channels(character_set):
+    """Return a list of (node, attr) tuples for all keyable channels.
+
+    Uses nodesOnly query then gathers keyable/unlocked attrs per node.
+    This is more reliable than querying plug names from the character set.
+    """
+    nodes = cmds.character(character_set, q=True, nodesOnly=True) or []
+    # Deduplicate while preserving order
+    seen = set()
+    unique_nodes = []
+    for n in nodes:
+        short = n.rsplit('|', 1)[-1]
+        if short not in seen:
+            seen.add(short)
+            unique_nodes.append(short)
+
+    channels = []
+    for node in unique_nodes:
+        if not cmds.objExists(node):
+            continue
+        keyable = cmds.listAttr(node, keyable=True) or []
+        for attr in keyable:
+            full = '{}.{}'.format(node, attr)
+            try:
+                if cmds.getAttr(full, lock=True):
+                    continue
+            except (ValueError, RuntimeError):
+                continue
+            channels.append((node, attr))
+    return channels
+
+
 def key_bind_pose_separators(layout, character_set):
     """Key every channel in *character_set* to its default value at separator frames.
 
@@ -242,23 +275,17 @@ def key_bind_pose_separators(layout, character_set):
         cmds.warning('No clips in layout.')
         return 0
 
-    # Get all node.attr members of the character set
-    members = cmds.character(character_set, q=True) or []
-    # character() returns a flat list of plug names (node.attr)
-    # but may also return sub-character-sets — filter to attrs only
-    channels = [m for m in members if '.' in m and cmds.objExists(m)]
-
+    channels = _gather_charset_channels(character_set)
     if not channels:
-        cmds.warning('No keyable channels in character set.')
+        cmds.warning('No keyable channels found in character set.')
         return 0
 
     cmds.undoInfo(openChunk=True, chunkName='ClipSetter_BindSeparators')
     key_count = 0
     try:
         for frame in sep_frames:
-            for ch in channels:
-                node, attr = ch.rsplit('.', 1)
-                val = _default_value(ch)
+            for node, attr in channels:
+                val = _default_value(node, attr)
                 try:
                     cmds.setKeyframe(node, at=attr, t=frame, v=val)
                     cmds.keyTangent(node, at=attr, t=(frame, frame),
