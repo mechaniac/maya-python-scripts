@@ -1,14 +1,8 @@
 {
-  "meta": {
-    "type": "walk",
-    "name": "sneakyCreep",
-    "description": "Cautious tiptoeing sneak. Low stride, high foot raise, compressed bounce, arms held close.",
-    "author": "copilot",
-    "date": "2026-04-13"
-  },
   "primary": {
     "stride": 35.0,
     "stride_width": -1.0,
+    "stride_width_swing": -1.0,
     "stride_height": 8.0,
     "foot_raise": 12.0,
     "foot_roll_heel": -5.0,
@@ -25,31 +19,31 @@
     "root_twist": 0.0,
     "root_lr": 0.0,
     "root_bf": 8.0,
-    "legs_offset": 0,
-    "hip_offset": 0,
-    "root_offset": 0
+    "legs_offset": 0.0,
+    "hip_offset": 0.0,
+    "root_offset": 0.0
   },
   "secondary": {
-    "spine_nod_front": 6.0,
-    "spine_nod_back": 2.0,
+    "spine_nod_front": 24.93150684931507,
+    "spine_nod_back": 13.150684931506845,
     "spine_lean": 0.0,
     "spine_twist": 2.0,
-    "spine_offset": 0,
-    "chest_nod_front": 8.0,
-    "chest_nod_back": 4.0,
+    "spine_offset": 0.0,
+    "chest_nod_front": 17.260273972602747,
+    "chest_nod_back": 6.301369863013704,
     "chest_lean": 0.0,
     "chest_twist": 3.0,
-    "chest_offset": 0,
-    "neck_nod_front": 10.0,
-    "neck_nod_back": 5.0,
+    "chest_offset": 0.0,
+    "neck_nod_front": 8.082191780821915,
+    "neck_nod_back": 0.27397260273972535,
     "neck_lean": 2.0,
     "neck_twist": 4.0,
-    "neck_offset": 0,
-    "head_nod_front": 12.0,
-    "head_nod_back": 6.0,
+    "neck_offset": 0.5714285714285721,
+    "head_nod_front": 6.2465753424657535,
+    "head_nod_back": -1.6438356164383592,
     "head_lean": 3.0,
     "head_twist": 5.0,
-    "head_offset": 0
+    "head_offset": 0.0
   },
   "arms": {
     "shoulder_droop": 10.0,
@@ -59,13 +53,22 @@
     "shoulder_twist": 0.0,
     "scapula_swing_front": -2.0,
     "scapula_swing_back": -5.0,
+    "scapula_twist": 2.0,
     "elbow_bend_hi": 25.0,
-    "elbow_bend_lo": 18.0,
-    "wrist_swing_front": 0.0,
+    "elbow_bend_lo": 2.0,
+    "wrist_swing_front": 2.0,
     "wrist_swing_back": -2.0,
-    "shoulder_offset": 0,
-    "scapula_offset": 0,
-    "elbow_offset": 0,
-    "wrist_offset": 0
+    "shoulder_offset": 0.0,
+    "scapula_offset": 0.0,
+    "elbow_offset": 0.0,
+    "wrist_offset": 0.0,
+    "wrist_twist": 2.0
+  },
+  "meta": {
+    "type": "walk",
+    "name": "sneakyCreep",
+    "description": "Cautious tiptoeing sneak. Low stride, high foot raise, compressed bounce, arms held close.",
+    "author": "copilot",
+    "date": "2026-04-13"
   }
 }

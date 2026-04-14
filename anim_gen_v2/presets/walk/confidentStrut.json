@@ -1,14 +1,8 @@
 {
-  "meta": {
-    "type": "walk",
-    "name": "confidentStrut",
-    "description": "Bold, wide strut with strong hip twist and chest counter-rotation. Head held high.",
-    "author": "copilot",
-    "date": "2026-04-13"
-  },
   "primary": {
     "stride": 85.0,
     "stride_width": -8.0,
+    "stride_width_swing": -8.0,
     "stride_height": 28.0,
     "foot_raise": 7.0,
     "foot_roll_heel": -25.0,
@@ -25,47 +19,56 @@
     "root_twist": 5.0,
     "root_lr": 3.0,
     "root_bf": 6.0,
-    "legs_offset": 0,
-    "hip_offset": 0,
-    "root_offset": 0
+    "legs_offset": 0.0,
+    "hip_offset": 0.0,
+    "root_offset": 0.0
   },
   "secondary": {
-    "spine_nod_front": 4.0,
-    "spine_nod_back": -2.0,
+    "spine_nod_front": -8.263473053892206,
+    "spine_nod_back": -14.730538922155688,
     "spine_lean": 3.0,
     "spine_twist": 4.0,
-    "spine_offset": 0,
+    "spine_offset": 0.0,
     "chest_nod_front": 3.0,
     "chest_nod_back": -5.0,
     "chest_lean": 5.0,
     "chest_twist": 6.0,
-    "chest_offset": 0,
+    "chest_offset": 0.0,
     "neck_nod_front": -2.0,
     "neck_nod_back": -4.0,
     "neck_lean": 2.0,
     "neck_twist": 3.0,
-    "neck_offset": 0,
+    "neck_offset": 0.0,
     "head_nod_front": -3.0,
     "head_nod_back": -5.0,
     "head_lean": 1.5,
     "head_twist": 2.0,
-    "head_offset": 0
+    "head_offset": 0.0
   },
   "arms": {
-    "shoulder_droop": 15.0,
-    "scapula_droop": 10.0,
+    "shoulder_droop": 22.747252747252745,
+    "scapula_droop": 7.461139896373057,
     "shoulder_swing_front": 25.0,
     "shoulder_swing_back": -35.0,
     "shoulder_twist": 5.0,
     "scapula_swing_front": 6.0,
-    "scapula_swing_back": -4.0,
-    "elbow_bend_hi": 8.0,
+    "scapula_swing_back": -33.41317365269461,
+    "scapula_twist": 12.746113989637308,
+    "elbow_bend_hi": 90.65868263473054,
     "elbow_bend_lo": 0.0,
     "wrist_swing_front": 4.0,
     "wrist_swing_back": -2.0,
-    "shoulder_offset": 0,
-    "scapula_offset": 0,
-    "elbow_offset": 0,
-    "wrist_offset": 0
+    "wrist_twist": 20.207253886010363,
+    "shoulder_offset": 0.0,
+    "scapula_offset": 0.0,
+    "elbow_offset": 0.0,
+    "wrist_offset": 0.0
+  },
+  "meta": {
+    "type": "walk",
+    "name": "confidentStrut",
+    "description": "Bold, wide strut with strong hip twist and chest counter-rotation. Head held high.",
+    "author": "copilot",
+    "date": "2026-04-14"
   }
 }

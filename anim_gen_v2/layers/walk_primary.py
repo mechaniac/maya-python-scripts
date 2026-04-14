@@ -13,6 +13,7 @@ class WalkPrimary(Layer):
     DEFAULTS = {
         'stride':          70.0,
         'stride_width':    -3.0,
+        'stride_width_swing': -3.0,
         'stride_height':   23.0,
         'foot_raise':       5.0,
         'foot_roll_heel': -20.0,
@@ -65,13 +66,16 @@ class WalkPrimary(Layer):
                            frame_offset=legs_off,
                            label='L Stride'))
 
-        # ── feet width (translateX) ── constant
-        chs.append(Channel('IKLeg_R', 'translateX', Wave.CONSTANT,
-                           amplitude=-p['stride_width'], n_points=3,
+        # ── feet width (translateX) ── swing out at passing position
+        w = p['stride_width']
+        ws = p['stride_width_swing']
+        # R foot lifts at 3/4 (idx 3), L foot lifts at 1/4 (idx 1)
+        chs.append(Channel('IKLeg_R', 'translateX',
+                           values=[-w, -w, -w, -ws, -w],
                            frame_offset=legs_off,
                            label='R Width'))
-        chs.append(Channel('IKLeg_L', 'translateX', Wave.CONSTANT,
-                           amplitude=p['stride_width'], n_points=3,
+        chs.append(Channel('IKLeg_L', 'translateX',
+                           values=[w, ws, w, w, w],
                            frame_offset=legs_off,
                            label='L Width'))
 

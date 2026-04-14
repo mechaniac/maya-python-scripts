@@ -70,7 +70,7 @@ class WalkSecondary(Layer):
                                label='{} Lean'.format(part)))
             # rotateX = twist (axial roll) -- 3-point, once per cycle
             chs.append(Channel(ctrl, 'rotateX', Wave.COSINE,
-                               amplitude=twist,
+                               amplitude=-twist,
                                frequency=1, n_points=3,
                                frame_offset=off,
                                label='{} Twist'.format(part)))

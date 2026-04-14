@@ -246,12 +246,13 @@ class SingleSlider(QtWidgets.QWidget):
     valueChanged = QtCore.Signal(float)
 
     def __init__(self, parent=None, minimum=-60, maximum=60,
-                 value=0, color=None):
+                 value=0, color=None, snap_int=False):
         super().__init__(parent)
         self.setFixedHeight(20)
         self.setMinimumWidth(60)
         self.minimum = float(minimum)
         self.maximum = float(maximum)
+        self._snap_int = snap_int
         self._value = max(self.minimum, min(float(value), self.maximum))
         self._dragging = False
         self.setMouseTracking(True)
@@ -342,6 +343,8 @@ class SingleSlider(QtWidgets.QWidget):
 
     def _update_from_mouse(self, mx):
         v = self._x_to_val(mx)
+        if self._snap_int:
+            v = round(v)
         v = max(self.minimum, min(v, self.maximum))
         if v != self._value:
             self._value = v

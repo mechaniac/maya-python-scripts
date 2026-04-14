@@ -117,6 +117,29 @@ def _on_build(*a):
         "roll_start_angle": cmds.floatField(_ui["roll_start"], q=1, v=1),
         "roll_end_angle": cmds.floatField(_ui["roll_end"], q=1, v=1),
     }
+
+    # Warn if IK legs enabled but no foot roll locators in scene
+    if opts["create_ik_legs"]:
+        missing = [n for n in ("footRoll_heel_L", "footRoll_heel_R",
+                               "footRoll_toetip_L", "footRoll_toetip_R")
+                   if not cmds.objExists(n)]
+        if missing:
+            result = cmds.confirmDialog(
+                t="Foot Roll Locators Missing",
+                m="No Foot Roll locators found in the scene.\n"
+                  "The rig will use estimated positions which may not\n"
+                  "match your character's feet.\n\n"
+                  "Create them now so you can adjust before building?",
+                b=["Create && Continue", "Skip && Build", "Cancel"],
+                db="Create && Continue", cb="Cancel", ds="Cancel")
+            if result == "Cancel":
+                return
+            if result == "Create && Continue":
+                create_foot_roll_locators(_read_map())
+                cmds.warning("Foot roll locators created. "
+                             "Adjust their positions, then click Build again.")
+                return
+
     AutoControlRigBuilder(_read_map(), opts).build()
 
 

@@ -9,6 +9,7 @@
   "primary": {
     "stride": 70.0,
     "stride_width": -3.0,
+    "stride_width_swing": -3.0,
     "stride_height": 23.0,
     "foot_raise": 5.0,
     "foot_roll_heel": -20.0,
@@ -59,6 +60,7 @@
     "shoulder_twist": 0.0,
     "scapula_swing_front": 0.0,
     "scapula_swing_back": 0.0,
+    "scapula_twist": 0.0,
     "elbow_bend_hi": 0.0,
     "elbow_bend_lo": 0.0,
     "wrist_swing_front": 0.0,
@@ -66,6 +68,7 @@
     "shoulder_offset": 0,
     "scapula_offset": 0,
     "elbow_offset": 0,
-    "wrist_offset": 0
+    "wrist_offset": 0,
+    "wrist_twist": 0.0
   }
 }

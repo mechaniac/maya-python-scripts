@@ -258,6 +258,12 @@ def build_ik_leg(builder, side):
         toetip_loc = "footRoll_toetip_" + side
         heel_p = pos(heel_loc) if cmds.objExists(heel_loc) else [foot_p[0], 0, foot_p[2] - builder.sz * 5]
         toetip_p = pos(toetip_loc) if cmds.objExists(toetip_loc) else [toe_p[0], 0, toe_p[2] + builder.sz * 5]
+
+        # Clean up guide locators now that positions are captured
+        for loc in (heel_loc, toetip_loc):
+            if cmds.objExists(loc):
+                cmds.delete(loc)
+
         ball_p = [toe_p[0], 0, toe_p[2]]
 
         foot_follow = cmds.group(em=1, n="footFollow_" + side, p=builder.ik_grp)
@@ -331,7 +337,8 @@ def build_ik_leg(builder, side):
     # Stretchy IK
     if builder.opts.get("create_stretchy_ik", True):
         setup_stretchy_ik(c, hip, knee, foot, "Leg_" + side, builder,
-                          skin_slots=["hip_" + s, "knee_" + s])
+                          skin_slots=["hip_" + s, "knee_" + s],
+                          ik_handle=ikh)
 
 
 # ---------------------------------------------------------------------------

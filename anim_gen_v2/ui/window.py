@@ -37,18 +37,26 @@ CLR_Z = (0.18, 0.18, 0.45)
 # Dim yellow for Select buttons
 CLR_SELECT_BTN = (0.45, 0.42, 0.22)
 
+# Yellow for Scale slider
+CLR_SCALE = (0.55, 0.50, 0.15)
+
 # Subtle tints for Library vs Project presets
 CLR_LIB  = (0.25, 0.38, 0.55)   # distinct blue
 CLR_PROJ = (0.55, 0.38, 0.18)   # distinct orange
 
 # Range category labels for the settings editor
 _RANGE_LABELS = {
-    'rotation':    'Rotation (nod, lean, twist, swing, droop, bend)',
+    'rotation':    'Rotation (nod, lean)',
     'translation': 'Translation (bounce, LR, BF)',
     'roll':        'Foot Roll',
     'stride':      'Stride Length',
-    'stride_wh':   'Stride Width / Height',
+    'stride_wh':   'Stride Width',
+    'stride_h':    'Stride Height',
     'foot_raise':  'Foot Raise',
+    'swing':       'Arm Swing',
+    'droop':       'Arm Droop',
+    'twist':       'Twist (all rX)',
+    'elbow_bend':  'Elbow Bend',
 }
 
 
@@ -92,17 +100,34 @@ class AnimGenWindow:
         self._off_quarter = max(1, int(span / 4))
         win = cmds.window(WINDOW_NAME, title=WINDOW_TITLE,
                           widthHeight=(600, 780), sizeable=True)
-        cmds.scrollLayout(childResizable=True)
-        tabs = cmds.tabLayout()
 
+        # Root form: scrollable sliders on top, fixed actions at bottom
+        root_form = cmds.formLayout()
+
+        # ── Scrollable area (sliders / settings) ──
+        scroll = cmds.scrollLayout(childResizable=True)
+        tabs = cmds.tabLayout()
         walk_col = cmds.columnLayout(adjustableColumn=True, parent=tabs)
         self._build_walk_primary(walk_col)
         self._build_walk_secondary(walk_col)
         self._build_walk_arms(walk_col)
-        self._build_actions(walk_col)
         self._build_range_settings(walk_col)
-
         cmds.tabLayout(tabs, e=True, tabLabel=[(walk_col, 'Walk Cycle')])
+        cmds.setParent(root_form)
+
+        # ── Fixed bottom panel (actions + presets) ──
+        bottom = cmds.columnLayout(adjustableColumn=True)
+        self._build_actions(bottom)
+        cmds.setParent(root_form)
+
+        cmds.formLayout(root_form, e=True,
+            attachForm=[(scroll, 'top', 0), (scroll, 'left', 0),
+                        (scroll, 'right', 0),
+                        (bottom, 'left', 0), (bottom, 'right', 0),
+                        (bottom, 'bottom', 0)],
+            attachControl=[(scroll, 'bottom', 0, bottom)],
+            attachNone=[(bottom, 'top')])
+
         cmds.showWindow(win)
 
     # ──────────────────────────────────────────────
@@ -359,10 +384,11 @@ class AnimGenWindow:
 
     def _slider_pair(self, label_a, key_a, def_a, label_b, key_b, def_b,
                      rng=None, color_a=None, color_b=None,
-                     tip_a='', tip_b=''):
+                     tip_a='', tip_b='', rng_b=None):
         """Two sliders side by side, each getting 50 % of the width."""
         if rng is None:
             rng = self._rng('rotation')
+        rng_actual_b = rng_b if rng_b is not None else rng
         form = cmds.formLayout(height=22)
         cmds.setParent(form)
         self._slider(label_a, key_a, def_a, rng, color_a, tip=tip_a)
@@ -370,7 +396,7 @@ class AnimGenWindow:
         # the formLayout wrapping sl_a is its direct parent
         frm_a = cmds.floatField(sl_a, q=True, parent=True)
         cmds.setParent(form)
-        self._slider(label_b, key_b, def_b, rng, color_b, tip=tip_b)
+        self._slider(label_b, key_b, def_b, rng_actual_b, color_b, tip=tip_b)
         sl_b = self._fields[key_b]
         frm_b = cmds.floatField(sl_b, q=True, parent=True)
         cmds.formLayout(form, e=True,
@@ -404,7 +430,7 @@ class AnimGenWindow:
             attachControl=[(fld, 'left', 4, lbl),
                            (holder, 'left', 2, fld)])
         sl = embed_single_in_layout(holder, minimum=mn, maximum=mx,
-                                    value=0, color=None)
+                                    value=0, color=None, snap_int=True)
         sl.setToolTip(tip)
 
         def _slider_changed(v):
@@ -423,6 +449,62 @@ class AnimGenWindow:
         cmds.setParent('..')
         self._fields[key] = fld
         self._single_keys[key] = sl
+
+    def _scalar_row(self, sections):
+        """Scale slider (0-10, default 1) + Apply button for an entire region."""
+        tip = ('Multiply all values in this region by the scale factor.\n'
+               '1.0 = no change, 0.5 = halve, 2.0 = double, etc.')
+        form = cmds.formLayout(height=22)
+        lbl = cmds.text(label='Scale', width=130, align='right',
+                        annotation=tip)
+        self._tint_label(lbl, CLR_SCALE)
+        fld = cmds.floatField(v=1.0, precision=2, width=50,
+                              minValue=0.0, maxValue=10.0,
+                              annotation=tip)
+        holder = cmds.columnLayout(adjustableColumn=True, height=20)
+        cmds.setParent(form)
+        btn = cmds.button(label='Apply', width=50, height=20,
+                          annotation='Multiply all region values by the scale factor, then reset to 1.0')
+        cmds.formLayout(form, e=True,
+            attachForm=[(lbl, 'left', 0), (lbl, 'top', 0), (lbl, 'bottom', 0),
+                        (fld, 'top', 0), (fld, 'bottom', 0),
+                        (holder, 'top', 0), (holder, 'bottom', 0),
+                        (btn, 'top', 0), (btn, 'bottom', 0),
+                        (btn, 'right', 0)],
+            attachNone=[(lbl, 'right'), (fld, 'right'), (btn, 'left')],
+            attachControl=[(fld, 'left', 4, lbl),
+                           (holder, 'left', 2, fld),
+                           (holder, 'right', 2, btn)])
+        sl = embed_single_in_layout(holder, minimum=0.0, maximum=10.0,
+                                    value=1.0, color=CLR_SCALE)
+        sl.setToolTip(tip)
+
+        def _slider_changed(v):
+            cmds.floatField(fld, e=True, v=v)
+
+        def _field_changed(v):
+            sl.setValue(v)
+
+        def _apply(*_):
+            scale = sl.value()
+            if scale == 1.0:
+                return
+            for sec in sections:
+                keys = self._section_keys.get(sec, [])
+                for key in keys:
+                    if key.endswith('_offset'):
+                        continue
+                    val = self._get_val(key)
+                    self._set_val(key, val * scale)
+            sl.setValue(1.0)
+            cmds.floatField(fld, e=True, v=1.0)
+            if self._auto_update:
+                self._generate()
+
+        sl.valueChanged.connect(_slider_changed)
+        cmds.floatField(fld, e=True, changeCommand=_field_changed)
+        cmds.button(btn, e=True, command=_apply)
+        cmds.setParent('..')
 
     def _toggle_mute(self, section, val):
         """Mute/unmute a section by setting all its sliders to 0 or restoring."""
@@ -473,6 +555,7 @@ class AnimGenWindow:
 
         self._category_header('Primary', legs + hip + root,
                               list(d.keys()), ['legs', 'hip', 'root'])
+        self._scalar_row(['legs', 'hip', 'root'])
 
         # ── Legs ──
         cmds.separator(height=6, style='none')
@@ -480,11 +563,13 @@ class AnimGenWindow:
         self._offset_slider('legs_offset', self._off_half)
         self._slider('Stride Length', 'stride', d['stride'], self._rng('stride'),
                      tip='Forward distance (translateZ) the foot travels per step')
-        self._slider_pair('Stride Width', 'stride_width', d['stride_width'],
-                          'Stride Height', 'stride_height', d['stride_height'],
-                          self._rng('stride_wh'),
-                          tip_a='Lateral spread (translateX) between the feet',
-                          tip_b='Vertical lift of the IK leg goal at mid-stride (translateY)')
+        self._range_slider('Stride Width', 'stride_width', 'stride_width_swing',
+                           d['stride_width'], d.get('stride_width_swing', d['stride_width']),
+                           self._rng('stride_wh'), None,
+                           tip='Lateral spread (translateX). Low = grounded width, Hi = swing-out width when foot is raised.')
+        self._slider('Stride Height', 'stride_height', d['stride_height'],
+                     self._rng('stride_h'),
+                     tip='Vertical lift of the IK leg goal at mid-stride (translateY)')
         self._slider('Foot Raise', 'foot_raise', d['foot_raise'], self._rng('foot_raise'),
                      tip='Peak height the foot reaches during the passing position')
         self._slider_pair('Roll Heel', 'foot_roll_heel', d['foot_roll_heel'],
@@ -492,7 +577,8 @@ class AnimGenWindow:
                           self._rng('roll'),
                           tip_a='Heel-strike roll angle at the start of contact phase',
                           tip_b='Toe-off roll angle at the end of contact phase')
-        self._section_keys['legs'] = ['stride', 'stride_width', 'stride_height',
+        self._section_keys['legs'] = ['stride', 'stride_width', 'stride_width_swing',
+                                       'stride_height',
                                        'foot_raise', 'foot_roll_heel', 'foot_roll_toe',
                                        'legs_offset']
 
@@ -560,6 +646,7 @@ class AnimGenWindow:
         self._category_header('Secondary', list(part_ctrls.values()),
                               list(self.walk_secondary._params.keys()),
                               list(part_ctrls.keys()))
+        self._scalar_row(list(part_ctrls.keys()))
 
         for part in ('spine', 'chest', 'neck', 'head'):
             ctrl = [part_ctrls[part]]
@@ -611,45 +698,50 @@ class AnimGenWindow:
 
         self._category_header('Arms', all_arm,
                               list(d.keys()),
-                              ['shoulder', 'scapula', 'elbow', 'wrist'])
+                              ['scapula', 'shoulder', 'elbow', 'wrist'])
+        self._scalar_row(['scapula', 'shoulder', 'elbow', 'wrist'])
+
+        # ── Scapula ──
+        cmds.separator(height=6, style='none')
+        self._section_header('Scapula', sc, 'scapula')
+        self._offset_slider('scapula_offset', self._off_half)
+        self._slider('Droop  rY', 'scapula_droop', d['scapula_droop'], self._rng('droop'), CLR_Y,
+                     tip='Resting down-angle of the scapula (rotateY). Mirrored between sides.')
+        self._range_slider('Swing  rZ', 'scapula_swing_back', 'scapula_swing_front',
+                           d['scapula_swing_back'], d['scapula_swing_front'],
+                           self._rng('swing'), CLR_Z,
+                           tip='Forward/back scapula swing linked to arm movement (rotateZ)')
+        self._slider('Twist  rX', 'scapula_twist', d.get('scapula_twist', 0.0),
+                     self._rng('twist'), CLR_X,
+                     tip='Axial twist of the scapula bone (rotateX). Mirrored between sides.')
+        self._section_keys['scapula'] = ['scapula_droop', 'scapula_swing_front',
+                                          'scapula_swing_back', 'scapula_twist',
+                                          'scapula_offset']
 
         # ── Shoulder ──
-        cmds.separator(height=6, style='none')
+        cmds.separator(height=4, style='in')
         self._section_header('Shoulder', sh, 'shoulder')
         self._offset_slider('shoulder_offset', self._off_half)
         self._range_slider('Swing  rZ', 'shoulder_swing_back', 'shoulder_swing_front',
                            d['shoulder_swing_back'], d['shoulder_swing_front'],
-                           self._rng('rotation'), CLR_Z,
+                           self._rng('swing'), CLR_Z,
                            tip='Forward/back arm swing arc (rotateZ). Back extreme and front extreme.')
         self._slider_pair('Droop  rY', 'shoulder_droop', d['shoulder_droop'],
                           'Twist  rX', 'shoulder_twist', d['shoulder_twist'],
-                          self._rng('rotation'), CLR_Y, CLR_X,
+                          self._rng('droop'), CLR_Y, CLR_X,
                           tip_a='Resting angle of the upper arm hanging down (rotateY). Mirrored between sides.',
-                          tip_b='Axial twist of the upper arm bone (rotateX). Mirrored between sides.')
+                          tip_b='Axial twist of the upper arm bone (rotateX). Mirrored between sides.',
+                          rng_b=self._rng('twist'))
         self._section_keys['shoulder'] = ['shoulder_swing_front', 'shoulder_swing_back',
                                            'shoulder_droop', 'shoulder_twist',
                                            'shoulder_offset']
-
-        # ── Scapula ──
-        cmds.separator(height=4, style='in')
-        self._section_header('Scapula', sc, 'scapula')
-        self._offset_slider('scapula_offset', self._off_half)
-        self._slider('Droop  rY', 'scapula_droop', d['scapula_droop'], self._rng('rotation'), CLR_Y,
-                     tip='Resting down-angle of the scapula (rotateY). Mirrored between sides.')
-        self._range_slider('Swing  rZ', 'scapula_swing_back', 'scapula_swing_front',
-                           d['scapula_swing_back'], d['scapula_swing_front'],
-                           self._rng('rotation'), CLR_Z,
-                           tip='Forward/back scapula swing linked to arm movement (rotateZ)')
-        self._section_keys['scapula'] = ['scapula_droop', 'scapula_swing_front',
-                                          'scapula_swing_back',
-                                          'scapula_offset']
 
         # ── Elbow ──
         cmds.separator(height=4, style='in')
         self._section_header('Elbow', el, 'elbow')
         self._offset_slider('elbow_offset', self._off_half)
         self._range_slider('Bend  rZ', 'elbow_bend_lo', 'elbow_bend_hi',
-                           d['elbow_bend_lo'], d['elbow_bend_hi'], self._rng('rotation'), CLR_Z,
+                           d['elbow_bend_lo'], d['elbow_bend_hi'], self._rng('elbow_bend'), CLR_Z,
                            tip='Elbow flexion range (rotateZ). Lo = arm extended, Hi = arm bent at mid-swing.')
         self._section_keys['elbow'] = ['elbow_bend_lo', 'elbow_bend_hi',
                                         'elbow_offset']
@@ -660,10 +752,13 @@ class AnimGenWindow:
         self._offset_slider('wrist_offset', self._off_half)
         self._range_slider('Swing  rZ', 'wrist_swing_back', 'wrist_swing_front',
                            d['wrist_swing_back'], d['wrist_swing_front'],
-                           self._rng('rotation'), CLR_Z,
+                           self._rng('swing'), CLR_Z,
                            tip='Wrist fore/aft swing following the arm arc (rotateZ)')
+        self._slider('Twist  rX', 'wrist_twist', d.get('wrist_twist', 0.0),
+                     self._rng('twist'), CLR_X,
+                     tip='Axial twist of the wrist bone (rotateX). Mirrored between sides.')
         self._section_keys['wrist'] = ['wrist_swing_front', 'wrist_swing_back',
-                                        'wrist_offset']
+                                        'wrist_twist', 'wrist_offset']
 
         cmds.setParent(parent)
 
@@ -680,7 +775,8 @@ class AnimGenWindow:
 
         self._rng_fields = {}  # name -> (min_fld, max_fld)
         for name in ('rotation', 'translation', 'roll',
-                     'stride', 'stride_wh', 'foot_raise'):
+                     'stride', 'stride_wh', 'stride_h', 'foot_raise',
+                     'swing', 'droop', 'twist', 'elbow_bend'):
             label = _RANGE_LABELS.get(name, name)
             rng = self._rng(name)
             cmds.text(label=label, align='left', font='boldLabelFont')

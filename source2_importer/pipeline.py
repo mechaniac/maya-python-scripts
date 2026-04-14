@@ -135,6 +135,78 @@ def _find_ref_fbx(fbx_path):
     return None
 
 
+# ── hierarchy organization ───────────────────────────────────────
+
+
+def _organize_hierarchy(new_nodes, model_name):
+    """Group imported nodes under a clean hierarchy.
+
+    Creates::
+
+        <model_name>_GRP
+        ├── <model_name>_GEO_GRP   — mesh transforms
+        └── <model_name>_SKEL_GRP  — skeleton root(s)
+
+    Nodes already parented under the skeleton (skinned meshes via
+    intermediate groups) stay where they are.
+    """
+    top = cmds.group(empty=True, name=f"{model_name}_GRP")
+    geo_grp = cmds.group(empty=True, name=f"{model_name}_GEO_GRP",
+                         parent=top)
+    skel_grp = cmds.group(empty=True, name=f"{model_name}_SKEL_GRP",
+                          parent=top)
+
+    # Identify skeleton roots: joints at world level (no joint parent)
+    skel_roots = []
+    for node in new_nodes:
+        if not cmds.objExists(node):
+            continue
+        if cmds.nodeType(node) != "joint":
+            continue
+        par = cmds.listRelatives(node, parent=True)
+        if par is None or (cmds.objExists(par[0])
+                           and cmds.nodeType(par[0]) != "joint"):
+            skel_roots.append(node)
+
+    # Parent skeleton roots
+    for root in skel_roots:
+        if cmds.objExists(root):
+            par = cmds.listRelatives(root, parent=True)
+            if par is None:
+                cmds.parent(root, skel_grp)
+
+    # Identify top-level mesh transforms (transforms with mesh shapes)
+    mesh_tops = []
+    for node in new_nodes:
+        if not cmds.objExists(node):
+            continue
+        if cmds.nodeType(node) != "transform":
+            continue
+        shapes = cmds.listRelatives(node, shapes=True, type="mesh") or []
+        if not shapes:
+            continue
+        # Only grab truly top-level (world-parented) mesh transforms
+        par = cmds.listRelatives(node, parent=True)
+        if par is None:
+            mesh_tops.append(node)
+
+    for mesh in mesh_tops:
+        if cmds.objExists(mesh):
+            cmds.parent(mesh, geo_grp)
+
+    # Catch any remaining world-level transforms that were imported
+    for node in new_nodes:
+        if not cmds.objExists(node):
+            continue
+        if cmds.nodeType(node) != "transform":
+            continue
+        par = cmds.listRelatives(node, parent=True)
+        if par is not None:
+            continue
+        # Still at world level — put in top group
+        cmds.parent(node, top)
+
+
 # ── main entry point ─────────────────────────────────────────────
 
 
@@ -228,6 +300,10 @@ def import_source2_model(vmdl_path, vrf_exe=None, texture_output=None,
             raise
     after = set(cmds.ls(dag=True))
     new_nodes = sorted(after - before)
+
+    # ── organize into groups ─────────────────────────────────────
+    mdl_name = os.path.splitext(os.path.basename(vmdl_path))[0]
+    _organize_hierarchy(new_nodes, mdl_name)
 
     result = {
         "fbx_path": fbx_path,

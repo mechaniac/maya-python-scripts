@@ -44,7 +44,7 @@ def _dist(a, b):
 
 
 def setup_stretchy_ik(ctrl, start_jnt, mid_jnt, end_jnt, label, builder,
-                      skin_slots=None):
+                      skin_slots=None, ik_handle=None):
     """Wire stretchy IK on an existing limb.
 
     Parameters
@@ -62,6 +62,12 @@ def setup_stretchy_ik(ctrl, start_jnt, mid_jnt, end_jnt, label, builder,
         scaleY/Z (e.g. ``["shoulder_l", "elbow_l"]``).  Looked up via
         ``builder.m``.  parentConstraint does not transfer scale, so
         volume must be driven on the skin joints directly.
+    ik_handle : str or None
+        If provided, the stretch end-point locator is constrained to
+        this IK handle instead of *ctrl*.  For legs with reverse foot
+        roll the handle lifts above the control; measuring to the
+        handle keeps the stretch distance in sync with where the solver
+        actually targets, preventing the "stilts" effect.
     """
 
     rest_len = _dist(pos(start_jnt), pos(mid_jnt)) + \
@@ -86,10 +92,13 @@ def setup_stretchy_ik(ctrl, start_jnt, mid_jnt, end_jnt, label, builder,
         cmds.parent(start_loc, builder.misc_grp)
     cmds.setAttr(start_loc + ".v", 0)
 
-    # End-point locator under misc_grp, point-constrained to IK control
+    # End-point locator under misc_grp.
+    # For limbs with foot roll, constrain to the IK handle (the actual
+    # solver target) so the measured distance accounts for the heel lift.
+    # For plain IK limbs, constrain to the control.
     end_loc = cmds.spaceLocator(n="stretchEnd_" + label)[0]
     cmds.parent(end_loc, builder.misc_grp)
-    cmds.pointConstraint(ctrl, end_loc)
+    cmds.pointConstraint(ik_handle or ctrl, end_loc)
     cmds.setAttr(end_loc + ".v", 0)
 
     # ── Distance ──
@@ -173,5 +182,5 @@ def setup_stretchy_ik(ctrl, start_jnt, mid_jnt, end_jnt, label, builder,
         for slot in skin_slots:
             skin_jnt = builder.m.get(slot, "")
             if skin_jnt and cmds.objExists(skin_jnt):
-                cmds.connectAttr(vol_add + ".output1D", skin_jnt + ".scaleY")
-                cmds.connectAttr(vol_add + ".output1D", skin_jnt + ".scaleZ")
+                cmds.connectAttr(vol_add + ".output1D", skin_jnt + ".scaleY", f=True)
+                cmds.connectAttr(vol_add + ".output1D", skin_jnt + ".scaleZ", f=True)

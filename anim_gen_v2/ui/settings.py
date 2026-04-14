@@ -11,8 +11,13 @@ _DEFAULTS = {
     'translation': [-20,   20],
     'roll':        [-90,   90],
     'stride':      [  0,  200],
-    'stride_wh':   [-200, 200],
+    'stride_wh':   [-20,   20],
+    'stride_h':    [  0,   50],
     'foot_raise':  [  0,   40],
+    'swing':       [-60,   60],
+    'droop':       [  0,   90],
+    'twist':       [-60,   60],
+    'elbow_bend':  [-20,  120],
 }
 
 
