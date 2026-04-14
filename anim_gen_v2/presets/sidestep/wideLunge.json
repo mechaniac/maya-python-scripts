@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "type": "sidestep",
+    "name": "Wide Lunge",
+    "description": "Exaggerated lateral lunge — long reach, deep body lean",
+    "author": "chris",
+    "date": "2026-04-14"
+  },
+  "primary": {
+    "stride": 130.0,
+    "stride_height": 28.0,
+    "foot_roll_heel": -12.0,
+    "foot_roll_toe": 22.0,
+    "root_bounce_hi": 4.0,
+    "root_bounce_lo": -4.0,
+    "root_sway": 10.0,
+    "hip_lean": 15.0,
+    "strafe_right": 1.0,
+    "legs_offset": 0,
+    "hip_offset": 0,
+    "root_offset": 0
+  },
+  "secondary": {},
+  "arms": {}
+}

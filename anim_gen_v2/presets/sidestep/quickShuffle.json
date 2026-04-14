@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "type": "sidestep",
+    "name": "Quick Shuffle",
+    "description": "Fast tight shuffle — short stride, rapid feet, low arc",
+    "author": "chris",
+    "date": "2026-04-14"
+  },
+  "primary": {
+    "stride": 50.0,
+    "stride_height": 10.0,
+    "foot_roll_heel": -4.0,
+    "foot_roll_toe": 8.0,
+    "root_bounce_hi": 1.5,
+    "root_bounce_lo": -1.0,
+    "root_sway": 3.0,
+    "hip_lean": 4.0,
+    "strafe_right": 1.0,
+    "legs_offset": 0,
+    "hip_offset": 0,
+    "root_offset": 0
+  },
+  "secondary": {},
+  "arms": {}
+}

@@ -1,0 +1,24 @@
+{
+  "meta": {
+    "type": "run",
+    "name": "Heavy Charge",
+    "description": "Powerful ground-pounding run — wide stance, deep compression",
+    "author": "chris",
+    "date": "2026-04-14"
+  },
+  "primary": {
+    "stride": 140.0,
+    "stride_height": 18.0,
+    "foot_roll_ball": -14.0,
+    "foot_roll_toe": 25.0,
+    "root_bounce_hi": 2.0,
+    "root_bounce_lo": -6.0,
+    "hip_twist": 22.0,
+    "forward_lean": 10.0,
+    "legs_offset": 0,
+    "hip_offset": 0,
+    "root_offset": 0
+  },
+  "secondary": {},
+  "arms": {}
+}

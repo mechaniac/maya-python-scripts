@@ -133,7 +133,7 @@ class AnimGenWindow:
         cmds.tabLayout(self._clip_tabs, e=True,
                        tabLabel=[(walk_col, 'Walk Cycle'),
                                  (run_col, 'Run Cycle'),
-                                 (ss_col, 'Sidestep')])
+                                 (ss_col, 'Strafe')])
         cmds.setParent(main_col)
 
         # ── Shared sections (Secondary + Arms + Range) ──

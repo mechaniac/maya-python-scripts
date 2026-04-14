@@ -1,0 +1,24 @@
+{
+  "meta": {
+    "type": "run",
+    "name": "Jog",
+    "description": "Relaxed jog — moderate pace, low intensity",
+    "author": "chris",
+    "date": "2026-04-14"
+  },
+  "primary": {
+    "stride": 90.0,
+    "stride_height": 22.0,
+    "foot_roll_ball": -6.0,
+    "foot_roll_toe": 18.0,
+    "root_bounce_hi": 3.0,
+    "root_bounce_lo": -2.0,
+    "hip_twist": 18.0,
+    "forward_lean": 3.0,
+    "legs_offset": 0,
+    "hip_offset": 0,
+    "root_offset": 0
+  },
+  "secondary": {},
+  "arms": {}
+}

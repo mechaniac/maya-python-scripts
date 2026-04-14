@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "type": "sidestep",
+    "name": "Tactical Slide",
+    "description": "Low crouched lateral movement — flat feet, strong sway, minimal lift",
+    "author": "chris",
+    "date": "2026-04-14"
+  },
+  "primary": {
+    "stride": 70.0,
+    "stride_height": 8.0,
+    "foot_roll_heel": -3.0,
+    "foot_roll_toe": 6.0,
+    "root_bounce_hi": 1.0,
+    "root_bounce_lo": -3.0,
+    "root_sway": 8.0,
+    "hip_lean": 12.0,
+    "strafe_right": 1.0,
+    "legs_offset": 0,
+    "hip_offset": 0,
+    "root_offset": 0
+  },
+  "secondary": {},
+  "arms": {}
+}

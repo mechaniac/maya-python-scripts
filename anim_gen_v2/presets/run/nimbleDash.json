@@ -1,0 +1,24 @@
+{
+  "meta": {
+    "type": "run",
+    "name": "Nimble Dash",
+    "description": "Quick light-footed dash — high foot arc, minimal ground contact",
+    "author": "chris",
+    "date": "2026-04-14"
+  },
+  "primary": {
+    "stride": 110.0,
+    "stride_height": 42.0,
+    "foot_roll_ball": -5.0,
+    "foot_roll_toe": 35.0,
+    "root_bounce_hi": 8.0,
+    "root_bounce_lo": -2.0,
+    "hip_twist": 38.0,
+    "forward_lean": 4.0,
+    "legs_offset": 0,
+    "hip_offset": 0,
+    "root_offset": 0
+  },
+  "secondary": {},
+  "arms": {}
+}
