@@ -95,6 +95,30 @@ class ClipSetterWindow:
         cmds.button(label='Preview Layout (Print)',
                     annotation='Print clip layout with frame ranges to Script Editor',
                     command=lambda *_: self._preview())
+
+        # ── Character Set / Bind Pose Separators ──
+        cmds.separator(height=8, style='in')
+        cmds.frameLayout(label='Bind Pose Separators', collapsable=True,
+                         marginHeight=4, marginWidth=4)
+        cmds.columnLayout(adjustableColumn=True)
+        cmds.rowLayout(numberOfColumns=3, columnWidth3=(100, 250, 80),
+                       adjustableColumn=2)
+        cmds.text(label='Character Set:', align='right')
+        self._charset_menu = cmds.optionMenu(
+            annotation='Select the character set to use for bind pose keys')
+        cmds.menuItem(label='(none)')
+        self._populate_charset_menu()
+        cmds.button(label='Refresh',
+                    command=lambda *_: self._populate_charset_menu())
+        cmds.setParent('..')
+        cmds.button(label='Key Bind Pose Separators', height=28,
+                    backgroundColor=(0.50, 0.35, 0.55),
+                    annotation='Key all character set channels to bind pose '
+                               'at buffer midpoints between clips',
+                    command=lambda *_: self._key_separators())
+        cmds.setParent('..')
+        cmds.setParent('..')
+
         cmds.setParent(root_form)
 
         # ── Bottom actions ──
@@ -221,9 +245,37 @@ class ClipSetterWindow:
         layout = self._get_layout()
         if idx >= len(layout):
             return
-        clip = layout[idx]
-        loop = clip.get('loop', False)
         cmds.play(forward=True)
+
+    # ──────────────────────────────────────────────
+    #  Character Set / Bind Pose
+    # ──────────────────────────────────────────────
+
+    def _populate_charset_menu(self):
+        """Refresh the character set dropdown with sets from the scene."""
+        items = cmds.optionMenu(self._charset_menu, q=True, ill=True) or []
+        for item in items:
+            cmds.deleteUI(item)
+        cmds.menuItem(label='(none)', parent=self._charset_menu)
+        char_sets = cmds.ls(type='character') or []
+        for cs in sorted(char_sets):
+            cmds.menuItem(label=cs, parent=self._charset_menu)
+
+    def _key_separators(self):
+        """Key bind pose at buffer midpoints using the selected character set."""
+        cs = cmds.optionMenu(self._charset_menu, q=True, v=True)
+        if not cs or cs == '(none)':
+            cmds.warning('Select a character set first.')
+            return
+        layout = self._get_layout()
+        self._update_ranges()
+        count = export.key_bind_pose_separators(layout, cs)
+        if count:
+            cmds.confirmDialog(
+                title='Bind Pose Separators',
+                message='{} keys set across buffer gaps.\n'
+                        'All clips are now isolated.'.format(count),
+                button=['OK'])
 
     # ──────────────────────────────────────────────
     #  Actions

@@ -131,12 +131,12 @@ def _key_all(channels):
 
 
 def _finalize_curves(keyed):
-    """Set spline tangents and cycle post-infinity on all keyed curves."""
+    """Set spline tangents and constant pre/post-infinity on all keyed curves."""
     start, end = timeline_range()
     for node, attr in keyed:
         try:
             cmds.keyTangent(node, at=attr, itt='spline', ott='spline')
-            cmds.setInfinity(node, at=attr, poi='cycle', pri='cycle')
+            cmds.setInfinity(node, at=attr, poi='constant', pri='constant')
         except Exception:
             pass
 

@@ -170,3 +170,105 @@ def setup_timeline(layout):
     cmds.playbackOptions(min=start, max=end, ast=start, aet=end)
     cmds.currentTime(start)
     print('// Timeline set: {} - {} ({} clips)'.format(start, end, len(layout)))
+
+
+# ── Bind pose separators ──────────────────────────────────────────
+
+def _default_value(node_attr):
+    """Return the bind/default value for a channel.
+
+    Transform channels: 0 for translate/rotate, 1 for scale.
+    Custom attrs: query the default value set at creation time.
+    """
+    node, attr = node_attr.rsplit('.', 1)
+    if attr in ('sx', 'sy', 'sz'):
+        return 1.0
+    if attr in ('tx', 'ty', 'tz', 'rx', 'ry', 'rz'):
+        return 0.0
+    # Custom / user-defined attr — query default
+    try:
+        return cmds.addAttr('{}.{}'.format(node, attr), q=True, dv=True)
+    except (RuntimeError, ValueError):
+        return 0.0
+
+
+def _separator_frames(layout):
+    """Compute frames where bind-pose keys should be placed.
+
+    Returns a sorted list of integer frames:
+      - Midpoint of each buffer gap between consecutive clips
+      - One frame before the first clip (start - 1)
+      - One frame after the last clip (end + 1)
+    """
+    frames = []
+    if not layout:
+        return frames
+
+    # Bookend before first clip
+    frames.append(layout[0]['start'] - 1)
+
+    # Midpoints between consecutive clips
+    for i in range(len(layout) - 1):
+        gap_start = layout[i]['end']
+        gap_end = layout[i + 1]['start']
+        mid = int(round((gap_start + gap_end) / 2.0))
+        frames.append(mid)
+
+    # Bookend after last clip
+    frames.append(layout[-1]['end'] + 1)
+
+    return sorted(set(frames))
+
+
+def key_bind_pose_separators(layout, character_set):
+    """Key every channel in *character_set* to its default value at separator frames.
+
+    Separator frames are placed at the midpoint of each buffer gap between
+    clips, plus one frame before the first clip and after the last.
+    Keys use stepped tangents to create hard walls between clips.
+
+    *character_set* is the name of an existing Maya character set.
+    """
+    if not cmds.objExists(character_set):
+        cmds.warning('Character set "{}" not found.'.format(character_set))
+        return 0
+
+    if not cmds.objectType(character_set, isType='character'):
+        cmds.warning('"{}" is not a character set.'.format(character_set))
+        return 0
+
+    sep_frames = _separator_frames(layout)
+    if not sep_frames:
+        cmds.warning('No clips in layout.')
+        return 0
+
+    # Get all node.attr members of the character set
+    members = cmds.character(character_set, q=True) or []
+    # character() returns a flat list of plug names (node.attr)
+    # but may also return sub-character-sets — filter to attrs only
+    channels = [m for m in members if '.' in m and cmds.objExists(m)]
+
+    if not channels:
+        cmds.warning('No keyable channels in character set.')
+        return 0
+
+    cmds.undoInfo(openChunk=True, chunkName='ClipSetter_BindSeparators')
+    key_count = 0
+    try:
+        for frame in sep_frames:
+            for ch in channels:
+                node, attr = ch.rsplit('.', 1)
+                val = _default_value(ch)
+                try:
+                    cmds.setKeyframe(node, at=attr, t=frame, v=val)
+                    cmds.keyTangent(node, at=attr, t=(frame, frame),
+                                    itt='stepnext', ott='step')
+                    key_count += 1
+                except Exception:
+                    pass
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+    print('// Keyed {} bind-pose separators at {} frames across {} channels.'.format(
+        key_count, len(sep_frames), len(channels)))
+    return key_count
