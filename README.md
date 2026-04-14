@@ -164,6 +164,31 @@ The UI provides Load Selected, Save to Library, Save to Project, Save As..., and
 - **Auto-update** — regenerates animation on every slider change/drag
 - **Delete Animation** — clears all keys in the timeline range (including FKIK and Roll)
 - **Preset dropdown** with combined library + project presets
+- **Variation** — random amplitude perturbation per channel for organic feel
+- **Spline tangents + cycle infinity** — all keyed curves set to spline with pre/post-infinity cycling
+
+### Planned: FK/IK Mode Switching
+
+Currently each body region is locked to a single mode: legs are IK-only, spine and arms are FK-only. A future expansion would add per-region FK/IK toggles so the animator can choose the control style that best fits the rig or shot.
+
+**Scope per region:**
+
+| Region | Current | FK Mode (new) | IK Mode (new) |
+|---|---|---|---|
+| Legs | IK only | `FKHip`, `FKKnee`, `FKAnkle` — joint rotations for swing/flexion curves | Already done |
+| Arms | FK only | Already done | `IKArm` + `PoleArm` — world-space hand path |
+| Spine | FK only | Already done | `IKSpine` — spline CV translation |
+
+**What would change:**
+
+- Each layer gets a `mode` parameter (`'fk'` / `'ik'`) stored in DEFAULTS and presets
+- `channels()` branches on mode — each path produces different control/attribute sets
+- `fkik_state()` returns dynamic blend values (0 or 10) based on mode
+- UI shows a radio toggle per section; only the active mode's sliders are visible
+- Presets store and restore the mode per region (backward-compatible: missing key = current default)
+- Engine needs no changes — already handles merged `fkik_state()` from all layers
+
+**Priority:** FK legs would be the highest-value addition. IK arms and IK spine are more niche. The legacy v1 scripts (`handWalkCycleGenerator.py`) already demonstrate IK arm and FK leg channel patterns that could inform the implementation.
 
 ---
 
@@ -927,7 +952,7 @@ Informed by state-of-the-art rigging systems (AdvancedSkeleton, mGear, Rapid Rig
 | **Finger / Hand Controls** | FK chain per finger with master curl, spread, and fist attributes on a single hand control. | ✅ Done |
 | **Global Scale** | ScaleConstraint from Main_M to root skin joint. Uniform scaling of rig + mesh. | ✅ Done |
 | **Eye Aim / Look-At** | Per-eye aim targets with master control. Space switching (Head/Root/World). Eyelid follow blending. | ✅ Done |
-| **Procedural Walk Cycle** | Layered keyframe engine (anim_gen_v2) with slider UI, presets, foot roll, mute sections. | ✅ Done |
+| **Procedural Walk Cycle** | Layered keyframe engine (anim_gen_v2) with slider UI, presets, foot roll, mute sections, variation, spline tangents + cycle infinity. | ✅ Done |
 | **Source 2 Import** | Import `.vmdl` models — parse KV3, import FBX, convert textures via VRF, build Maya materials. | ✅ Done |
 
 ### Medium Priority
