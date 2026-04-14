@@ -2,7 +2,7 @@
 
 from ..core.channel import Channel
 from ..core.patterns import Wave
-from . import Layer
+from . import Layer, range_amp_off
 
 
 class WalkPrimary(Layer):
@@ -30,6 +30,7 @@ class WalkPrimary(Layer):
         'root_twist':       0.0,
         'root_lr':          0.0,
         'root_bf':          4.0,
+        'foot_bank':        0.0,
         'legs_offset':      0,
         'hip_offset':       0,
         'root_offset':      0,
@@ -124,8 +125,8 @@ class WalkPrimary(Layer):
                            label='L Foot Roll'))
 
         # ── hip nod / lean / twist ──
-        hip_nod_amp = (p['hip_nod_front'] - p['hip_nod_back']) / 2.0
-        hip_nod_off = (p['hip_nod_front'] + p['hip_nod_back']) / 2.0
+        hip_nod_amp, hip_nod_off = range_amp_off(p['hip_nod_front'],
+                                                  p['hip_nod_back'])
         chs.append(Channel('HipSwinger_M', 'rotateZ', Wave.COSINE,
                            amplitude=hip_nod_amp, offset=hip_nod_off,
                            frequency=2, n_points=5,
@@ -144,8 +145,8 @@ class WalkPrimary(Layer):
 
         # ── root bounce ── freq-2 cosine (two bounces per cycle)
         # Joint-aligned: local X = up/down
-        bounce_amp = (p['root_bounce_hi'] - p['root_bounce_lo']) / 2.0
-        bounce_off = (p['root_bounce_hi'] + p['root_bounce_lo']) / 2.0
+        bounce_amp, bounce_off = range_amp_off(p['root_bounce_hi'],
+                                                p['root_bounce_lo'])
         chs.append(Channel('RootX_M', 'translateX', Wave.COSINE,
                            amplitude=bounce_amp,
                            offset=bounce_off,
@@ -172,8 +173,8 @@ class WalkPrimary(Layer):
         # ── root nod / lean / twist ──
         # RootX_M joint-aligned (same as FK spine):
         #   rotateZ = nod (forward/back), rotateY = lean (side), rotateX = twist
-        nod_amp = (p['root_nod_front'] - p['root_nod_back']) / 2.0
-        nod_off = (p['root_nod_front'] + p['root_nod_back']) / 2.0
+        nod_amp, nod_off = range_amp_off(p['root_nod_front'],
+                                          p['root_nod_back'])
         chs.append(Channel('RootX_M', 'rotateZ', Wave.COSINE,
                            amplitude=nod_amp, offset=nod_off,
                            frequency=2, n_points=5,
@@ -189,5 +190,20 @@ class WalkPrimary(Layer):
                            frequency=1, n_points=3,
                            frame_offset=root_off,
                            label='Root Twist'))
+
+        # ── foot bank (rotateZ on IK leg) ── inward tilt during push-off
+        bank = p.get('foot_bank', 0.0)
+        if bank:
+            # Right foot banks inward (+Z) at mid-stance (t=0.5)
+            chs.append(Channel('IKLeg_R', 'rotateZ', Wave.COSINE,
+                               amplitude=-bank,
+                               frequency=1, n_points=3,
+                               frame_offset=legs_off,
+                               label='R Foot Bank'))
+            chs.append(Channel('IKLeg_L', 'rotateZ', Wave.COSINE,
+                               amplitude=bank,
+                               phase=0.5, frequency=1, n_points=3,
+                               frame_offset=legs_off,
+                               label='L Foot Bank'))
 
         return chs

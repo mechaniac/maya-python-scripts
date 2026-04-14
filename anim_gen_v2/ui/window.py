@@ -73,6 +73,8 @@ class AnimGenWindow:
         self._auto_update = False
         self._mute_cbs = {}      # section_name -> checkBox
         self._ranges = self._load_ranges()
+        self._section_keys = {}  # section_name -> [keys]
+        self._current_section = None
 
     @staticmethod
     def _load_ranges():
@@ -212,6 +214,8 @@ class AnimGenWindow:
         cmds.setParent('..')
         self._fields[key] = fld
         self._single_keys[key] = sl
+        if self._current_section is not None:
+            self._section_keys[self._current_section].append(key)
 
     def _range_slider(self, label, key_lo, key_hi, def_lo, def_hi,
                       rng=None, color=None, tip=''):
@@ -305,6 +309,8 @@ class AnimGenWindow:
         self._range_keys[key_lo] = (sl, 'low')
         self._range_keys[key_hi] = (sl, 'high')
         self._range_sliders[(key_lo, key_hi)] = sl
+        if self._current_section is not None:
+            self._section_keys[self._current_section].extend([key_lo, key_hi])
 
     def _get_val(self, key):
         if key in self._range_keys:
@@ -373,6 +379,8 @@ class AnimGenWindow:
                            annotation='Mute {}: store values, zero out, and disable sliders'.format(label),
                            changeCommand=lambda val, k=mute_key: self._toggle_mute(k, val))
         self._mute_cbs[mute_key] = cb
+        self._current_section = mute_key
+        self._section_keys.setdefault(mute_key, [])
         cmds.setParent('..')
 
     def _zero_fields(self, keys):
@@ -449,6 +457,8 @@ class AnimGenWindow:
         cmds.setParent('..')
         self._fields[key] = fld
         self._single_keys[key] = sl
+        if self._current_section is not None:
+            self._section_keys[self._current_section].append(key)
 
     def _scalar_row(self, sections):
         """Scale slider (0-10, default 1) + Apply button for an entire region."""
@@ -546,9 +556,6 @@ class AnimGenWindow:
 
         d = self.walk_primary.DEFAULTS
 
-        if not hasattr(self, '_section_keys'):
-            self._section_keys = {}
-
         legs = ['IKLeg_R', 'IKLeg_L']
         hip = ['HipSwinger_M']
         root = ['RootX_M']
@@ -577,10 +584,9 @@ class AnimGenWindow:
                           self._rng('roll'),
                           tip_a='Heel-strike roll angle at the start of contact phase',
                           tip_b='Toe-off roll angle at the end of contact phase')
-        self._section_keys['legs'] = ['stride', 'stride_width', 'stride_width_swing',
-                                       'stride_height',
-                                       'foot_raise', 'foot_roll_heel', 'foot_roll_toe',
-                                       'legs_offset']
+        self._slider('Foot Bank  rZ', 'foot_bank', d.get('foot_bank', 0.0),
+                     self._rng('rotation'), CLR_Z,
+                     tip='Lateral foot tilt during push-off (rotateZ on IK leg). Inward bank.')
 
         # ── Hip ──
         cmds.separator(height=4, style='in')
@@ -594,10 +600,8 @@ class AnimGenWindow:
                           'Twist  rX', 'hip_twist', d['hip_twist'],
                           self._rng('rotation'), CLR_Y, CLR_X,
                           tip_a='Lateral side-to-side tilt of the hips (rotateY)',
-                          tip_b='Axial rotation of the hips around the spine (rotateX)')
-        self._section_keys['hip'] = ['hip_nod_front', 'hip_nod_back',
-                                      'hip_lean', 'hip_twist',
-                                      'hip_offset']
+                          tip_b='Axial rotation of the hips around the spine (rotateX)',
+                          rng_b=self._rng('twist'))
 
         # ── Root ──
         cmds.separator(height=4, style='in')
@@ -615,17 +619,13 @@ class AnimGenWindow:
                           'Twist  rX', 'root_twist', d['root_twist'],
                           self._rng('rotation'), CLR_Y, CLR_X,
                           tip_a='Lateral side-to-side tilt of the root (rotateY)',
-                          tip_b='Axial rotation of the root around the spine (rotateX)')
+                          tip_b='Axial rotation of the root around the spine (rotateX)',
+                          rng_b=self._rng('twist'))
         self._slider_pair('Left-Right  tZ', 'root_lr', d['root_lr'],
                           'Back-Forth  tY', 'root_bf', d['root_bf'],
                           self._rng('translation'), CLR_Z, CLR_Y,
                           tip_a='Lateral sway of the root centre of mass (translateZ)',
                           tip_b='Forward lean of the root centre of mass (translateY)')
-        self._section_keys['root'] = ['root_bounce_lo', 'root_bounce_hi',
-                                       'root_nod_front', 'root_nod_back',
-                                       'root_lean', 'root_twist',
-                                       'root_lr', 'root_bf',
-                                       'root_offset']
         cmds.setParent(parent)
 
     # ──────────────────────────────────────────────
@@ -644,7 +644,7 @@ class AnimGenWindow:
         }
 
         self._category_header('Secondary', list(part_ctrls.values()),
-                              list(self.walk_secondary._params.keys()),
+                              list(self.walk_secondary.DEFAULTS.keys()),
                               list(part_ctrls.keys()))
         self._scalar_row(list(part_ctrls.keys()))
 
@@ -669,12 +669,6 @@ class AnimGenWindow:
                               self._rng('rotation'), CLR_Y, CLR_X,
                               tip_a='Lateral side bend of the {} (rotateY)'.format(part),
                               tip_b='Axial roll of the {} around the spine axis (rotateX)'.format(part))
-
-            self._section_keys[part] = ['{}_nod_front'.format(part),
-                                         '{}_nod_back'.format(part),
-                                         '{}_lean'.format(part),
-                                         '{}_twist'.format(part),
-                                         '{}_offset'.format(part)]
 
         cmds.setParent(parent)
 
@@ -714,9 +708,6 @@ class AnimGenWindow:
         self._slider('Twist  rX', 'scapula_twist', d.get('scapula_twist', 0.0),
                      self._rng('twist'), CLR_X,
                      tip='Axial twist of the scapula bone (rotateX). Mirrored between sides.')
-        self._section_keys['scapula'] = ['scapula_droop', 'scapula_swing_front',
-                                          'scapula_swing_back', 'scapula_twist',
-                                          'scapula_offset']
 
         # ── Shoulder ──
         cmds.separator(height=4, style='in')
@@ -732,9 +723,6 @@ class AnimGenWindow:
                           tip_a='Resting angle of the upper arm hanging down (rotateY). Mirrored between sides.',
                           tip_b='Axial twist of the upper arm bone (rotateX). Mirrored between sides.',
                           rng_b=self._rng('twist'))
-        self._section_keys['shoulder'] = ['shoulder_swing_front', 'shoulder_swing_back',
-                                           'shoulder_droop', 'shoulder_twist',
-                                           'shoulder_offset']
 
         # ── Elbow ──
         cmds.separator(height=4, style='in')
@@ -743,8 +731,6 @@ class AnimGenWindow:
         self._range_slider('Bend  rZ', 'elbow_bend_lo', 'elbow_bend_hi',
                            d['elbow_bend_lo'], d['elbow_bend_hi'], self._rng('elbow_bend'), CLR_Z,
                            tip='Elbow flexion range (rotateZ). Lo = arm extended, Hi = arm bent at mid-swing.')
-        self._section_keys['elbow'] = ['elbow_bend_lo', 'elbow_bend_hi',
-                                        'elbow_offset']
 
         # ── Wrist ──
         cmds.separator(height=4, style='in')
@@ -757,8 +743,6 @@ class AnimGenWindow:
         self._slider('Twist  rX', 'wrist_twist', d.get('wrist_twist', 0.0),
                      self._rng('twist'), CLR_X,
                      tip='Axial twist of the wrist bone (rotateX). Mirrored between sides.')
-        self._section_keys['wrist'] = ['wrist_swing_front', 'wrist_swing_back',
-                                        'wrist_twist', 'wrist_offset']
 
         cmds.setParent(parent)
 
@@ -859,6 +843,33 @@ class AnimGenWindow:
                       changeCommand=lambda val: self._toggle_auto(val))
         cmds.setParent('..')
 
+        # ── Variation ──
+        form_var = cmds.formLayout(height=22)
+        lbl_var = cmds.text(label='Variation %', width=80, align='right',
+                            annotation='Random amplitude perturbation (0 = none, higher = more organic)')
+        fld_var = cmds.floatField(v=0, precision=1, width=45,
+                                  minValue=0, maxValue=50,
+                                  annotation='Percentage of random variation applied to amplitudes')
+        holder_var = cmds.columnLayout(adjustableColumn=True, height=20)
+        cmds.setParent(form_var)
+        cmds.formLayout(form_var, e=True,
+            attachForm=[(lbl_var, 'left', 0), (lbl_var, 'top', 0), (lbl_var, 'bottom', 0),
+                        (fld_var, 'top', 0), (fld_var, 'bottom', 0),
+                        (holder_var, 'top', 0), (holder_var, 'bottom', 0),
+                        (holder_var, 'right', 0)],
+            attachNone=[(lbl_var, 'right'), (fld_var, 'right')],
+            attachControl=[(fld_var, 'left', 4, lbl_var),
+                           (holder_var, 'left', 2, fld_var)])
+        self._var_slider = embed_single_in_layout(holder_var, minimum=0,
+                                                   maximum=50, value=0)
+        self._var_slider.setToolTip('Random amplitude perturbation (0 = none)')
+        self._var_slider.valueChanged.connect(
+            lambda v: cmds.floatField(fld_var, e=True, v=v))
+        cmds.floatField(fld_var, e=True,
+                        changeCommand=lambda v: self._var_slider.setValue(v))
+        self._var_field = fld_var
+        cmds.setParent('..')
+
         # ── Presets ──
         cmds.separator(height=8, style='in')
         cmds.frameLayout(label='Presets', collapsable=True,
@@ -945,7 +956,7 @@ class AnimGenWindow:
             val = self._get_val(key)
             if key in self.walk_primary.DEFAULTS:
                 self.walk_primary._params[key] = val
-            elif key in self.walk_secondary._params:
+            elif key in self.walk_secondary.DEFAULTS:
                 self.walk_secondary._params[key] = val
             elif key in self.walk_arms.DEFAULTS:
                 self.walk_arms._params[key] = val
@@ -965,9 +976,11 @@ class AnimGenWindow:
 
     def _generate(self):
         self._read_fields()
+        variation = self._var_slider.value() if hasattr(self, '_var_slider') else 0
         engine.generate([self.walk_primary,
                          self.walk_secondary,
-                         self.walk_arms])
+                         self.walk_arms],
+                        variation=variation)
 
     def _sel_all(self):
         all_ctrls = (self.walk_primary.controls()

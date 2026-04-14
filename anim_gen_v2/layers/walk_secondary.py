@@ -11,15 +11,7 @@ along the bone (upward through the spine), giving:
 
 from ..core.channel import Channel
 from ..core.patterns import Wave
-from . import Layer
-
-# (part_key, ctrl_name, nod_front, nod_back, lean, twist)
-_PARTS = (
-    ('spine', 'FKSpine_M',  5.0,  0.0, 0.0, 0.0),
-    ('chest',  'FKChest_M',  0.0,  0.0, 0.0, 0.0),
-    ('neck',   'FKNeck_M',   0.0,  0.0, 0.0, 0.0),
-    ('head',   'FKHead_M',   0.0,  0.0, 0.0, 0.0),
-)
+from . import Layer, range_amp_off
 
 
 class WalkSecondary(Layer):
@@ -27,20 +19,30 @@ class WalkSecondary(Layer):
 
     name = 'Walk \u2013 Secondary'
 
+    DEFAULTS = {
+        'spine_nod_front':  5.0,  'spine_nod_back':  0.0,
+        'spine_lean': 0.0, 'spine_twist': 0.0, 'spine_offset': 0,
+        'chest_nod_front':  0.0,  'chest_nod_back':  0.0,
+        'chest_lean': 0.0, 'chest_twist': 0.0, 'chest_offset': 0,
+        'neck_nod_front':   0.0,  'neck_nod_back':   0.0,
+        'neck_lean': 0.0, 'neck_twist': 0.0, 'neck_offset': 0,
+        'head_nod_front':   0.0,  'head_nod_back':   0.0,
+        'head_lean': 0.0, 'head_twist': 0.0, 'head_offset': 0,
+    }
+
+    _CTRL_MAP = {
+        'spine': 'FKSpine_M',
+        'chest': 'FKChest_M',
+        'neck':  'FKNeck_M',
+        'head':  'FKHead_M',
+    }
+
     def __init__(self):
         super().__init__()
-        self._params = {}
-        self._ctrl_map = {}
-        for part, ctrl, nod_f, nod_b, lean, twist in _PARTS:
-            self._ctrl_map[part] = ctrl
-            self._params['{}_nod_front'.format(part)] = nod_f
-            self._params['{}_nod_back'.format(part)] = nod_b
-            self._params['{}_lean'.format(part)] = lean
-            self._params['{}_twist'.format(part)] = twist
-            self._params['{}_offset'.format(part)] = 0
+        self._params = dict(self.DEFAULTS)
 
     def controls(self):
-        return list(self._ctrl_map.values())
+        return list(self._CTRL_MAP.values())
 
     def fkik_state(self):
         return {'FKIKSpine_M': 0}   # full FK
@@ -48,14 +50,13 @@ class WalkSecondary(Layer):
     def channels(self):
         p = self._params
         chs = []
-        for part, ctrl in self._ctrl_map.items():
+        for part, ctrl in self._CTRL_MAP.items():
             nod_f = p['{}_nod_front'.format(part)]
             nod_b = p['{}_nod_back'.format(part)]
             lean = p['{}_lean'.format(part)]
             twist = p['{}_twist'.format(part)]
             off = int(p.get('{}_offset'.format(part), 0))
-            nod_amp = (nod_f - nod_b) / 2.0
-            nod_off = (nod_f + nod_b) / 2.0
+            nod_amp, nod_off = range_amp_off(nod_f, nod_b)
 
             # rotateZ = nod (forward/back pitch) -- 5-point, twice per cycle
             chs.append(Channel(ctrl, 'rotateZ', Wave.COSINE,

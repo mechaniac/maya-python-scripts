@@ -10,7 +10,7 @@ _DEFAULTS = {
     'rotation':    [-60,   60],
     'translation': [-20,   20],
     'roll':        [-90,   90],
-    'stride':      [  0,  200],
+    'stride':      [-200, 200],
     'stride_wh':   [-20,   20],
     'stride_h':    [  0,   50],
     'foot_raise':  [  0,   40],

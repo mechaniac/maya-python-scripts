@@ -7,6 +7,7 @@
     "foot_raise": 6.0,
     "foot_roll_heel": -25.0,
     "foot_roll_toe": 5.0,
+    "foot_bank": 4.0,
     "hip_nod_front": 20.0,
     "hip_nod_back": -20.0,
     "hip_lean": 0.0,

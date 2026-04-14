@@ -10,7 +10,7 @@ joint's world orientation:
 
 from ..core.channel import Channel
 from ..core.patterns import Wave
-from . import Layer
+from . import Layer, range_amp_off
 
 
 class WalkArms(Layer):
@@ -85,8 +85,8 @@ class WalkArms(Layer):
                            label='{} Sh Droop'.format(side)))
 
         # Scapula swing (rotateZ) -- range slider
-        scap_amp = (p['scapula_swing_back'] - p['scapula_swing_front']) / 2.0
-        scap_off = (p['scapula_swing_front'] + p['scapula_swing_back']) / 2.0
+        scap_amp, scap_off = range_amp_off(p['scapula_swing_back'],
+                                            p['scapula_swing_front'])
         chs.append(Channel('FKScapula' + sfx, 'rotateZ', Wave.COSINE,
                            amplitude=scap_amp, offset=scap_off,
                            phase=phase, frequency=1, n_points=3,
@@ -106,8 +106,8 @@ class WalkArms(Layer):
                            frequency=1, n_points=3,
                            frame_offset=sh_off_f,
                            label='{} Sh Twist'.format(side)))
-        sh_amp = (p['shoulder_swing_back'] - p['shoulder_swing_front']) / 2.0
-        sh_off = (p['shoulder_swing_front'] + p['shoulder_swing_back']) / 2.0
+        sh_amp, sh_off = range_amp_off(p['shoulder_swing_back'],
+                                        p['shoulder_swing_front'])
         chs.append(Channel('FKShoulder' + sfx, 'rotateZ', Wave.COSINE,
                            amplitude=sh_amp, offset=sh_off,
                            phase=phase, frequency=1, n_points=3,
@@ -127,8 +127,8 @@ class WalkArms(Layer):
                            label='{} Elbow'.format(side)))
 
         # Wrist swing (rotateZ) -- range slider
-        wr_amp = (p['wrist_swing_back'] - p['wrist_swing_front']) / 2.0
-        wr_off = (p['wrist_swing_front'] + p['wrist_swing_back']) / 2.0
+        wr_amp, wr_off = range_amp_off(p['wrist_swing_back'],
+                                        p['wrist_swing_front'])
         chs.append(Channel('FKWrist' + sfx, 'rotateZ', Wave.COSINE,
                            amplitude=wr_amp, offset=wr_off,
                            phase=phase, frequency=1, n_points=3,

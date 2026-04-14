@@ -3,6 +3,7 @@
 import maya.cmds as cmds
 
 _cache = {}
+_scene_map = {}   # lower-case name -> actual scene node
 
 _ALIASES = {
     'fkscapula1_l': 'fkscapula_l',
@@ -15,6 +16,11 @@ _ALIASES = {
 def clear():
     """Clear the resolution cache (call at the start of each generate)."""
     _cache.clear()
+    _scene_map.clear()
+    all_nodes = set((cmds.ls(type='transform') or [])
+                    + (cmds.ls(type='joint') or []))
+    for n in all_nodes:
+        _scene_map[n.lower()] = n
 
 
 def resolve(name):
@@ -28,6 +34,13 @@ def resolve(name):
     if name in _cache:
         return _cache[name]
 
+    # Lazy-populate scene map if clear() hasn't been called yet
+    if not _scene_map:
+        all_nodes = set((cmds.ls(type='transform') or [])
+                        + (cmds.ls(type='joint') or []))
+        for n in all_nodes:
+            _scene_map[n.lower()] = n
+
     low = name.lower()
     candidates = [low]
 
@@ -40,21 +53,17 @@ def resolve(name):
         if no_one not in candidates:
             candidates.append(no_one)
 
-    all_nodes = set((cmds.ls(type='transform') or [])
-                    + (cmds.ls(type='joint') or []))
-    lower_map = {n.lower(): n for n in all_nodes}
-
     for c in candidates:
-        if c in lower_map:
-            _cache[name] = lower_map[c]
+        if c in _scene_map:
+            _cache[name] = _scene_map[c]
             return _cache[name]
 
     # Fallback: strip '1' from numbered suffixes
     search = low.replace('1_', '_')
-    for n in all_nodes:
-        if n.lower().replace('1_', '_') == search:
-            _cache[name] = n
-            return n
+    for k, v in _scene_map.items():
+        if k.replace('1_', '_') == search:
+            _cache[name] = v
+            return v
 
     _cache[name] = None
     return None

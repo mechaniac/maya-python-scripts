@@ -1,6 +1,11 @@
 """Animation layer definitions."""
 
 
+def range_amp_off(front, back):
+    """Convert front/back range values to (amplitude, offset) for a cosine wave."""
+    return (front - back) / 2.0, (front + back) / 2.0
+
+
 class Layer:
     """Base class for animation generator layers."""
 
@@ -21,7 +26,7 @@ class Layer:
     def fkik_state(self):
         """Return ``{blend_ctrl: value}`` pairs this layer requires.
 
-        Convention: ``FKIKBlend`` 0 = full IK, 10 = full FK.
+        Convention: ``FKIKBlend`` 0 = full FK, 10 = full IK.
         Override in subclasses that need a specific mode.
         """
         return {}

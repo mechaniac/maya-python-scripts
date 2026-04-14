@@ -1,5 +1,7 @@
 """Keyframe engine -- batch keying with undo-chunk wrapper."""
 
+import random
+
 import maya.cmds as cmds
 
 from . import resolver
@@ -113,6 +115,7 @@ def _key_all(channels):
     Each channel gets one extra key before and after the timeline range
     to fake a looping curve.  If *frame_offset* is set, all keys shift.
     """
+    keyed = []   # (node, attr) pairs for post-processing
     for ch in channels:
         node = resolver.resolve(ch.ctrl)
         if not node:
@@ -123,6 +126,19 @@ def _key_all(channels):
         times = frame_times(ch.extended_normalized_times())
         for t, v in zip(times, values):
             _set_key(node, ch.attr, t + ch.frame_offset, v)
+        keyed.append((node, ch.attr))
+    return keyed
+
+
+def _finalize_curves(keyed):
+    """Set spline tangents and cycle post-infinity on all keyed curves."""
+    start, end = timeline_range()
+    for node, attr in keyed:
+        try:
+            cmds.keyTangent(node, at=attr, itt='spline', ott='spline')
+            cmds.setInfinity(node, at=attr, poi='cycle', pri='cycle')
+        except Exception:
+            pass
 
 
 def key_channels(channels):
@@ -130,16 +146,42 @@ def key_channels(channels):
     resolver.clear()
     cmds.undoInfo(openChunk=True, chunkName='AnimGenV2_key')
     try:
-        _key_all(channels)
+        keyed = _key_all(channels)
+        _finalize_curves(keyed)
     finally:
         cmds.undoInfo(closeChunk=True)
 
 
+# ── variation ──
+
+def _apply_variation(channels, variation_pct):
+    """Randomly perturb channel amplitudes / values by ±variation_pct %.
+
+    Returns a new list of channels with modified copies; originals are
+    not mutated.
+    """
+    if variation_pct <= 0:
+        return channels
+    from ..core.channel import Channel as _Ch
+    from dataclasses import replace as _replace
+    factor = variation_pct / 100.0
+    out = []
+    for ch in channels:
+        mult = 1.0 + random.uniform(-factor, factor)
+        if ch.values is not None:
+            new_vals = [v * mult for v in ch.values]
+            out.append(_replace(ch, values=new_vals))
+        else:
+            out.append(_replace(ch, amplitude=ch.amplitude * mult))
+    return out
+
+
 # ── main entry point ──
 
-def generate(layers, clear=True):
+def generate(layers, clear=True, variation=0):
     """Full generation pass -- clear keys then key all enabled layers.
 
+    *variation*: percentage (0-100) of random amplitude perturbation.
     Everything runs inside a single undo chunk so one Ctrl-Z reverts it all.
     """
     channels = []
@@ -157,7 +199,10 @@ def generate(layers, clear=True):
         _key_fkik(layers)
         if clear:
             clear_keys(list(ctrls))
-        _key_all(channels)
+        if variation > 0:
+            channels = _apply_variation(channels, variation)
+        keyed = _key_all(channels)
+        _finalize_curves(keyed)
         cmds.currentTime(saved)
     finally:
         cmds.undoInfo(closeChunk=True)
