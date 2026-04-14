@@ -83,6 +83,18 @@ _BUTTONS = [
         """),
     },
     {
+        'label': 'Clip Set',
+        'annotation': 'Clip Setter — s&box Character Export',
+        'image': 'out_time.png',
+        'command': textwrap.dedent("""\
+            import importlib
+            import clip_setter.clips as _clp; importlib.reload(_clp)
+            import clip_setter.export as _exp; importlib.reload(_exp)
+            import clip_setter.ui as _cui; importlib.reload(_cui)
+            _cui.show()
+        """),
+    },
+    {
         'label': 'Shelf\nSetup',
         'annotation': 'Reinstall / update this C_Scripts shelf',
         'image': 'refresh.png',
