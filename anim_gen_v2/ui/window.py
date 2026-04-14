@@ -20,7 +20,7 @@ from .range_slider import (RangeSlider, SingleSlider,
 
 import maya.OpenMayaUI as omui
 from shiboken6 import wrapInstance
-from PySide6 import QtWidgets, QtGui
+from PySide6 import QtWidgets, QtGui, QtCore
 
 WINDOW_NAME = 'animGenV2Win'
 WINDOW_TITLE = 'Animation Generator v2'
@@ -1018,6 +1018,11 @@ class AnimGenWindow:
         if not self._preset_entries:
             combo.addItem('(no presets found)')
 
+    def _qt_parent(self):
+        """Return the Qt widget parent for modal dialogs."""
+        ptr = omui.MQtUtil.mainWindow()
+        return wrapInstance(int(ptr), QtWidgets.QWidget) if ptr else None
+
     def _save_selected_preset(self):
         if not self._preset_entries:
             return
@@ -1025,15 +1030,20 @@ class AnimGenWindow:
         if idx < 0 or idx >= len(self._preset_entries):
             return
         entry = self._preset_entries[idx]
-        result = cmds.confirmDialog(
-            title='Overwrite Preset',
-            message='Overwrite "{}" ({})\n\n{}?'.format(
-                entry['name'], entry['source'], entry['path']),
-            button=['Save', 'Cancel'],
-            defaultButton='Cancel',
-            cancelButton='Cancel',
-            dismissString='Cancel')
-        if result != 'Save':
+        clr = CLR_LIB if entry['source'] == 'library' else CLR_PROJ
+        hex_clr = '#{:02x}{:02x}{:02x}'.format(*(int(c * 255) for c in clr))
+        msg = QtWidgets.QMessageBox(self._qt_parent())
+        msg.setWindowTitle('Overwrite Preset')
+        msg.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        msg.setText(
+            'Overwrite <big><b style="color:{}">{}</b></big>'
+            '&nbsp; ({})'
+            '<br><br><span style="font-size:small; word-wrap:break-word">{}</span>'.format(
+                hex_clr, entry['name'], entry['source'], entry['path']))
+        msg.setStandardButtons(
+            QtWidgets.QMessageBox.Save | QtWidgets.QMessageBox.Cancel)
+        msg.setDefaultButton(QtWidgets.QMessageBox.Cancel)
+        if msg.exec() != QtWidgets.QMessageBox.Save:
             return
         data = self._all_params()
         existing = presets.load(entry['path'])
@@ -1059,15 +1069,21 @@ class AnimGenWindow:
         if idx < 0 or idx >= len(self._preset_entries):
             return
         entry = self._preset_entries[idx]
-        result = cmds.confirmDialog(
-            title='Delete Preset',
-            message='Delete "{}" from {}?\n\n{}'.format(
-                entry['name'], entry['source'], entry['path']),
-            button=['Delete', 'Cancel'],
-            defaultButton='Cancel',
-            cancelButton='Cancel',
-            dismissString='Cancel')
-        if result != 'Delete':
+        clr = CLR_LIB if entry['source'] == 'library' else CLR_PROJ
+        hex_clr = '#{:02x}{:02x}{:02x}'.format(*(int(c * 255) for c in clr))
+        msg = QtWidgets.QMessageBox(self._qt_parent())
+        msg.setWindowTitle('Delete Preset')
+        msg.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        msg.setText(
+            'Delete <big><b style="color:{}">{}</b></big>'
+            '&nbsp; ({})'
+            '<br><br><span style="font-size:small; word-wrap:break-word">{}</span>'.format(
+                hex_clr, entry['name'], entry['source'], entry['path']))
+        btn_del = msg.addButton('Delete', QtWidgets.QMessageBox.DestructiveRole)
+        msg.addButton(QtWidgets.QMessageBox.Cancel)
+        msg.setDefaultButton(QtWidgets.QMessageBox.Cancel)
+        msg.exec()
+        if msg.clickedButton() != btn_del:
             return
         import os
         try:

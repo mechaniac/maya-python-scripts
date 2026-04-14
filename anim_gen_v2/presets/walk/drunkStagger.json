@@ -7,7 +7,6 @@
     "foot_raise": 6.0,
     "foot_roll_heel": -10.0,
     "foot_roll_toe": 8.0,
-    "foot_bank": 5.0,
     "hip_nod_front": 10.0,
     "hip_nod_back": -6.0,
     "hip_lean": 8.0,
@@ -20,6 +19,7 @@
     "root_twist": 5.0,
     "root_lr": -1.25874125874126,
     "root_bf": 8.0,
+    "foot_bank": 5.0,
     "legs_offset": 0.0,
     "hip_offset": 0.0,
     "root_offset": 0.0
@@ -35,16 +35,16 @@
     "chest_lean": -9.650349650349654,
     "chest_twist": 0.0,
     "chest_offset": -1.0,
-    "neck_nod_front": 0.0,
+    "neck_nod_front": 2.514970059880241,
     "neck_nod_back": -5.029940119760482,
-    "neck_lean": 0.0,
+    "neck_lean": -12.527472527472533,
     "neck_twist": 0.0,
-    "neck_offset": 0.0,
-    "head_nod_front": 0.0,
-    "head_nod_back": -1.437125748502993,
-    "head_lean": 0.0,
+    "neck_offset": 1,
+    "head_nod_front": 6.1077844311377305,
+    "head_nod_back": 0.0,
+    "head_lean": -3.296703296703299,
     "head_twist": 0.0,
-    "head_offset": 0.0
+    "head_offset": 2
   },
   "arms": {
     "shoulder_droop": 16.36363636363636,
@@ -59,17 +59,17 @@
     "elbow_bend_lo": 0.0,
     "wrist_swing_front": 0.0,
     "wrist_swing_back": 0.0,
+    "wrist_twist": 3.0,
     "shoulder_offset": 0.0,
     "scapula_offset": -2.0,
     "elbow_offset": 0.0,
-    "wrist_offset": 0.0,
-    "wrist_twist": 3.0
+    "wrist_offset": 0.0
   },
   "meta": {
     "type": "walk",
     "name": "drunkStagger",
     "description": "Wobbly inebriated stagger. Wide lateral sway, erratic lean, heavy forward tilt, loose arms.",
     "author": "copilot",
-    "date": "2026-04-13"
+    "date": "2026-04-14"
   }
 }
