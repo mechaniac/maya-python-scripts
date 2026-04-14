@@ -193,22 +193,32 @@ def _default_value(node, attr):
         return 0.0
 
 
-def _separator_frames(layout):
+def _separator_frames(layout, buffer=60):
     """Compute frames where bind-pose keys should be placed.
 
-    Returns a sorted list of integer frames at the exact midpoint of
-    each buffer gap between consecutive clips.  No bookend frames —
-    constant pre/post infinity handles the edges.
+    Returns a sorted list of integer frames:
+      - One bookend *before* the first clip  (start − buffer/2)
+      - One bookend *after*  the last  clip  (end   + buffer/2)
+      - Midpoint of every buffer gap between consecutive clips
     """
     frames = []
-    if not layout or len(layout) < 2:
+    if not layout:
         return frames
 
+    half = int(round(buffer / 2.0))
+
+    # bookend before first clip
+    frames.append(layout[0]['start'] - half)
+
+    # midpoints between consecutive clips
     for i in range(len(layout) - 1):
         gap_start = layout[i]['end']
         gap_end = layout[i + 1]['start']
         mid = int(round((gap_start + gap_end) / 2.0))
         frames.append(mid)
+
+    # bookend after last clip
+    frames.append(layout[-1]['end'] + half)
 
     return sorted(set(frames))
 
@@ -250,14 +260,15 @@ def _gather_charset_channels(character_set):
     return channels
 
 
-def key_bind_pose_separators(layout, character_set):
+def key_bind_pose_separators(layout, character_set, buffer=60):
     """Key every channel in *character_set* to its default value at separator frames.
 
     Separator frames are placed at the midpoint of each buffer gap between
-    clips, plus one frame before the first clip and after the last.
+    clips, plus bookends before the first and after the last clip.
     Keys use stepped tangents to create hard walls between clips.
 
     *character_set* is the name of an existing Maya character set.
+    *buffer* is the buffer frame count used in the clip layout.
     """
     if not cmds.objExists(character_set):
         cmds.warning('Character set "{}" not found.'.format(character_set))
@@ -267,7 +278,7 @@ def key_bind_pose_separators(layout, character_set):
         cmds.warning('"{}" is not a character set.'.format(character_set))
         return 0
 
-    sep_frames = _separator_frames(layout)
+    sep_frames = _separator_frames(layout, buffer=buffer)
     if not sep_frames:
         cmds.warning('No clips in layout.')
         return 0
@@ -277,6 +288,10 @@ def key_bind_pose_separators(layout, character_set):
         cmds.warning('No keyable channels found in character set.')
         return 0
 
+    # Disable autoKeyframe so Maya doesn't also key at the current time
+    auto_key_was_on = cmds.autoKeyframe(q=True, state=True)
+    cmds.autoKeyframe(state=False)
+
     cmds.undoInfo(openChunk=True, chunkName='ClipSetter_BindSeparators')
     key_count = 0
     try:
@@ -284,7 +299,7 @@ def key_bind_pose_separators(layout, character_set):
             for node, attr in channels:
                 val = _default_value(node, attr)
                 try:
-                    cmds.setKeyframe(node, at=attr, t=frame, v=val)
+                    cmds.setKeyframe(node, at=attr, t=(frame,), v=val)
                     cmds.keyTangent(node, at=attr, t=(frame, frame),
                                     itt='stepnext', ott='step')
                     key_count += 1
@@ -292,6 +307,7 @@ def key_bind_pose_separators(layout, character_set):
                     pass
     finally:
         cmds.undoInfo(closeChunk=True)
+        cmds.autoKeyframe(state=auto_key_was_on)
 
     print('// Keyed {} bind-pose separators at {} frames across {} channels.'.format(
         key_count, len(sep_frames), len(channels)))

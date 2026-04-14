@@ -48,9 +48,11 @@ class ClipSetterWindow:
         cmds.columnLayout(adjustableColumn=True)
         cmds.rowLayout(numberOfColumns=4, columnWidth4=(100, 60, 100, 60))
         cmds.text(label='Start Frame:', align='right')
-        self._start_fld = cmds.intField(v=DEFAULT_START, min=0, width=50)
+        self._start_fld = cmds.intField(v=DEFAULT_START, min=0, width=50,
+                                        changeCommand=lambda *_: self._update_ranges())
         cmds.text(label='Buffer Frames:', align='right')
-        self._buffer_fld = cmds.intField(v=DEFAULT_BUFFER, min=0, width=50)
+        self._buffer_fld = cmds.intField(v=DEFAULT_BUFFER, min=0, width=50,
+                                         changeCommand=lambda *_: self._update_ranges())
         cmds.setParent('..')
         cmds.setParent('..')
         cmds.setParent(main_col)
@@ -164,7 +166,8 @@ class ClipSetterWindow:
                                           (4, 80), (5, 50), (6, 50),
                                           (7, 28), (8, 28)])
         name_fld = cmds.textField(text=clip['name'], width=125)
-        frames_fld = cmds.intField(v=clip['frames'], min=1, width=50)
+        frames_fld = cmds.intField(v=clip['frames'], min=1, width=50,
+                                   changeCommand=lambda *_: self._update_ranges())
         loop_cb = cmds.checkBox(label='', v=clip.get('loop', True))
         cat_fld = cmds.textField(text=clip.get('category', ''), width=80)
         start_lbl = cmds.text(label='—', width=50, align='center')
@@ -268,8 +271,9 @@ class ClipSetterWindow:
             cmds.warning('Select a character set first.')
             return
         layout = self._get_layout()
+        buf = cmds.intField(self._buffer_fld, q=True, v=True)
         self._update_ranges()
-        count = export.key_bind_pose_separators(layout, cs)
+        count = export.key_bind_pose_separators(layout, cs, buffer=buf)
         if count:
             cmds.confirmDialog(
                 title='Bind Pose Separators',
