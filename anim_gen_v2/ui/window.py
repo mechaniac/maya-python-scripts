@@ -13,6 +13,7 @@ import maya.cmds as cmds
 
 from ..core import engine, presets
 from ..layers.walk_primary import WalkPrimary
+from ..layers.run_primary import RunPrimary
 from ..layers.walk_secondary import WalkSecondary
 from ..layers.walk_arms import WalkArms
 from .range_slider import (RangeSlider, SingleSlider,
@@ -64,8 +65,10 @@ class AnimGenWindow:
 
     def __init__(self):
         self.walk_primary = WalkPrimary()
+        self.run_primary = RunPrimary()
         self.walk_secondary = WalkSecondary()
         self.walk_arms = WalkArms()
+        self._active_clip = 'walk'   # 'walk' or 'run'
         self._fields = {}        # key -> floatField handle (cmds)
         self._range_sliders = {}  # (key_lo, key_hi) -> RangeSlider widget
         self._range_keys = {}     # key -> (RangeSlider, 'low'|'high')
@@ -108,13 +111,28 @@ class AnimGenWindow:
 
         # ── Scrollable area (sliders / settings) ──
         scroll = cmds.scrollLayout(childResizable=True)
-        tabs = cmds.tabLayout()
-        walk_col = cmds.columnLayout(adjustableColumn=True, parent=tabs)
+        main_col = cmds.columnLayout(adjustableColumn=True)
+
+        # ── Clip type tabs (Primary section only per type) ──
+        self._clip_tabs = cmds.tabLayout(
+            changeCommand=lambda: self._on_tab_changed())
+        walk_col = cmds.columnLayout(adjustableColumn=True,
+                                     parent=self._clip_tabs)
         self._build_walk_primary(walk_col)
-        self._build_walk_secondary(walk_col)
-        self._build_walk_arms(walk_col)
-        self._build_range_settings(walk_col)
-        cmds.tabLayout(tabs, e=True, tabLabel=[(walk_col, 'Walk Cycle')])
+        cmds.setParent(self._clip_tabs)
+        run_col = cmds.columnLayout(adjustableColumn=True,
+                                    parent=self._clip_tabs)
+        self._build_run_primary(run_col)
+        cmds.setParent(self._clip_tabs)
+        cmds.tabLayout(self._clip_tabs, e=True,
+                       tabLabel=[(walk_col, 'Walk Cycle'),
+                                 (run_col, 'Run Cycle')])
+        cmds.setParent(main_col)
+
+        # ── Shared sections (Secondary + Arms + Range) ──
+        self._build_walk_secondary(main_col)
+        self._build_walk_arms(main_col)
+        self._build_range_settings(main_col)
         cmds.setParent(root_form)
 
         # ── Fixed bottom panel (actions + presets) ──
@@ -135,6 +153,17 @@ class AnimGenWindow:
     # ──────────────────────────────────────────────
     #  Helpers
     # ──────────────────────────────────────────────
+
+    @property
+    def _active_primary(self):
+        """Return the primary layer for the currently selected clip type."""
+        return self.run_primary if self._active_clip == 'run' else self.walk_primary
+
+    def _on_tab_changed(self):
+        """Called when the user switches between Walk / Run tabs."""
+        idx = cmds.tabLayout(self._clip_tabs, q=True, selectTabIndex=True)
+        self._active_clip = 'run' if idx == 2 else 'walk'
+        self._refresh_preset_list()
 
     @staticmethod
     def _sel(ctrls):
@@ -629,6 +658,90 @@ class AnimGenWindow:
         cmds.setParent(parent)
 
     # ──────────────────────────────────────────────
+    #  Run Primary section
+    # ──────────────────────────────────────────────
+
+    def _build_run_primary(self, parent):
+        cmds.setParent(parent)
+        cmds.frameLayout(label='Primary  (Root / Hips / Legs)',
+                         collapsable=True, marginHeight=4, marginWidth=4)
+        col = cmds.columnLayout(adjustableColumn=True)
+
+        d = self.run_primary.DEFAULTS
+
+        legs = ['IKLeg_R', 'IKLeg_L']
+        hip = ['HipSwinger_M']
+        root = ['RootX_M']
+
+        self._category_header('Run_Primary', legs + hip + root,
+                              list(d.keys()), ['run_legs', 'run_hip', 'run_root'])
+        self._scalar_row(['run_legs', 'run_hip', 'run_root'])
+
+        # ── Legs ──
+        cmds.separator(height=6, style='none')
+        self._section_header('Legs', legs, 'run_legs')
+        self._offset_slider('r_legs_offset', self._off_half)
+        self._slider('Stride Length', 'r_stride', d['stride'], self._rng('stride'),
+                     tip='Forward distance (translateZ) per step')
+        self._range_slider('Stride Width', 'r_stride_width', 'r_stride_width_swing',
+                           d['stride_width'], d.get('stride_width_swing', d['stride_width']),
+                           self._rng('stride_wh'), None,
+                           tip='Lateral spread. Low = grounded, Hi = swing-out.')
+        self._slider('Stride Height', 'r_stride_height', d['stride_height'],
+                     self._rng('stride_h'),
+                     tip='Vertical lift of the foot at mid-stride')
+        self._slider('Foot Raise', 'r_foot_raise', d['foot_raise'], self._rng('foot_raise'),
+                     tip='Peak toe lift angle during swing phase')
+        self._slider_pair('Roll Ball', 'r_foot_roll_ball', d['foot_roll_ball'],
+                          'Roll Toe', 'r_foot_roll_toe', d['foot_roll_toe'],
+                          self._rng('roll'),
+                          tip_a='Ball-strike roll angle at initial contact (run = no heel strike)',
+                          tip_b='Toe push-off roll angle')
+        self._slider('Foot Bank  rZ', 'r_foot_bank', d.get('foot_bank', 0.0),
+                     self._rng('rotation'), CLR_Z,
+                     tip='Lateral foot tilt during push-off (rotateZ)')
+
+        # ── Hip ──
+        cmds.separator(height=4, style='in')
+        self._section_header('Hip', hip, 'run_hip')
+        self._offset_slider('r_hip_offset', self._off_quarter)
+        self._range_slider('Nod  rZ', 'r_hip_nod_back', 'r_hip_nod_front',
+                           d['hip_nod_back'], d['hip_nod_front'],
+                           self._rng('rotation'), CLR_Z,
+                           tip='Forward/back pitch of the hip swinger (rotateZ)')
+        self._slider_pair('Lean  rY', 'r_hip_lean', d['hip_lean'],
+                          'Twist  rX', 'r_hip_twist', d['hip_twist'],
+                          self._rng('rotation'), CLR_Y, CLR_X,
+                          tip_a='Lateral tilt of the hips (rotateY)',
+                          tip_b='Axial rotation of the hips (rotateX)',
+                          rng_b=self._rng('twist'))
+
+        # ── Root ──
+        cmds.separator(height=4, style='in')
+        self._section_header('Root', root, 'run_root')
+        self._offset_slider('r_root_offset', self._off_quarter)
+        self._range_slider('Bounce  tX', 'r_root_bounce_lo', 'r_root_bounce_hi',
+                           d['root_bounce_lo'], d['root_bounce_hi'],
+                           self._rng('translation'), CLR_X,
+                           tip='Vertical bounce (translateX). More pronounced in a run.')
+        self._range_slider('Nod  rZ', 'r_root_nod_back', 'r_root_nod_front',
+                           d['root_nod_back'], d['root_nod_front'],
+                           self._rng('rotation'), CLR_Z,
+                           tip='Forward/back pitch of the root (rotateZ)')
+        self._slider_pair('Lean  rY', 'r_root_lean', d['root_lean'],
+                          'Twist  rX', 'r_root_twist', d['root_twist'],
+                          self._rng('rotation'), CLR_Y, CLR_X,
+                          tip_a='Lateral tilt of the root (rotateY)',
+                          tip_b='Axial rotation of the root (rotateX)',
+                          rng_b=self._rng('twist'))
+        self._slider_pair('Left-Right  tZ', 'r_root_lr', d['root_lr'],
+                          'Back-Forth  tY', 'r_root_bf', d['root_bf'],
+                          self._rng('translation'), CLR_Z, CLR_Y,
+                          tip_a='Lateral sway of the root (translateZ)',
+                          tip_b='Forward lean of the root (translateY)')
+        cmds.setParent(parent)
+
+    # ──────────────────────────────────────────────
     #  Walk Secondary section
     # ──────────────────────────────────────────────
 
@@ -826,7 +939,7 @@ class AnimGenWindow:
         # ── Main actions ──
         cmds.rowLayout(numberOfColumns=4, columnWidth4=(200, 150, 150, 100),
                        adjustableColumn=1)
-        cmds.button(label='Generate Walk Cycle', height=36,
+        cmds.button(label='Generate', height=36,
                     backgroundColor=(0.22, 0.55, 0.22),
                     annotation='Key all layers on the current timeline range using the slider values above',
                     command=lambda *_: self._generate())
@@ -954,17 +1067,24 @@ class AnimGenWindow:
     def _read_fields(self):
         for key in self._fields:
             val = self._get_val(key)
-            if key in self.walk_primary.DEFAULTS:
+            # Run primary keys are prefixed with 'r_'
+            if key.startswith('r_') and key[2:] in self.run_primary.DEFAULTS:
+                self.run_primary._params[key[2:]] = val
+            elif key in self.walk_primary.DEFAULTS:
                 self.walk_primary._params[key] = val
             elif key in self.walk_secondary.DEFAULTS:
                 self.walk_secondary._params[key] = val
             elif key in self.walk_arms.DEFAULTS:
                 self.walk_arms._params[key] = val
 
+    def _layers(self):
+        """Return the layer list for the active clip type."""
+        return [self._active_primary, self.walk_secondary, self.walk_arms]
+
     def _delete_anim(self):
         all_ctrls = set()
         fkik_ctrls = set()
-        for layer in (self.walk_primary, self.walk_secondary, self.walk_arms):
+        for layer in self._layers():
             all_ctrls.update(layer.controls())
             fkik_ctrls.update(layer.fkik_state().keys())
         cmds.undoInfo(openChunk=True, chunkName='AnimGenV2_delete')
@@ -977,15 +1097,12 @@ class AnimGenWindow:
     def _generate(self):
         self._read_fields()
         variation = self._var_slider.value() if hasattr(self, '_var_slider') else 0
-        engine.generate([self.walk_primary,
-                         self.walk_secondary,
-                         self.walk_arms],
-                        variation=variation)
+        engine.generate(self._layers(), variation=variation)
 
     def _sel_all(self):
-        all_ctrls = (self.walk_primary.controls()
-                     + self.walk_secondary.controls()
-                     + self.walk_arms.controls())
+        all_ctrls = []
+        for layer in self._layers():
+            all_ctrls.extend(layer.controls())
         self._sel(all_ctrls)
 
     def _toggle_auto(self, val):
@@ -996,7 +1113,7 @@ class AnimGenWindow:
     def _all_params(self):
         self._read_fields()
         return {
-            'primary': self.walk_primary.params(),
+            'primary': self._active_primary.params(),
             'secondary': self.walk_secondary.params(),
             'arms': self.walk_arms.params(),
         }
@@ -1006,7 +1123,7 @@ class AnimGenWindow:
     def _refresh_preset_list(self):
         combo = self._preset_combo
         combo.clear()
-        self._preset_entries = presets.list_presets('walk')
+        self._preset_entries = presets.list_presets(self._active_clip)
         for i, entry in enumerate(self._preset_entries):
             is_lib = entry['source'] == 'library'
             clr = CLR_LIB if is_lib else CLR_PROJ
@@ -1109,7 +1226,8 @@ class AnimGenWindow:
         name = self._prompt_name('Save to Library')
         if not name:
             return
-        path = presets.save_to_library(self._all_params(), name)
+        path = presets.save_to_library(self._all_params(), name,
+                                       cycle_type=self._active_clip)
         if path:
             print('// Saved to library: {}'.format(path))
             self._refresh_preset_list()
@@ -1118,7 +1236,8 @@ class AnimGenWindow:
         name = self._prompt_name('Save to Project')
         if not name:
             return
-        path = presets.save_to_project(self._all_params(), name)
+        path = presets.save_to_project(self._all_params(), name,
+                                       cycle_type=self._active_clip)
         if path:
             print('// Saved to project: {}'.format(path))
             self._refresh_preset_list()
@@ -1134,7 +1253,7 @@ class AnimGenWindow:
 
     def _apply_preset_data(self, data):
         if 'primary' in data:
-            self.walk_primary.set_params(data['primary'])
+            self._active_primary.set_params(data['primary'])
         if 'secondary' in data:
             self.walk_secondary.set_params(data['secondary'])
         if 'arms' in data:
@@ -1143,9 +1262,13 @@ class AnimGenWindow:
 
     def _refresh_fields(self):
         all_p = {}
-        all_p.update(self.walk_primary._params)
         all_p.update(self.walk_secondary._params)
         all_p.update(self.walk_arms._params)
+        # Walk primary keys (no prefix)
+        all_p.update(self.walk_primary._params)
+        # Run primary keys (r_ prefix for UI)
+        for k, v in self.run_primary._params.items():
+            all_p['r_' + k] = v
         for key in self._fields:
             if key in all_p:
                 try:
