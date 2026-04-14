@@ -291,6 +291,7 @@ def key_bind_pose_separators(layout, character_set, buffer=60):
     # Disable autoKeyframe so Maya doesn't also key at the current time
     auto_key_was_on = cmds.autoKeyframe(q=True, state=True)
     cmds.autoKeyframe(state=False)
+    current_time = cmds.currentTime(q=True)
 
     cmds.undoInfo(openChunk=True, chunkName='ClipSetter_BindSeparators')
     key_count = 0
@@ -303,6 +304,16 @@ def key_bind_pose_separators(layout, character_set, buffer=60):
                     cmds.keyTangent(node, at=attr, t=(frame, frame),
                                     itt='stepnext', ott='step')
                     key_count += 1
+                except Exception:
+                    pass
+
+        # Remove accidental keys at the current time (setKeyframe + v=
+        # can create side-effect keys at the current frame)
+        if current_time not in sep_frames:
+            for node, attr in channels:
+                try:
+                    cmds.cutKey(node, at=attr,
+                                t=(current_time, current_time), clear=True)
                 except Exception:
                     pass
     finally:
