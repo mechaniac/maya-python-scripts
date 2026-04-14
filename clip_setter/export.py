@@ -196,27 +196,19 @@ def _default_value(node, attr):
 def _separator_frames(layout):
     """Compute frames where bind-pose keys should be placed.
 
-    Returns a sorted list of integer frames:
-      - Midpoint of each buffer gap between consecutive clips
-      - One frame before the first clip (start - 1)
-      - One frame after the last clip (end + 1)
+    Returns a sorted list of integer frames at the exact midpoint of
+    each buffer gap between consecutive clips.  No bookend frames —
+    constant pre/post infinity handles the edges.
     """
     frames = []
-    if not layout:
+    if not layout or len(layout) < 2:
         return frames
 
-    # Bookend before first clip
-    frames.append(layout[0]['start'] - 1)
-
-    # Midpoints between consecutive clips
     for i in range(len(layout) - 1):
         gap_start = layout[i]['end']
         gap_end = layout[i + 1]['start']
         mid = int(round((gap_start + gap_end) / 2.0))
         frames.append(mid)
-
-    # Bookend after last clip
-    frames.append(layout[-1]['end'] + 1)
 
     return sorted(set(frames))
 
