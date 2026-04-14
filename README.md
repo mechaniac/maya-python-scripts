@@ -7,6 +7,13 @@ A collection of Maya Python scripts for procedural animation generation, rigging
 ### Quick Start
 
 ```python
+# One-click shelf setup (creates C_Scripts shelf with all tools)
+import install_shelf; install_shelf.install()
+```
+
+Or launch tools individually:
+
+```python
 # Animation Generator v2
 from anim_gen_v2 import launcher; launcher.show()
 
@@ -21,16 +28,17 @@ import source2Importer; source2Importer.show()
 
 | Package | Description |
 |---|---|
-| `anim_gen_v2/` | Layered keyframe engine with walk cycle generator, JSON presets, slider UI |
+| `anim_gen_v2/` | Layered keyframe engine with walk, run, and sidestep generators, JSON presets, slider UI |
 | `auto_control_rig/` | AdvancedSkeleton-compatible FK/IK control rig builder for any skeleton |
 | `source2_importer/` | Import Source 2 `.vmdl` models (mesh, skeleton, textures, materials) into Maya |
+| `install_shelf.py` | One-click shelf installer — creates/updates `C_Scripts` shelf with reload buttons for all tools |
 | `*.py` (root) | Legacy v1 animation generators, utility scripts, scene cleanup tools |
 
 ---
 
 ## Animation Generator v2 — `anim_gen_v2`
 
-A layered keyframe engine that generates procedural walk cycles on the Auto Control Rig. Each animation layer (Primary, Secondary, Arms) produces a set of channels that the engine batch-keys across the timeline in a single undo chunk.
+A layered keyframe engine that generates procedural locomotion cycles on the Auto Control Rig. Supports **walk**, **run**, and **sidestep** (strafe) clip types, each with its own primary layer and tab in the UI. Each animation layer produces a set of channels that the engine batch-keys across the timeline in a single undo chunk.
 
 **Usage:**
 ```python
@@ -71,7 +79,12 @@ launcher.show()
 | `core/resolver.py` | Cached case-insensitive Maya node lookup |
 | `core/presets.py` | JSON preset save/load — repo library + project presets with auto-discovery |
 | `layers/__init__.py` | `Layer` base class — `enabled`, `channels()`, `controls()`, `fkik_state()`, `params()` |
-| `ui/window.py` | Tabbed Maya window — sliders, framed sections, mute, presets, auto-update |
+| `layers/walk_primary.py` | Walk cycle primary layer — stride, foot arc (60% ground), heel-strike roll, root bounce (high at contact) |
+| `layers/run_primary.py` | Run cycle primary layer — short ground contact (~33%), ball-first roll, root bounce (low at contact), forward lean |
+| `layers/sidestep_primary.py` | Sidestep (strafe) primary layer — lateral stride, root sway, hip lean, left/right direction switch |
+| `layers/walk_secondary.py` | Walk cycle secondary layer — spine, chest, neck, head counter-rotation |
+| `layers/walk_arms.py` | Walk cycle arms layer — FK shoulder swing, elbow bend, wrist follow-through |
+| `ui/window.py` | Tabbed Maya window — Walk / Run / Sidestep tabs, sliders, mute, presets, auto-update |
 
 ### Axis Convention (Joint-Aligned)
 
@@ -143,9 +156,53 @@ FKIK: `FKIKSpine_M = 0` (full FK). FKSpine_M uses a multiplyDivide node to halve
 
 FKIK: `FKIKArm_L/R = 0` (full FK). Left arm uses `mir = −1` on rY/rX amplitudes; phase offset `0.5`.
 
+### Run Cycle Layer
+
+Minimal primary layer built from scratch for run mechanics. Key structural differences from walk:
+
+| Aspect | Walk | Run |
+|---|---|---|
+| Ground contact | ~60% of cycle | ~33% of cycle |
+| Foot arc | 5-value `[0,0,0,h,0]`, symmetric bump | 7-value with shifted peaks, aggressive lift |
+| Foot roll | Heel strike first | Ball strike first, toe push-off |
+| Root bounce | HIGH at mid-stance (pendulum vault) | LOW at contact (impact absorption), HIGH during flight |
+| Forward lean | None | Constant pitch on root (`rotateZ`) |
+| Detail channels | Width, raise, bank, nod, lean, LR, BF, twist | None (minimal draft — details TBD) |
+
+**Primary parameters:**
+
+| Parameter | Default | Control | Attribute | Note |
+|---|---|---|---|---|
+| `stride` | 120.0 | IKLeg_R/L | translateZ | Forward cosine stride |
+| `stride_height` | 35.0 | IKLeg_R/L | translateY | Foot arc peak height |
+| `foot_roll_ball` | −10.0 | IKLeg_R/L | Roll | Ball-strike contact angle |
+| `foot_roll_toe` | 30.0 | IKLeg_R/L | Roll | Toe push-off angle |
+| `root_bounce_hi` | 5.0 | RootX_M | translateX | Flight apex (up) |
+| `root_bounce_lo` | −3.0 | RootX_M | translateX | Contact compression (down) |
+| `hip_twist` | 30.0 | HipSwinger_M | rotateX | Counter-rotation, 1× per cycle |
+| `forward_lean` | 5.0 | RootX_M | rotateZ | Constant run posture pitch |
+
+### Sidestep (Strafe) Layer
+
+Minimal primary layer for lateral stepping. Primary motion axis is `translateX` (lateral) instead of `translateZ` (forward). Both feet oscillate in the same direction, alternating like a shuffle. A **direction switch** (`strafe_right`) flips the sign of all lateral channels.
+
+**Primary parameters:**
+
+| Parameter | Default | Control | Attribute | Note |
+|---|---|---|---|---|
+| `stride` | 80.0 | IKLeg_R/L | translateX | Lateral reach distance |
+| `stride_height` | 20.0 | IKLeg_R/L | translateY | Foot lift height during swing |
+| `foot_roll_heel` | −8.0 | IKLeg_R/L | Roll | Heel contact angle |
+| `foot_roll_toe` | 15.0 | IKLeg_R/L | Roll | Toe push-off angle |
+| `root_bounce_hi` | 3.0 | RootX_M | translateX | Bounce high (mid-stance, walk-style) |
+| `root_bounce_lo` | −2.0 | RootX_M | translateX | Bounce low |
+| `root_sway` | 5.0 | RootX_M | translateZ | Lateral root shift following legs |
+| `hip_lean` | 8.0 | HipSwinger_M | rotateY | Constant lean into travel direction |
+| `strafe_right` | 1.0 | — | — | Direction: 1.0 = right, 0.0 = left |
+
 ### Preset System
 
-Presets are JSON files discovered from two locations:
+Presets are JSON files discovered from two locations per clip type (`walk`, `run`, `sidestep`):
 
 | Source | Path | Tag |
 |---|---|---|
@@ -166,6 +223,26 @@ The UI provides Load Selected, Save to Library, Save to Project, Save As..., and
 - **Preset dropdown** with combined library + project presets
 - **Variation** — random amplitude perturbation per channel for organic feel
 - **Spline tangents + cycle infinity** — all keyed curves set to spline with pre/post-infinity cycling
+- **Tabbed clip types** — Walk Cycle / Run Cycle / Sidestep tabs, each with its own primary layer and presets
+
+### Shelf Installer — `install_shelf.py`
+
+One-click setup that creates (or refreshes) the **C_Scripts** Maya shelf. Safe to re-run — clears existing buttons first.
+
+```python
+import install_shelf; install_shelf.install()
+```
+
+Creates 4 shelf buttons:
+
+| Button | Tool | What it does |
+|---|---|---|
+| **S2 Import** | Source 2 Importer | Reloads all `source2_importer` modules, opens the importer window |
+| **Ctrl Rig** | Auto Control Rig | Reloads all `auto_control_rig` modules, opens `show_window()` |
+| **AnimGen** | Animation Generator v2 | Reloads all `anim_gen_v2` modules (core → layers → ui), opens the window |
+| **Shelf Setup** | Shelf Installer | Re-runs `install_shelf.install()` itself (self-updating bootstrap) |
+
+Every button includes a full `importlib.reload()` chain in dependency order, so code changes from `git pull` are always picked up without restarting Maya. The **Shelf Setup** button means the shelf definition itself stays up to date — new tools or changed reload sequences are applied by clicking it once.
 
 ### Planned: FK/IK Mode Switching
 
@@ -953,6 +1030,9 @@ Informed by state-of-the-art rigging systems (AdvancedSkeleton, mGear, Rapid Rig
 | **Global Scale** | ScaleConstraint from Main_M to root skin joint. Uniform scaling of rig + mesh. | ✅ Done |
 | **Eye Aim / Look-At** | Per-eye aim targets with master control. Space switching (Head/Root/World). Eyelid follow blending. | ✅ Done |
 | **Procedural Walk Cycle** | Layered keyframe engine (anim_gen_v2) with slider UI, presets, foot roll, mute sections, variation, spline tangents + cycle infinity. | ✅ Done |
+| **Run Cycle Generator** | Minimal run primary layer — short ground contact, ball-first roll, opposite-phase bounce, forward lean. | ✅ Done |
+| **Sidestep Generator** | Lateral strafe primary layer — lateral stride, root sway, hip lean, left/right direction switch. | ✅ Done |
+| **Shelf Installer** | One-click `install_shelf.py` — creates/updates C_Scripts shelf with reload buttons for all tools. Self-updating bootstrap. | ✅ Done |
 | **Source 2 Import** | Import `.vmdl` models — parse KV3, import FBX, convert textures via VRF, build Maya materials. | ✅ Done |
 
 ### Medium Priority
