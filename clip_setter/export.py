@@ -229,12 +229,17 @@ def _gather_charset_channels(character_set):
             seen.add(short)
             unique_nodes.append(short)
 
+    # Attrs that are keyable on transforms but irrelevant for animation
+    _SKIP_ATTRS = {'visibility'}
+
     channels = []
     for node in unique_nodes:
         if not cmds.objExists(node):
             continue
         keyable = cmds.listAttr(node, keyable=True) or []
         for attr in keyable:
+            if attr in _SKIP_ATTRS:
+                continue
             full = '{}.{}'.format(node, attr)
             try:
                 if cmds.getAttr(full, lock=True):
