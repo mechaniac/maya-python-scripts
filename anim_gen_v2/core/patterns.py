@@ -24,13 +24,17 @@ def evaluate(wave, t, frequency=1.0, phase=0.0):
 
     The angle is computed as ``2 * pi * (frequency * t + phase)``
     so *phase* is in cycles (0.5 = 180 degrees).
+
+    Comparisons use ``.value`` strings so the function survives
+    ``importlib.reload()`` of the patterns module.
     """
-    if wave is Wave.CONSTANT:
+    wv = wave.value
+    if wv == 'constant':
         return 1.0
     angle = 2.0 * math.pi * (frequency * t + phase)
-    if wave is Wave.COSINE:
+    if wv == 'cosine':
         return math.cos(angle)
-    if wave is Wave.SINE:
+    if wv == 'sine':
         return math.sin(angle)
     return 0.0
 
