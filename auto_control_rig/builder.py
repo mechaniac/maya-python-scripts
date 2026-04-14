@@ -130,6 +130,11 @@ class AutoControlRigBuilder:
         if self.opts.get("show_debug", False):
             self._create_debug_vis()
 
+        # 3.6) Lock and hide unused channels on controls
+        if self.opts.get("lock_channels", True):
+            from .operations import lock_hide_channels
+            lock_hide_channels()
+
         # 4) Store data for clean removal
         cmds.addAttr(self.top, ln="skin_constraints", dt="string")
         cmds.setAttr(self.top + ".skin_constraints",

@@ -1047,6 +1047,7 @@ Informed by state-of-the-art rigging systems (AdvancedSkeleton, mGear, Rapid Rig
 | **Head Aim / Look-At** | Aim constraint on head with a world-space target locator. Auto look-at with adjustable blend. | Planned |
 | **Prop / Object Attachment** | Pre-built parent-constraint slots on hand, head, and back joints so props can be parented to the rig with one click. Space-switchable between hands. | Planned |
 | **Soft IK** | Smoothly ease into full extension instead of snapping. Node-based falloff curve before the IK chain reaches max length. | Planned |
+| **Per-Control Scale** | `scaleConstraint` from FK/IK controls → driver joints → skin joints, enabling per-part scaling (e.g. enlarge hands, shrink head). Currently `parentConstraint` does not pass scale. | Planned |
 | **Bendy / Ribbon Limbs** | Ribbon surface or spline-based intermediate deformation between main joints, giving volume-preserving bends at elbows and knees. | Planned |
 
 ### Lower Priority / Nice to Have

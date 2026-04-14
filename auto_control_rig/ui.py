@@ -3,7 +3,9 @@ import os
 
 from .constants import SLOT_DEFS
 from .builder import AutoControlRigBuilder
-from .operations import remove_control_rig, reset_to_bind_pose, create_foot_roll_locators
+from .operations import (remove_control_rig, reset_to_bind_pose,
+                         create_foot_roll_locators, lock_hide_channels,
+                         unlock_all_channels, create_character_set)
 from .mapping import get_hierarchy_joints, auto_map_joints, save_mapping, load_mapping
 from .debug import log_joint_axes
 
@@ -114,6 +116,7 @@ def _on_build(*a):
         "create_eye_aim": cmds.checkBox(_ui["eye_aim"], q=1, v=1),
         "create_eyelids": cmds.checkBox(_ui["eyelids"], q=1, v=1),
         "create_ears": cmds.checkBox(_ui["ears"], q=1, v=1),
+        "lock_channels": cmds.checkBox(_ui["lock_ch"], q=1, v=1),
         "roll_start_angle": cmds.floatField(_ui["roll_start"], q=1, v=1),
         "roll_end_angle": cmds.floatField(_ui["roll_end"], q=1, v=1),
     }
@@ -224,6 +227,7 @@ def show_window():
     _ui["eye_aim"] = cmds.checkBox(l="Eye Aim", v=1)
     _ui["eyelids"] = cmds.checkBox(l="Eyelids", v=1)
     _ui["ears"] = cmds.checkBox(l="Ears", v=1)
+    _ui["lock_ch"] = cmds.checkBox(l="Lock/Hide Unused Channels", v=1)
     cmds.setParent("..")
     cmds.rowLayout(nc=2, cw2=(130, 100))
     cmds.text(l="Control Size:")
@@ -256,8 +260,24 @@ def show_window():
                 c=_on_select_all_controls)
     cmds.button(l="Return to Bind Pose", h=32, bgc=(0.5, 0.7, 1.0),
                 c=lambda *a: reset_to_bind_pose())
+    cmds.rowLayout(nc=2, cw2=(250, 250), adj=2)
+    cmds.button(l="Lock/Hide Unused Channels", h=28,
+                c=lambda *a: lock_hide_channels())
+    cmds.button(l="Unlock All Channels", h=28,
+                c=lambda *a: unlock_all_channels())
+    cmds.setParent("..")
     cmds.button(l="Log Joint Axes (Selection)", h=28,
                 c=lambda *a: _on_log_axes())
+    cmds.setParent("..")
+
+    cmds.frameLayout(l="Character Set", cll=1, mw=10, mh=5)
+    cmds.rowLayout(nc=2, cw2=(130, 250), adj=2)
+    cmds.text(l="Set Name:")
+    _ui["charset_name"] = cmds.textField(tx="AutoCtrlRig")
+    cmds.setParent("..")
+    cmds.button(l="Create Character Set", h=32, bgc=(0.55, 0.75, 0.55),
+                c=lambda *a: create_character_set(
+                    cmds.textField(_ui["charset_name"], q=1, tx=1)))
     cmds.setParent("..")
 
     cmds.showWindow(w)

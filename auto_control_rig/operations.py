@@ -132,3 +132,209 @@ def create_foot_roll_locators(mapping):
         print("// Created {} foot roll locator(s). Adjust positions as needed.".format(created))
     else:
         print("// Foot roll locators already exist or no foot joints mapped.")
+
+
+# ── Channel lock/hide ─────────────────────────────────────────────
+
+# Which channels each control *actually uses*.  Anything not listed
+# gets locked + hidden.  Keyed by control name prefix/pattern.
+# "t" = translateXYZ, "r" = rotateXYZ, "s" = scaleXYZ
+
+_CHAN_MAP = {
+    # Center body
+    'Main_M':           'trs',
+    'RootX_M':          't',
+    'HipSwinger_M':     'r',
+    'FKSpine_M':        'r',       # translate does NOT propagate (half_grp intermediary)
+    'FKChest_M':        'tr',
+    'FKNeck_M':         'tr',
+    'FKHead_M':         'tr',
+    # IK Spine
+    'IKSpine_M':        'tr',
+    'IKSpineMid_M':     'tr',
+    'IKChest_M':        'tr',
+    # FK Arms — parentConstraint passes both T+R
+    'FKScapula_':       'tr',
+    'FKShoulder_':      'tr',
+    'FKElbow_':         'tr',
+    'FKWrist_':         'tr',
+    # FK Legs
+    'FKHip_':           'tr',
+    'FKKnee_':          'tr',
+    'FKFoot_':          'tr',
+    'FKToe_':           'tr',
+    # IK Limbs
+    'IKArm_':           'tr',
+    'IKLeg_':           'tr',
+    # Pole vectors
+    'PoleArm_':         't',
+    'PoleLeg_':         't',
+    # FKIK switches — no transform channels, only custom attrs
+    'FKIKSpine_M':      '',
+    'FKIKLeg_':         '',
+    'FKIKArm_':         '',
+    # Fingers — parentConstraint passes T+R
+    'Fingers_':         '',        # master finger ctrl — custom attrs only
+    'FKFinger':         'tr',
+    # Eyes
+    'EyeAim_M':        't',
+    'EyeAim_':         't',
+    # Eyelids
+    'FKEyelidUpper_':   'tr',
+    'FKEyelidLower_':   'tr',
+    # Ears
+    'FKEar_':           'tr',
+}
+
+_T = ('tx', 'ty', 'tz')
+_R = ('rx', 'ry', 'rz')
+_S = ('sx', 'sy', 'sz')
+
+
+def _used_channels(ctrl_name):
+    """Return the set of channel short-names a control should keep open."""
+    # Try exact match first, then prefix match (longest prefix wins)
+    if ctrl_name in _CHAN_MAP:
+        flags = _CHAN_MAP[ctrl_name]
+    else:
+        flags = None
+        best_len = 0
+        for pattern, f in _CHAN_MAP.items():
+            if ctrl_name.startswith(pattern) and len(pattern) > best_len:
+                flags = f
+                best_len = len(pattern)
+    if flags is None:
+        return None  # unknown control — leave it alone
+    used = set()
+    if 't' in flags:
+        used.update(_T)
+    if 'r' in flags:
+        used.update(_R)
+    if 's' in flags:
+        used.update(_S)
+    return used
+
+
+def lock_hide_channels():
+    """Lock and hide unused transform channels on all rig controls."""
+    if not cmds.objExists(RIG_GRP):
+        cmds.warning("No rig found.")
+        return
+
+    ctrl_grp = "Ctrl_GRP"
+    all_nodes = []
+    if cmds.objExists(ctrl_grp):
+        all_nodes = cmds.listRelatives(ctrl_grp, ad=True,
+                                       type="transform", fullPath=True) or []
+    if cmds.objExists("Main_M"):
+        all_nodes.append("Main_M")
+
+    all_channels = set(_T + _R + _S)
+    count = 0
+    for node in all_nodes:
+        shapes = cmds.listRelatives(node, s=True, type="nurbsCurve") or []
+        if not shapes:
+            continue
+        short = node.rsplit('|', 1)[-1]
+        used = _used_channels(short)
+        if used is None:
+            continue
+        to_lock = all_channels - used
+        for ch in to_lock:
+            try:
+                cmds.setAttr('{}.{}'.format(node, ch), lock=True,
+                             keyable=False, channelBox=False)
+            except Exception:
+                pass
+        count += 1
+    print("// Locked/hid unused channels on {} controls.".format(count))
+
+
+def unlock_all_channels():
+    """Unlock and show all transform channels on rig controls (undo lock_hide)."""
+    if not cmds.objExists(RIG_GRP):
+        cmds.warning("No rig found.")
+        return
+
+    ctrl_grp = "Ctrl_GRP"
+    all_nodes = []
+    if cmds.objExists(ctrl_grp):
+        all_nodes = cmds.listRelatives(ctrl_grp, ad=True,
+                                       type="transform", fullPath=True) or []
+    if cmds.objExists("Main_M"):
+        all_nodes.append("Main_M")
+
+    all_channels = list(_T + _R + _S)
+    count = 0
+    for node in all_nodes:
+        shapes = cmds.listRelatives(node, s=True, type="nurbsCurve") or []
+        if not shapes:
+            continue
+        for ch in all_channels:
+            try:
+                cmds.setAttr('{}.{}'.format(node, ch), lock=False,
+                             keyable=True)
+            except Exception:
+                pass
+        count += 1
+    print("// Unlocked all channels on {} controls.".format(count))
+
+
+# ── Character Set ─────────────────────────────────────────────────
+
+def _gather_controls():
+    """Return a list of (short_name, node_path) for all rig controls."""
+    ctrl_grp = "Ctrl_GRP"
+    all_nodes = []
+    if cmds.objExists(ctrl_grp):
+        all_nodes = cmds.listRelatives(ctrl_grp, ad=True,
+                                       type="transform", fullPath=True) or []
+    if cmds.objExists("Main_M"):
+        all_nodes.append("Main_M")
+    result = []
+    for node in all_nodes:
+        shapes = cmds.listRelatives(node, s=True, type="nurbsCurve") or []
+        if not shapes:
+            continue
+        short = node.rsplit('|', 1)[-1]
+        result.append((short, node))
+    return result
+
+
+def create_character_set(name="AutoCtrlRig"):
+    """Create a Maya Character Set from all rig controls.
+
+    Only keyable, unlocked channels are included.
+    Existing character set with the same name is replaced.
+    """
+    if not cmds.objExists(RIG_GRP):
+        cmds.warning("No rig found. Build the control rig first.")
+        return None
+
+    # Remove existing character set
+    if cmds.objExists(name):
+        cmds.delete(name)
+
+    controls = _gather_controls()
+    if not controls:
+        cmds.warning("No controls found.")
+        return None
+
+    # Build flat list of node.attr for all keyable channels
+    members = []
+    for short, node in controls:
+        keyable = cmds.listAttr(node, keyable=True) or []
+        for attr in keyable:
+            full = '{}.{}'.format(node, attr)
+            if cmds.getAttr(full, lock=True):
+                continue
+            members.append(full)
+
+    if not members:
+        cmds.warning("No keyable channels found on controls.")
+        return None
+
+    char_set = cmds.character(members, name=name)
+    print("// Character Set '{}' created with {} channels from {} controls.".format(
+        name, len(members), len(controls)))
+    return char_set
