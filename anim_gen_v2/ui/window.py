@@ -14,6 +14,7 @@ import maya.cmds as cmds
 from ..core import engine, presets
 from ..layers.walk_primary import WalkPrimary
 from ..layers.run_primary import RunPrimary
+from ..layers.sidestep_primary import SidestepPrimary
 from ..layers.walk_secondary import WalkSecondary
 from ..layers.walk_arms import WalkArms
 from .range_slider import (RangeSlider, SingleSlider,
@@ -66,9 +67,10 @@ class AnimGenWindow:
     def __init__(self):
         self.walk_primary = WalkPrimary()
         self.run_primary = RunPrimary()
+        self.sidestep_primary = SidestepPrimary()
         self.walk_secondary = WalkSecondary()
         self.walk_arms = WalkArms()
-        self._active_clip = 'walk'   # 'walk' or 'run'
+        self._active_clip = 'walk'   # 'walk', 'run', or 'sidestep'
         self._fields = {}        # key -> floatField handle (cmds)
         self._range_sliders = {}  # (key_lo, key_hi) -> RangeSlider widget
         self._range_keys = {}     # key -> (RangeSlider, 'low'|'high')
@@ -124,9 +126,14 @@ class AnimGenWindow:
                                     parent=self._clip_tabs)
         self._build_run_primary(run_col)
         cmds.setParent(self._clip_tabs)
+        ss_col = cmds.columnLayout(adjustableColumn=True,
+                                   parent=self._clip_tabs)
+        self._build_sidestep_primary(ss_col)
+        cmds.setParent(self._clip_tabs)
         cmds.tabLayout(self._clip_tabs, e=True,
                        tabLabel=[(walk_col, 'Walk Cycle'),
-                                 (run_col, 'Run Cycle')])
+                                 (run_col, 'Run Cycle'),
+                                 (ss_col, 'Sidestep')])
         cmds.setParent(main_col)
 
         # ── Shared sections (Secondary + Arms + Range) ──
@@ -157,12 +164,21 @@ class AnimGenWindow:
     @property
     def _active_primary(self):
         """Return the primary layer for the currently selected clip type."""
-        return self.run_primary if self._active_clip == 'run' else self.walk_primary
+        if self._active_clip == 'run':
+            return self.run_primary
+        if self._active_clip == 'sidestep':
+            return self.sidestep_primary
+        return self.walk_primary
 
     def _on_tab_changed(self):
-        """Called when the user switches between Walk / Run tabs."""
+        """Called when the user switches between Walk / Run / Sidestep tabs."""
         idx = cmds.tabLayout(self._clip_tabs, q=True, selectTabIndex=True)
-        self._active_clip = 'run' if idx == 2 else 'walk'
+        if idx == 3:
+            self._active_clip = 'sidestep'
+        elif idx == 2:
+            self._active_clip = 'run'
+        else:
+            self._active_clip = 'walk'
         self._refresh_preset_list()
 
     @staticmethod
@@ -674,7 +690,8 @@ class AnimGenWindow:
         root = ['RootX_M']
 
         self._category_header('Run_Primary', legs + hip + root,
-                              list(d.keys()), ['run_legs', 'run_hip', 'run_root'])
+                              ['r_' + k for k in d.keys()],
+                              ['run_legs', 'run_hip', 'run_root'])
         self._scalar_row(['run_legs', 'run_hip', 'run_root'])
 
         # ── Legs ──
@@ -683,38 +700,22 @@ class AnimGenWindow:
         self._offset_slider('r_legs_offset', self._off_half)
         self._slider('Stride Length', 'r_stride', d['stride'], self._rng('stride'),
                      tip='Forward distance (translateZ) per step')
-        self._range_slider('Stride Width', 'r_stride_width', 'r_stride_width_swing',
-                           d['stride_width'], d.get('stride_width_swing', d['stride_width']),
-                           self._rng('stride_wh'), None,
-                           tip='Lateral spread. Low = grounded, Hi = swing-out.')
         self._slider('Stride Height', 'r_stride_height', d['stride_height'],
                      self._rng('stride_h'),
-                     tip='Vertical lift of the foot at mid-stride')
-        self._slider('Foot Raise', 'r_foot_raise', d['foot_raise'], self._rng('foot_raise'),
-                     tip='Peak toe lift angle during swing phase')
+                     tip='Peak foot height during swing phase (translateY)')
         self._slider_pair('Roll Ball', 'r_foot_roll_ball', d['foot_roll_ball'],
                           'Roll Toe', 'r_foot_roll_toe', d['foot_roll_toe'],
                           self._rng('roll'),
-                          tip_a='Ball-strike roll angle at initial contact (run = no heel strike)',
-                          tip_b='Toe push-off roll angle')
-        self._slider('Foot Bank  rZ', 'r_foot_bank', d.get('foot_bank', 0.0),
-                     self._rng('rotation'), CLR_Z,
-                     tip='Lateral foot tilt during push-off (rotateZ)')
+                          tip_a='Ball-strike angle at initial contact',
+                          tip_b='Toe push-off angle')
 
         # ── Hip ──
         cmds.separator(height=4, style='in')
         self._section_header('Hip', hip, 'run_hip')
         self._offset_slider('r_hip_offset', self._off_quarter)
-        self._range_slider('Nod  rZ', 'r_hip_nod_back', 'r_hip_nod_front',
-                           d['hip_nod_back'], d['hip_nod_front'],
-                           self._rng('rotation'), CLR_Z,
-                           tip='Forward/back pitch of the hip swinger (rotateZ)')
-        self._slider_pair('Lean  rY', 'r_hip_lean', d['hip_lean'],
-                          'Twist  rX', 'r_hip_twist', d['hip_twist'],
-                          self._rng('rotation'), CLR_Y, CLR_X,
-                          tip_a='Lateral tilt of the hips (rotateY)',
-                          tip_b='Axial rotation of the hips (rotateX)',
-                          rng_b=self._rng('twist'))
+        self._slider('Twist  rX', 'r_hip_twist', d['hip_twist'],
+                     self._rng('twist'), CLR_X,
+                     tip='Hip counter-rotation around the spine (rotateX)')
 
         # ── Root ──
         cmds.separator(height=4, style='in')
@@ -723,22 +724,78 @@ class AnimGenWindow:
         self._range_slider('Bounce  tX', 'r_root_bounce_lo', 'r_root_bounce_hi',
                            d['root_bounce_lo'], d['root_bounce_hi'],
                            self._rng('translation'), CLR_X,
-                           tip='Vertical bounce (translateX). More pronounced in a run.')
-        self._range_slider('Nod  rZ', 'r_root_nod_back', 'r_root_nod_front',
-                           d['root_nod_back'], d['root_nod_front'],
-                           self._rng('rotation'), CLR_Z,
-                           tip='Forward/back pitch of the root (rotateZ)')
-        self._slider_pair('Lean  rY', 'r_root_lean', d['root_lean'],
-                          'Twist  rX', 'r_root_twist', d['root_twist'],
-                          self._rng('rotation'), CLR_Y, CLR_X,
-                          tip_a='Lateral tilt of the root (rotateY)',
-                          tip_b='Axial rotation of the root (rotateX)',
-                          rng_b=self._rng('twist'))
-        self._slider_pair('Left-Right  tZ', 'r_root_lr', d['root_lr'],
-                          'Back-Forth  tY', 'r_root_bf', d['root_bf'],
-                          self._rng('translation'), CLR_Z, CLR_Y,
-                          tip_a='Lateral sway of the root (translateZ)',
-                          tip_b='Forward lean of the root (translateY)')
+                           tip='Root height. Low = contact compression, High = flight apex. '
+                               'Opposite phase to walk (walk is high at contact).')
+        self._slider('Forward Lean  rZ', 'r_forward_lean', d['forward_lean'],
+                     self._rng('rotation'), CLR_Z,
+                     tip='Constant forward pitch of the root (rotateZ). Run posture.')
+        cmds.setParent(parent)
+
+    # ──────────────────────────────────────────────
+    #  Sidestep Primary section
+    # ──────────────────────────────────────────────
+
+    def _build_sidestep_primary(self, parent):
+        cmds.setParent(parent)
+        cmds.frameLayout(label='Primary  (Root / Hips / Legs)',
+                         collapsable=True, marginHeight=4, marginWidth=4)
+        col = cmds.columnLayout(adjustableColumn=True)
+
+        d = self.sidestep_primary.DEFAULTS
+
+        legs = ['IKLeg_R', 'IKLeg_L']
+        hip = ['HipSwinger_M']
+        root = ['RootX_M']
+
+        self._category_header('Sidestep_Primary', legs + hip + root,
+                              ['s_' + k for k in d.keys()],
+                              ['ss_legs', 'ss_hip', 'ss_root'])
+        self._scalar_row(['ss_legs', 'ss_hip', 'ss_root'])
+
+        # ── Direction toggle ──
+        cmds.separator(height=6, style='none')
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=(135, 200), height=24)
+        cmds.text(label='Direction', width=130, align='right')
+        self._strafe_dir_cb = cmds.checkBox(
+            label='Strafe Right', value=bool(d.get('strafe_right', 1.0) >= 0.5),
+            annotation='Checked = strafe right, unchecked = strafe left',
+            changeCommand=lambda *_: self._generate() if self._auto_update else None)
+        cmds.setParent('..')
+
+        # ── Legs ──
+        cmds.separator(height=6, style='none')
+        self._section_header('Legs', legs, 'ss_legs')
+        self._offset_slider('s_legs_offset', self._off_half)
+        self._slider('Stride Length', 's_stride', d['stride'], self._rng('stride'),
+                     tip='Lateral reach distance per step (translateX)')
+        self._slider('Stride Height', 's_stride_height', d['stride_height'],
+                     self._rng('stride_h'),
+                     tip='Foot lift height during swing phase (translateY)')
+        self._slider_pair('Roll Heel', 's_foot_roll_heel', d['foot_roll_heel'],
+                          'Roll Toe', 's_foot_roll_toe', d['foot_roll_toe'],
+                          self._rng('roll'),
+                          tip_a='Heel contact angle',
+                          tip_b='Toe push-off angle')
+
+        # ── Hip ──
+        cmds.separator(height=4, style='in')
+        self._section_header('Hip', hip, 'ss_hip')
+        self._offset_slider('s_hip_offset', self._off_quarter)
+        self._slider('Lean  rY', 's_hip_lean', d['hip_lean'],
+                     self._rng('rotation'), CLR_Y,
+                     tip='Constant lean into travel direction (rotateY)')
+
+        # ── Root ──
+        cmds.separator(height=4, style='in')
+        self._section_header('Root', root, 'ss_root')
+        self._offset_slider('s_root_offset', self._off_quarter)
+        self._range_slider('Bounce  tX', 's_root_bounce_lo', 's_root_bounce_hi',
+                           d['root_bounce_lo'], d['root_bounce_hi'],
+                           self._rng('translation'), CLR_X,
+                           tip='Vertical root bounce. High at mid-stance (walk-style phase).')
+        self._slider('Sway  tZ', 's_root_sway', d['root_sway'],
+                     self._rng('translation'), CLR_Z,
+                     tip='Lateral root shift following the stepping pattern (translateZ)')
         cmds.setParent(parent)
 
     # ──────────────────────────────────────────────
@@ -1070,12 +1127,19 @@ class AnimGenWindow:
             # Run primary keys are prefixed with 'r_'
             if key.startswith('r_') and key[2:] in self.run_primary.DEFAULTS:
                 self.run_primary._params[key[2:]] = val
+            elif key.startswith('s_') and key[2:] in self.sidestep_primary.DEFAULTS:
+                self.sidestep_primary._params[key[2:]] = val
             elif key in self.walk_primary.DEFAULTS:
                 self.walk_primary._params[key] = val
             elif key in self.walk_secondary.DEFAULTS:
                 self.walk_secondary._params[key] = val
             elif key in self.walk_arms.DEFAULTS:
                 self.walk_arms._params[key] = val
+        # Sidestep direction checkbox (not a float slider)
+        if hasattr(self, '_strafe_dir_cb'):
+            self.sidestep_primary._params['strafe_right'] = (
+                1.0 if cmds.checkBox(self._strafe_dir_cb, q=True, value=True)
+                else 0.0)
 
     def _layers(self):
         """Return the layer list for the active clip type."""
@@ -1269,12 +1333,20 @@ class AnimGenWindow:
         # Run primary keys (r_ prefix for UI)
         for k, v in self.run_primary._params.items():
             all_p['r_' + k] = v
+        # Sidestep primary keys (s_ prefix for UI)
+        for k, v in self.sidestep_primary._params.items():
+            all_p['s_' + k] = v
         for key in self._fields:
             if key in all_p:
                 try:
                     self._set_val(key, all_p[key])
                 except Exception:
                     pass
+        # Sync sidestep direction checkbox
+        if hasattr(self, '_strafe_dir_cb'):
+            sr = self.sidestep_primary._params.get('strafe_right', 1.0)
+            cmds.checkBox(self._strafe_dir_cb, e=True,
+                          value=bool(sr >= 0.5))
 
     def _print_settings(self):
         data = self._all_params()

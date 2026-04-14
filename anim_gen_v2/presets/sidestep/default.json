@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "type": "sidestep",
+    "name": "Default",
+    "description": "Standard sidestep cycle defaults",
+    "author": "chris",
+    "date": "2026-04-14"
+  },
+  "primary": {
+    "stride": 80.0,
+    "stride_height": 20.0,
+    "foot_roll_heel": -8.0,
+    "foot_roll_toe": 15.0,
+    "root_bounce_hi": 3.0,
+    "root_bounce_lo": -2.0,
+    "root_sway": 5.0,
+    "hip_lean": 8.0,
+    "strafe_right": 1.0,
+    "legs_offset": 0,
+    "hip_offset": 0,
+    "root_offset": 0
+  },
+  "secondary": {},
+  "arms": {}
+}
