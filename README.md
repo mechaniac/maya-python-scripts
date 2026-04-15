@@ -179,8 +179,14 @@ Minimal primary layer built from scratch for run mechanics. Key structural diffe
 | `foot_roll_toe` | 30.0 | IKLeg_R/L | Roll | Toe push-off angle |
 | `root_bounce_hi` | 5.0 | RootX_M | translateX | Flight apex (up) |
 | `root_bounce_lo` | −3.0 | RootX_M | translateX | Contact compression (down) |
+| `root_drive_front` | 0.0 | RootX_M | translateY | Forward shift (freq-2) |
+| `root_drive_back` | 0.0 | RootX_M | translateY | Backward shift (freq-2) |
+| `root_sway` | 0.0 | RootX_M | translateZ | Left/right shift (freq-1) |
+| `root_nod_front` | 5.0 | RootX_M | rotateZ | Forward pitch (freq-2) |
+| `root_nod_back` | 0.0 | RootX_M | rotateZ | Backward pitch (freq-2) |
+| `root_lean` | 0.0 | RootX_M | rotateY | Lateral tilt (freq-1) |
+| `root_twist` | 0.0 | RootX_M | rotateX | Axial twist (freq-1) |
 | `hip_twist` | 30.0 | HipSwinger_M | rotateX | Counter-rotation, 1× per cycle |
-| `forward_lean` | 5.0 | RootX_M | rotateZ | Constant run posture pitch |
 
 ### Sidestep (Strafe) Layer
 
@@ -523,8 +529,31 @@ All unique controllers targeted by the animation scripts:
 
 ## Utility Scripts
 
-### clipSetter.py — `GameExporterGenerator`
-GUI tool to generate Maya Game FBX Exporter `.mel` preset files. Defines animation clip blocks (name, count, frame length) and outputs clips with frame ranges, optionally with color-tagged house variants.
+## Clip Setter — `clip_setter`
+
+Manages animation clip layout for Maya → s&box FBX export. Defines clip names, frame counts, and loop flags, then lays them out sequentially on the Maya timeline with configurable buffer frames. Applies clips directly to the Game Exporter node for one-click export.
+
+### Default Clip Set (s&box Citizen Reference)
+
+Frame counts are matched to the default s&box citizen character animations (`Citizen@*.fbx` at 30fps NTSC):
+
+| Clip | Frames | Loop | Citizen Source | Note |
+|---|---|---|---|---|
+| `idle` | 1 | Yes | `IdlePose_Default` | Single-frame pose (citizen layers breathing additively) |
+| `walk` | 30 | Yes | `Walk_N/S/E/W` | Full walk cycle |
+| `run` | 20 | Yes | `Run_N/S/E/W` | Shorter cycle — faster cadence |
+| `strafe_left` | 30 | Yes | `Walk_W` | Directional blend variant |
+| `strafe_right` | 30 | Yes | `Walk_E` | Directional blend variant |
+| `crouch_idle` | 30 | Yes | `CrouchIdlePose_Default` | Crouch idle pose/cycle |
+| `crouch_walk` | 30 | Yes | `CrouchWalk_N` | Crouch walk cycle |
+| `jump` | 30 | No | `Jump_Standing` | Jump launch |
+| `fall_idle` | 110 | Yes | `Falling` | Extended falling loop |
+| `land_light` | 40 | No | `Land_Standing` | Landing recovery |
+
+The citizen uses a directional blend tree (`N/S/E/W/NE/NW/SE/SW` variants per locomotion type) driven by movement direction. Sidestep clips map to the east/west walk variants.
+
+### Legacy: clipSetter.py — `GameExporterGenerator`
+Legacy GUI tool to generate Maya Game FBX Exporter `.mel` preset files. Defines animation clip blocks (name, count, frame length) and outputs clips with frame ranges, optionally with color-tagged house variants.
 
 ### SceneCleanup.py / toolsWindow.py
 Scene cleanup and utility tools:
