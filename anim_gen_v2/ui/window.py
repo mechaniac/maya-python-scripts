@@ -714,7 +714,7 @@ class AnimGenWindow:
                                'Lets the foot stay raised longer.')
         self._range_slider('Foot Raise', 'r_foot_raise_front', 'r_foot_raise_back',
                            d['foot_raise_front'], d['foot_raise_back'],
-                           self._rng('stride_h'), None,
+                           self._rng('foot_raise'), None,
                            tip='Toe pitch (rotateX). Negative = toes up, positive = toes down. '
                                'Low = front foot angle, Hi = back foot angle.')
         self._slider_pair('Roll Ball', 'r_foot_roll_ball', d['foot_roll_ball'],
