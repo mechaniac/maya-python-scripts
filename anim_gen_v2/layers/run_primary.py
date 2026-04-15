@@ -97,20 +97,22 @@ class RunPrimary(Layer):
                            label='L Width'))
 
         # ── 3. foot arc (translateY) ──
-        # 7 evenly-spaced keys: t = [0, 1/6, 2/6, 3/6, 4/6, 5/6, 1.0]
+        # 5 evenly-spaced keys: t = [0, 0.25, 0.5, 0.75, 1.0]
         #
-        # R foot: grounded 0–3/6, peak at 4/6, sustain at 5/6.
-        # L foot: peak at 1/6, sustain at 2/6, grounded rest.
-        # Two heights let the foot stay raised longer.
+        # Each leg has only ONE ground-contact frame (0) and stays
+        # raised the rest of the cycle.  Two height values let the
+        # peak (v2) differ from the sustained raise (v1).
+        #   L: v1, v2, v1,  0, v1
+        #   R: v1,  0, v1, v2, v1
         h1 = p['stride_height']
         h2 = p['stride_height_2']
 
         chs.append(Channel('IKLeg_R', 'translateY',
-                           values=[0, 0, 0, 0, h1, h2, 0],
+                           values=[h1, 0, h1, h2, h1],
                            frame_offset=legs_off,
                            label='R Foot Arc'))
         chs.append(Channel('IKLeg_L', 'translateY',
-                           values=[0, h1, h2, 0, 0, 0, 0],
+                           values=[h1, h2, h1, 0, h1],
                            frame_offset=legs_off,
                            label='L Foot Arc'))
 

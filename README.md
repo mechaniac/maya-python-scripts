@@ -162,8 +162,8 @@ Minimal primary layer built from scratch for run mechanics. Key structural diffe
 
 | Aspect | Walk | Run |
 |---|---|---|
-| Ground contact | ~60% of cycle | ~33% of cycle |
-| Foot arc | 5-value `[0,0,0,h,0]`, symmetric bump | 7-value with shifted peaks, aggressive lift |
+| Ground contact | ~60% of cycle | ~25% of cycle (1 frame per leg) |
+| Foot arc | 5-value `[0,0,0,h,0]`, symmetric bump | 5-value with single ground contact, raised rest of cycle |
 | Foot roll | Heel strike first | Ball strike first, toe push-off |
 | Root bounce | HIGH at mid-stance (pendulum vault) | LOW at contact (impact absorption), HIGH during flight |
 | Forward lean | None | Constant pitch on root (`rotateZ`) |
