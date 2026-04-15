@@ -120,7 +120,7 @@ class WalkCycleTool(AnimGeneratorBase):
 
     def set_hip_swinger_keys(self):
         hip = self.limbs['hip']
-        self.apply_keyframe_pattern((hip, 'rotateX'), [self.swing_extend, -self.swing_extend, self.swing_extend])
+        self.apply_keyframe_pattern((hip, 'rotateZ'), [self.swing_extend, -self.swing_extend, self.swing_extend])
         self.apply_keyframe_pattern((hip, 'rotateY'), [self.hip_sway_lr, -self.hip_sway_lr, self.hip_sway_lr])
 
     def set_root_keys(self):
@@ -132,27 +132,27 @@ class WalkCycleTool(AnimGeneratorBase):
                   self.root_bounce + bo, -self.root_bounce + bo,
                   self.root_bounce + bo]
         for t, v in zip([start, q, mid, tq, end], bounce):
-            self.set_key(root, 'translateY', t, v)
+            self.set_key(root, 'translateX', t, v)
 
         lr = [self.root_leftright, 0, -self.root_leftright, 0, self.root_leftright]
         for t, v in zip([start, q, mid, tq, end], lr):
-            self.set_key(root, 'translateX', t, v)
+            self.set_key(root, 'translateZ', t, v)
 
         bf = [self.root_backforth, -self.root_backforth, self.root_backforth,
               -self.root_backforth, self.root_backforth]
         for t, v in zip([start, q, mid, tq, end], bf):
-            self.set_key(root, 'translateZ', t, v)
+            self.set_key(root, 'translateY', t, v)
 
         ro = self.root_rock_offset
         rx = [self.root_rock + ro, -self.root_rock + ro, self.root_rock + ro,
               -self.root_rock + ro, self.root_rock + ro]
         for t, v in zip([start, q, mid, tq, end], rx):
-            self.set_key(root, 'rotateX', t, v)
+            self.set_key(root, 'rotateZ', t, v)
 
         self.set_key(root, 'rotateY', start, self.root_sway)
         self.set_key(root, 'rotateY', mid, -self.root_sway)
         self.set_key(root, 'rotateY', end, self.root_sway)
-        self.apply_keyframe_pattern((root, 'rotateZ'), [self.root_twist, -self.root_twist, self.root_twist])
+        self.apply_keyframe_pattern((root, 'rotateX'), [self.root_twist, -self.root_twist, self.root_twist])
 
     def set_spine_keys(self):
         start, mid, end = [f[0] for f in self.frames_stride_halved]
@@ -170,14 +170,14 @@ class WalkCycleTool(AnimGeneratorBase):
     def set_right_arm_keys(self):
         start, mid, end = [f[0] for f in self.frames_stride_halved]
         static_ry = self.arm_params['shoulder_down_y']
-        cmds.setAttr(f"{self.arm_ctrls['shoulder']}.rotateZ", static_ry)
-        self.set_key(self.arm_ctrls['shoulder'], 'rotateZ', start, static_ry)
-        self.set_key(self.arm_ctrls['shoulder'], 'rotateZ', end, static_ry)
+        cmds.setAttr(f"{self.arm_ctrls['shoulder']}.rotateY", static_ry)
+        self.set_key(self.arm_ctrls['shoulder'], 'rotateY', start, static_ry)
+        self.set_key(self.arm_ctrls['shoulder'], 'rotateY', end, static_ry)
 
         sc = self.arm_ctrls['scapula']
         sd = self.arm_params['scapula_down']
-        cmds.setAttr(f"{sc}.rotateZ", sd)
-        self.set_key(sc, 'rotateZ', start, sd); self.set_key(sc, 'rotateZ', end, sd)
+        cmds.setAttr(f"{sc}.rotateY", sd)
+        self.set_key(sc, 'rotateY', start, sd); self.set_key(sc, 'rotateY', end, sd)
 
         x_vals = [self.arm_params['shoulder_x'], -self.arm_params['shoulder_x'], self.arm_params['shoulder_x']]
         self.apply_keyframe_pattern((self.arm_ctrls['shoulder'], 'rotateX'), x_vals)
@@ -186,19 +186,19 @@ class WalkCycleTool(AnimGeneratorBase):
                              ['scapula', 'shoulder', 'elbow', 'wrist']):
             val = self.arm_params[key]
             values = [0, val, 0] if key == 'elbow_z' else [val, -val, val]
-            self.apply_keyframe_pattern((self.arm_ctrls[ctrl], 'rotateY'), values)
+            self.apply_keyframe_pattern((self.arm_ctrls[ctrl], 'rotateZ'), values)
 
     def set_left_arm_keys(self):
         start, mid, end = [f[0] for f in self.frames_stride_halved]
         static_ry = self.arm_params['shoulder_down_y']
         l_sh = self.arm_ctrls['shoulder'].replace('_R', '_L')
-        cmds.setAttr(f"{l_sh}.rotateZ", static_ry)
-        self.set_key(l_sh, 'rotateZ', start, static_ry); self.set_key(l_sh, 'rotateZ', end, static_ry)
+        cmds.setAttr(f"{l_sh}.rotateY", static_ry)
+        self.set_key(l_sh, 'rotateY', start, static_ry); self.set_key(l_sh, 'rotateY', end, static_ry)
 
         l_sc = self.arm_ctrls['scapula'].replace('_R', '_L')
         sd = self.arm_params['scapula_down']
-        cmds.setAttr(f"{l_sc}.rotateZ", sd)
-        self.set_key(l_sc, 'rotateZ', start, sd); self.set_key(l_sc, 'rotateZ', end, sd)
+        cmds.setAttr(f"{l_sc}.rotateY", sd)
+        self.set_key(l_sc, 'rotateY', start, sd); self.set_key(l_sc, 'rotateY', end, sd)
 
         x_vals = [-self.arm_params['shoulder_x'], self.arm_params['shoulder_x'], -self.arm_params['shoulder_x']]
         self.apply_keyframe_pattern((l_sh, 'rotateX'), x_vals)
@@ -208,7 +208,7 @@ class WalkCycleTool(AnimGeneratorBase):
             val = self.arm_params[key]
             l_ctrl = self.arm_ctrls[ctrl].replace('_R', '_L')
             values = [val, 0, val] if key == 'elbow_z' else [-val, val, -val]
-            self.apply_keyframe_pattern((l_ctrl, 'rotateY'), values)
+            self.apply_keyframe_pattern((l_ctrl, 'rotateZ'), values)
 
     # ---------- generate ----------
     def create_walk_cycle(self, *args):

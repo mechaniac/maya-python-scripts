@@ -99,19 +99,19 @@ class RunCycleGenerator(AnimGeneratorBase):
     # ---------- keying ----------
     def set_root_keys(self):
         start, quarter, mid, three_quarter, end = self.frames_stride_halved
-        self.set_key(self.root_ctrl, 'rotateX', start, self.root_lean)
-        self.set_key(self.root_ctrl, 'rotateX', end, self.root_lean)
+        self.set_key(self.root_ctrl, 'rotateZ', start, self.root_lean)
+        self.set_key(self.root_ctrl, 'rotateZ', end, self.root_lean)
         for t, v in zip([start, quarter, mid, three_quarter, end],
                         [self.root_bounce_up, self.root_bounce_down,
                          self.root_bounce_up, self.root_bounce_down, self.root_bounce_up]):
-            self.set_key(self.root_ctrl, 'translateY', t, v)
+            self.set_key(self.root_ctrl, 'translateX', t, v)
 
         span = end - start
         f1 = start + span * 0.2; f4 = start + span * 0.8
         for t in (start, mid, end):
-            self.set_key(self.root_ctrl, 'translateZ', t, 0)
-        self.set_key(self.root_ctrl, 'translateZ', f1, self.root_back_forth)
-        self.set_key(self.root_ctrl, 'translateZ', f4, self.root_back_forth)
+            self.set_key(self.root_ctrl, 'translateY', t, 0)
+        self.set_key(self.root_ctrl, 'translateY', f1, self.root_back_forth)
+        self.set_key(self.root_ctrl, 'translateY', f4, self.root_back_forth)
 
         if self.corkscrew:
             self.set_key(self.root_ctrl, 'rotateY', start, self.root_sway)
@@ -123,9 +123,9 @@ class RunCycleGenerator(AnimGeneratorBase):
             self.set_key(self.root_ctrl, 'rotateY', mid, -self.root_sway)
             self.set_key(self.root_ctrl, 'rotateY', end, self.root_sway)
 
-        self.set_key(self.root_ctrl, 'rotateZ', start, self.root_swing)
-        self.set_key(self.root_ctrl, 'rotateZ', mid, -self.root_swing)
-        self.set_key(self.root_ctrl, 'rotateZ', end, self.root_swing)
+        self.set_key(self.root_ctrl, 'rotateX', start, self.root_swing)
+        self.set_key(self.root_ctrl, 'rotateX', mid, -self.root_swing)
+        self.set_key(self.root_ctrl, 'rotateX', end, self.root_swing)
 
     def set_leg_keys(self):
         start, quarter, mid, three_quarter, end = self.frames_stride_halved
@@ -170,7 +170,7 @@ class RunCycleGenerator(AnimGeneratorBase):
 
     def set_hip_keys(self):
         start, mid, end = self.frames_stride_halved[0], self.frames_stride_halved[2], self.frames_stride_halved[4]
-        for attr, val in [('rotateX', self.hip_swing), ('rotateY', self.hip_side)]:
+        for attr, val in [('rotateZ', self.hip_swing), ('rotateY', self.hip_side)]:
             self.set_key(self.hip_ctrl, attr, start, val)
             self.set_key(self.hip_ctrl, attr, mid, -val)
             self.set_key(self.hip_ctrl, attr, end, val)
@@ -179,7 +179,7 @@ class RunCycleGenerator(AnimGeneratorBase):
         start, quarter, mid, three_quarter, end = self.frames_stride_halved
         for t, v in zip([start, quarter, mid, three_quarter, end],
                         [bounce, -bounce, bounce, -bounce, bounce]):
-            self.set_key(ctrl, 'translateY', t, v)
+            self.set_key(ctrl, 'translateX', t, v)
         self.set_key(ctrl, 'rotateZ', start, -rock)
         self.set_key(ctrl, 'rotateZ', mid, rock)
         self.set_key(ctrl, 'rotateZ', end, -rock)
@@ -205,22 +205,22 @@ class RunCycleGenerator(AnimGeneratorBase):
             scapula = self.arm_ctrls[f'scapula_{side}']
             shoulder = self.arm_ctrls[f'shoulder_{side}']
             elbow = self.arm_ctrls[f'elbow_{side}']
-            cmds.setAttr(f"{scapula}.rotateZ", self.scapula_down_y)
-            self.set_key(scapula, 'rotateZ', start, self.scapula_down_y)
-            self.set_key(scapula, 'rotateZ', end, self.scapula_down_y)
-            cmds.setAttr(f"{shoulder}.rotateZ", self.shoulder_down_y)
-            self.set_key(shoulder, 'rotateZ', start, self.shoulder_down_y)
-            self.set_key(shoulder, 'rotateZ', end, self.shoulder_down_y)
+            cmds.setAttr(f"{scapula}.rotateY", self.scapula_down_y)
+            self.set_key(scapula, 'rotateY', start, self.scapula_down_y)
+            self.set_key(scapula, 'rotateY', end, self.scapula_down_y)
+            cmds.setAttr(f"{shoulder}.rotateY", self.shoulder_down_y)
+            self.set_key(shoulder, 'rotateY', start, self.shoulder_down_y)
+            self.set_key(shoulder, 'rotateY', end, self.shoulder_down_y)
 
             sign = 1 if side == 'l' else -1
             rotX = [sign * self.shoulder_rotate_x, -sign * self.shoulder_rotate_x, sign * self.shoulder_rotate_x]
             swingY = [sign * self.shoulder_swing_z, -sign * self.shoulder_swing_z, sign * self.shoulder_swing_z]
             for t, vx, vy in zip([start, mid, end], rotX, swingY):
                 self.set_key(shoulder, 'rotateX', t, vx)
-                self.set_key(shoulder, 'rotateY', t, vy)
+                self.set_key(shoulder, 'rotateZ', t, vy)
 
             for t in (start, mid, end):
-                self.set_key(shoulder, 'rotateZ', t, self.shoulder_down_y)
+                self.set_key(shoulder, 'rotateY', t, self.shoulder_down_y)
             val_q = self.shoulder_down_y + (sign * self.shoulder_sway_out_y)
             val_3q = self.shoulder_down_y - (sign * self.shoulder_sway_out_y)
             self.set_key(shoulder, 'rotateZ', quarter, val_q)
@@ -228,14 +228,14 @@ class RunCycleGenerator(AnimGeneratorBase):
 
             scap_vals = [sign * self.scapula_z, -sign * self.scapula_z, sign * self.scapula_z]
             for t, val in zip([start, mid, end], scap_vals):
-                self.set_key(scapula, 'rotateY', t, val)
+                self.set_key(scapula, 'rotateZ', t, val)
 
             if side == 'l':
                 elbow_vals = [self.elbow_z, 0, self.elbow_z]
             else:
                 elbow_vals = [0, self.elbow_z, 0]
             for t, val in zip([start, mid, end], elbow_vals):
-                self.set_key(elbow, 'rotateY', t, val)
+                self.set_key(elbow, 'rotateZ', t, val)
 
     # ---------- generate ----------
     def generate(self):

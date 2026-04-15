@@ -94,14 +94,14 @@ class FlightGenerator(AnimGeneratorBase):
             (self.ik_arm_r, ["translateZ", "rotateX", "rotateY", "translateX", "translateY"]),
             (self.fkik_l,   ["FKIKBlend"]),
             (self.fkik_r,   ["FKIKBlend"]),
-            (self.spine, ["rotateY"]),
-            (self.chest, ["rotateY"]),
-            (self.neck,  ["rotateY"]),
-            (self.head,  ["rotateY"]),
+            (self.spine, ["rotateZ"]),
+            (self.chest, ["rotateZ"]),
+            (self.neck,  ["rotateZ"]),
+            (self.head,  ["rotateZ"]),
             (self.root,  ["translateY"]),
             (self.leg_l, ["translateX", "translateY", "translateZ", "rotateX"]),
             (self.leg_r, ["translateX", "translateY", "translateZ", "rotateX"]),
-            (self.root,  ["translateZ", "rotateX"]),
+            (self.root,  ["translateX", "rotateZ"]),
             (self.scap_l, ["rotateY", "rotateZ", "rotateX"]),
             (self.scap_r, ["rotateY", "rotateZ", "rotateX"]),
             (self.pole_l, ["translateX", "translateY", "translateZ"]),
@@ -159,10 +159,10 @@ class FlightGenerator(AnimGeneratorBase):
         two_thirds  = start + 2.0 * (end - start) / 3.0
 
         def do(node, off, v1, v2):
-            self.set_key(node, "rotateY", start,      float(off))
-            self.set_key(node, "rotateY", third,      float(off) + float(v1))
-            self.set_key(node, "rotateY", two_thirds, float(off) + float(v2))
-            self.set_key(node, "rotateY", end,        float(off))
+            self.set_key(node, "rotateZ", start,      float(off))
+            self.set_key(node, "rotateZ", third,      float(off) + float(v1))
+            self.set_key(node, "rotateZ", two_thirds, float(off) + float(v2))
+            self.set_key(node, "rotateZ", end,        float(off))
 
         do(self.spine, self.spine_off, self.spine_1_3, self.spine_2_3)
         do(self.chest, self.chest_off, self.chest_1_3, self.chest_2_3)
@@ -173,10 +173,10 @@ class FlightGenerator(AnimGeneratorBase):
         start, quarter, mid, three_quarter, end = self.frames
         baseZ = float(self.root_updown_base)
         midZ  = float(self.root_updown_mid)
-        self.set_key(self.root, "translateZ", start,         baseZ)
-        self.set_key(self.root, "translateZ", quarter,       midZ)
-        self.set_key(self.root, "translateZ", three_quarter, -midZ)
-        self.set_key(self.root, "translateZ", end,           baseZ)
+        self.set_key(self.root, "translateX", start,         baseZ)
+        self.set_key(self.root, "translateX", quarter,       midZ)
+        self.set_key(self.root, "translateX", three_quarter, -midZ)
+        self.set_key(self.root, "translateX", end,           baseZ)
 
         off = float(self.root_bf_off)
         q = float(self.root_bf_q)
@@ -190,10 +190,10 @@ class FlightGenerator(AnimGeneratorBase):
 
         baseRX = float(self.root_backforth_base)
         midRX  = float(self.root_backforth_mid)
-        self.set_key(self.root, "rotateX", start,         baseRX)
-        self.set_key(self.root, "rotateX", quarter,       midRX)
-        self.set_key(self.root, "rotateX", three_quarter, -midRX)
-        self.set_key(self.root, "rotateX", end,           baseRX)
+        self.set_key(self.root, "rotateZ", start,         baseRX)
+        self.set_key(self.root, "rotateZ", quarter,       midRX)
+        self.set_key(self.root, "rotateZ", three_quarter, -midRX)
+        self.set_key(self.root, "rotateZ", end,           baseRX)
 
     def key_legs(self):
         start, quarter, mid, three_quarter, end = self.frames

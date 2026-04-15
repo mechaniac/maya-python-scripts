@@ -65,19 +65,19 @@ class SideStepGenerator(AnimGeneratorBase):
     def set_root_keys(self):
         start, quarter, mid, three_quarter, end = self.frames
         d = self._dir(); off = self.root_offset_y
-        self.set_key(self.root, 'translateX', start, 0)
-        self.set_key(self.root, 'translateX', mid, d * (self.step_width * 0.5))
-        self.set_key(self.root, 'translateX', end, 0)
-        self.set_key(self.root, 'rotateZ', start, 0)
-        self.set_key(self.root, 'rotateZ', quarter, d * self.root_tilt)
-        self.set_key(self.root, 'rotateZ', mid, 0)
-        self.set_key(self.root, 'rotateZ', three_quarter, -d * self.root_tilt)
-        self.set_key(self.root, 'rotateZ', end, 0)
-        self.set_key(self.root, 'translateY', start, off)
-        self.set_key(self.root, 'translateY', quarter, off + self.root_bounce)
-        self.set_key(self.root, 'translateY', mid, off)
-        self.set_key(self.root, 'translateY', three_quarter, off + self.root_bounce)
-        self.set_key(self.root, 'translateY', end, off)
+        self.set_key(self.root, 'translateZ', start, 0)
+        self.set_key(self.root, 'translateZ', mid, d * (self.step_width * 0.5))
+        self.set_key(self.root, 'translateZ', end, 0)
+        self.set_key(self.root, 'rotateY', start, 0)
+        self.set_key(self.root, 'rotateY', quarter, d * self.root_tilt)
+        self.set_key(self.root, 'rotateY', mid, 0)
+        self.set_key(self.root, 'rotateY', three_quarter, -d * self.root_tilt)
+        self.set_key(self.root, 'rotateY', end, 0)
+        self.set_key(self.root, 'translateX', start, off)
+        self.set_key(self.root, 'translateX', quarter, off + self.root_bounce)
+        self.set_key(self.root, 'translateX', mid, off)
+        self.set_key(self.root, 'translateX', three_quarter, off + self.root_bounce)
+        self.set_key(self.root, 'translateX', end, off)
 
     def set_scapula_keys(self):
         start, mid, end = self.frames[0], self.frames[2], self.frames[4]
@@ -101,21 +101,21 @@ class SideStepGenerator(AnimGeneratorBase):
             (self.shoulder_l, self.elbow_l, self.wrist_l, +1),
             (self.shoulder_r, self.elbow_r, self.wrist_r, -1),
         ]:
-            self.set_key(shoulder, 'rotateY', start, sign * shZ + addZ_sh)
-            self.set_key(shoulder, 'rotateY', mid, -sign * shZ + addZ_sh)
-            self.set_key(shoulder, 'rotateY', end, sign * shZ + addZ_sh)
+            self.set_key(shoulder, 'rotateZ', start, sign * shZ + addZ_sh)
+            self.set_key(shoulder, 'rotateZ', mid, -sign * shZ + addZ_sh)
+            self.set_key(shoulder, 'rotateZ', end, sign * shZ + addZ_sh)
             for t in (start, mid, end):
-                self.set_key(shoulder, 'rotateZ', t, addY_sh)
+                self.set_key(shoulder, 'rotateY', t, addY_sh)
                 self.set_key(shoulder, 'rotateX', t, addX_sh)
-            self.set_key(elbow, 'rotateY', start, sign * elZ + addZ_el)
-            self.set_key(elbow, 'rotateY', mid, -sign * elZ + addZ_el)
-            self.set_key(elbow, 'rotateY', end, sign * elZ + addZ_el)
+            self.set_key(elbow, 'rotateZ', start, sign * elZ + addZ_el)
+            self.set_key(elbow, 'rotateZ', mid, -sign * elZ + addZ_el)
+            self.set_key(elbow, 'rotateZ', end, sign * elZ + addZ_el)
             for t in (start, mid, end):
-                self.set_key(elbow, 'rotateZ', t, addY_el)
+                self.set_key(elbow, 'rotateY', t, addY_el)
                 self.set_key(elbow, 'rotateX', t, addX_el)
             for t in (start, mid, end):
-                self.set_key(wrist, 'rotateZ', t, addY_wr)
-                self.set_key(wrist, 'rotateY', t, addZ_wr)
+                self.set_key(wrist, 'rotateY', t, addY_wr)
+                self.set_key(wrist, 'rotateZ', t, addZ_wr)
                 self.set_key(wrist, 'rotateX', t, addX_wr)
 
     def set_sidewhip_keys(self):
@@ -125,11 +125,11 @@ class SideStepGenerator(AnimGeneratorBase):
                              (self.chest, self.chest_sway), (self.neck, self.neck_sway),
                              (self.head, self.head_sway)]:
             a = d * amount
-            self.set_key(ctrl, 'rotateX', start, 0)
-            self.set_key(ctrl, 'rotateX', quarter, a)
-            self.set_key(ctrl, 'rotateX', mid, 0)
-            self.set_key(ctrl, 'rotateX', three_quarter, -a)
-            self.set_key(ctrl, 'rotateX', end, 0)
+            self.set_key(ctrl, 'rotateY', start, 0)
+            self.set_key(ctrl, 'rotateY', quarter, a)
+            self.set_key(ctrl, 'rotateY', mid, 0)
+            self.set_key(ctrl, 'rotateY', three_quarter, -a)
+            self.set_key(ctrl, 'rotateY', end, 0)
 
     def generate(self):
         self.clear_keys(); self.compute_frames()

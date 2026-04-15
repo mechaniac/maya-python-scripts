@@ -154,23 +154,23 @@ class HandWalkCycleTool(AnimGeneratorBase):
         start, mid, end = [f[0] for f in self.frames_stride_halved]
         q = self.quarter; tq = self.three_quarter
         p = self.root_params
-        for attr, amp, off in [('translateY', p['bounce'], p['offset_y']),
-                               ('rotateX', p['rock'], p['offset_rx'])]:
+        for attr, amp, off in [('translateX', p['bounce'], p['offset_y']),
+                               ('rotateZ', p['rock'], p['offset_rx'])]:
             for t, sign in zip([start, q, mid, tq, end], [1, -1, 1, -1, 1]):
                 self.set_key(root, attr, t, sign * amp + off)
         self.set_key(root, 'rotateY', start, p['sway'])
         self.set_key(root, 'rotateY', mid, -p['sway'])
         self.set_key(root, 'rotateY', end, p['sway'])
-        for attr, amp in [('translateX', p['shift_x']), ('rotateZ', p['swing_z'])]:
+        for attr, amp in [('translateZ', p['shift_x']), ('rotateX', p['swing_z'])]:
             self.set_key(root, attr, start, amp)
             self.set_key(root, attr, mid, -amp)
             self.set_key(root, attr, end, amp)
         bz = p.get('bounce_z', 0.0); oz = p['offset_z']
-        self.set_key(root, 'translateZ', start, oz)
-        self.set_key(root, 'translateZ', q, oz + bz)
-        self.set_key(root, 'translateZ', mid, oz)
-        self.set_key(root, 'translateZ', tq, oz + bz)
-        self.set_key(root, 'translateZ', end, oz)
+        self.set_key(root, 'translateY', start, oz)
+        self.set_key(root, 'translateY', q, oz + bz)
+        self.set_key(root, 'translateY', mid, oz)
+        self.set_key(root, 'translateY', tq, oz + bz)
+        self.set_key(root, 'translateY', end, oz)
 
     def set_spine_chest_keys(self):
         start, mid, end = [f[0] for f in self.frames_stride_halved]
@@ -195,7 +195,7 @@ class HandWalkCycleTool(AnimGeneratorBase):
         apply_joint(chest, self.chest_params)
 
     def set_hip_keys(self):
-        self.apply_keyframe_pattern((self.hip_ctrl, 'rotateX'),
+        self.apply_keyframe_pattern((self.hip_ctrl, 'rotateZ'),
                                     [self.hip_params['swing'], -self.hip_params['swing'], self.hip_params['swing']])
         self.apply_keyframe_pattern((self.hip_ctrl, 'rotateY'),
                                     [self.hip_params['sway'], -self.hip_params['sway'], self.hip_params['sway']])
@@ -224,9 +224,9 @@ class HandWalkCycleTool(AnimGeneratorBase):
             return back_f if (t == q or t == tq) else 0.0
 
         for t in times:
-            baseY = root_val('translateY', t) * blend + off_y
-            baseZ = root_val('translateZ', t) * blend + off_z
-            baseRX = root_val('rotateX', t) * blend + rot_x
+            baseY = root_val('translateX', t) * blend + off_y
+            baseZ = root_val('translateY', t) * blend + off_z
+            baseRX = root_val('rotateZ', t) * blend + rot_x
             ax = add_tx(t); ay = add_ty(t); az = add_tz(t)
             self.set_key(right, 'translateX', t, off_x + ax)
             self.set_key(right, 'translateY', t, baseY + ay)
