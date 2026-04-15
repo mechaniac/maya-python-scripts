@@ -11,13 +11,15 @@ class WalkPrimary(Layer):
     name = 'Walk \u2013 Primary'
 
     DEFAULTS = {
-        'stride':          70.0,
+        'stride_front':     35.0,
+        'stride_back':     -35.0,
         'stride_width':    -3.0,
         'stride_width_swing': -3.0,
         'stride_height':   23.0,
-        'foot_raise':       5.0,
-        'foot_roll_heel': -20.0,
-        'foot_roll_toe':    0.0,
+        'foot_raise_front': -5.0,
+        'foot_raise_back':   0.0,
+        'foot_roll_front': -20.0,
+        'foot_roll_back':    0.0,
         'hip_nod_front':   15.0,
         'hip_nod_back':   -15.0,
         'hip_lean':         0.0,
@@ -29,7 +31,8 @@ class WalkPrimary(Layer):
         'root_lean':        0.0,
         'root_twist':       0.0,
         'root_lr':          0.0,
-        'root_bf':          4.0,
+        'root_bf_front':    4.0,
+        'root_bf_back':    -4.0,
         'foot_bank':        0.0,
         'legs_offset':      0,
         'hip_offset':       0,
@@ -52,18 +55,21 @@ class WalkPrimary(Layer):
     def channels(self):
         p = self._params
         chs = []
-        half = p['stride'] / 2.0
+        stride_amp, stride_off = range_amp_off(p['stride_front'],
+                                                p['stride_back'])
         legs_off = int(p.get('legs_offset', 0))
         hip_off = int(p.get('hip_offset', 0))
         root_off = int(p.get('root_offset', 0))
 
         # ── feet stride (translateZ) ──
         chs.append(Channel('IKLeg_R', 'translateZ', Wave.COSINE,
-                           amplitude=half, n_points=3,
+                           amplitude=stride_amp, offset=stride_off,
+                           n_points=3,
                            frame_offset=legs_off,
                            label='R Stride'))
         chs.append(Channel('IKLeg_L', 'translateZ', Wave.COSINE,
-                           amplitude=half, phase=0.5, n_points=3,
+                           amplitude=stride_amp, offset=stride_off,
+                           phase=0.5, n_points=3,
                            frame_offset=legs_off,
                            label='L Stride'))
 
@@ -92,35 +98,31 @@ class WalkPrimary(Layer):
                            frame_offset=legs_off,
                            label='L Foot Lift'))
 
-        # ── foot raise (rotateX) ── peak between passing positions
-        # V1 keys at 6 points with a mid-between peak.
-        # Right: peak at (three_quarter + end) / 2 = t 0.875
-        chs.append(Channel('IKLeg_R', 'rotateX',
-                           values=[0, 0, 0, 0, -p['foot_raise'], 0],
-                           sample_at=[0, 0.25, 0.5, 0.75, 0.875, 1.0],
+        # ── foot raise (rotateX) ── cosine pitch like stride ──
+        raise_amp, raise_off = range_amp_off(p['foot_raise_front'],
+                                              p['foot_raise_back'])
+        chs.append(Channel('IKLeg_R', 'rotateX', Wave.COSINE,
+                           amplitude=raise_amp, offset=raise_off,
+                           n_points=3,
                            frame_offset=legs_off,
                            label='R Foot Raise'))
-        # Left: peak at (quarter + mid) / 2 = t 0.375
-        chs.append(Channel('IKLeg_L', 'rotateX',
-                           values=[0, 0, -p['foot_raise'], 0, 0, 0],
-                           sample_at=[0, 0.25, 0.375, 0.5, 0.75, 1.0],
+        chs.append(Channel('IKLeg_L', 'rotateX', Wave.COSINE,
+                           amplitude=raise_amp, offset=raise_off,
+                           phase=0.5, n_points=3,
                            frame_offset=legs_off,
                            label='L Foot Raise'))
 
-        # ── foot roll (Roll attr on IKLeg) ──
-        # heel strike at contact, toe push at mid-stance
-        # Right: heel at 0/1, toe push-off around 0.5
-        chs.append(Channel('IKLeg_R', 'Roll',
-                           values=[p['foot_roll_heel'], 0,
-                                   p['foot_roll_toe'], 0,
-                                   p['foot_roll_heel']],
+        # ── foot roll (Roll) ── cosine with direct signed values ──
+        roll_amp, roll_off = range_amp_off(p['foot_roll_front'],
+                                            p['foot_roll_back'])
+        chs.append(Channel('IKLeg_R', 'Roll', Wave.COSINE,
+                           amplitude=roll_amp, offset=roll_off,
+                           n_points=3,
                            frame_offset=legs_off,
                            label='R Foot Roll'))
-        # Left: phase shifted by half
-        chs.append(Channel('IKLeg_L', 'Roll',
-                           values=[p['foot_roll_toe'], 0,
-                                   p['foot_roll_heel'], 0,
-                                   p['foot_roll_toe']],
+        chs.append(Channel('IKLeg_L', 'Roll', Wave.COSINE,
+                           amplitude=roll_amp, offset=roll_off,
+                           phase=0.5, n_points=3,
                            frame_offset=legs_off,
                            label='L Foot Roll'))
 
@@ -164,11 +166,14 @@ class WalkPrimary(Layer):
 
         # ── root back-forth ── freq-2 cosine at 5 points
         # Joint-aligned: local Y = forward/back
-        chs.append(Channel('RootX_M', 'translateY', Wave.COSINE,
-                           amplitude=p['root_bf'],
-                           frequency=2, n_points=5,
-                           frame_offset=root_off,
-                           label='Root BF'))
+        bf_amp, bf_off = range_amp_off(p['root_bf_front'],
+                                        p['root_bf_back'])
+        if bf_amp or bf_off:
+            chs.append(Channel('RootX_M', 'translateY', Wave.COSINE,
+                               amplitude=bf_amp, offset=bf_off,
+                               frequency=2, n_points=5,
+                               frame_offset=root_off,
+                               label='Root BF'))
 
         # ── root nod / lean / twist ──
         # RootX_M joint-aligned (same as FK spine):

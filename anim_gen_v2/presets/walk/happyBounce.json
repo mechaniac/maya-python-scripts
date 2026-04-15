@@ -1,12 +1,14 @@
 {
   "primary": {
-    "stride": 65.0,
+    "stride_front": 32.5,
+    "stride_back": -32.5,
     "stride_width": -3.0,
     "stride_width_swing": -5.0,
     "stride_height": 30.0,
-    "foot_raise": 8.0,
-    "foot_roll_heel": -18.0,
-    "foot_roll_toe": 10.0,
+    "foot_raise_front": -8.0,
+    "foot_raise_back": 0.0,
+    "foot_roll_front": -18.0,
+    "foot_roll_back": 10.0,
     "foot_bank": 2.0,
     "hip_nod_front": 18.0,
     "hip_nod_back": -18.0,
@@ -19,7 +21,8 @@
     "root_lean": 0.0,
     "root_twist": 2.0979020979021,
     "root_lr": 1.0,
-    "root_bf": 1.25874125874126,
+    "root_bf_front": 1.258741,
+    "root_bf_back": -1.258741,
     "legs_offset": 0.0,
     "hip_offset": 0.0,
     "root_offset": 0.0

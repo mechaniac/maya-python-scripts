@@ -23,18 +23,21 @@ class SidestepPrimary(Layer):
     name = 'Sidestep \u2013 Primary'
 
     DEFAULTS = {
-        'stride':            80.0,   # lateral reach distance
-        'stride_height':     20.0,   # foot arc peak
-        'foot_roll_heel':    -8.0,
-        'foot_roll_toe':     15.0,
-        'root_bounce_hi':     3.0,
-        'root_bounce_lo':    -2.0,
-        'root_sway':          5.0,   # lateral root shift (translateZ)
-        'hip_lean':           8.0,   # lean into travel direction (rotateY)
-        'strafe_right':       1.0,   # 1.0 = right, 0.0 = left
-        'legs_offset':        0,
-        'hip_offset':         0,
-        'root_offset':        0,
+        'stride_lead':           40.0,   # outward reach (travel direction)
+        'stride_trail':         -40.0,   # inward collect (opposite)
+        'stride_height_lead':    20.0,   # lead foot arc peak
+        'stride_height_trail':   20.0,   # trail foot arc peak
+        'foot_roll_lead':        -8.0,   # roll at lead contact
+        'foot_roll_trail':       15.0,   # roll at trail push-off
+        'root_bounce_hi':         3.0,
+        'root_bounce_lo':        -2.0,
+        'root_sway_lead':         5.0,   # lateral root shift (lead direction)
+        'root_sway_trail':       -5.0,   # lateral root shift (trail direction)
+        'hip_lean':               8.0,   # lean into travel direction (rotateY)
+        'strafe_right':           1.0,   # 1.0 = right, 0.0 = left
+        'legs_offset':            0,
+        'hip_offset':             0,
+        'root_offset':            0,
     }
 
     def __init__(self):
@@ -55,44 +58,52 @@ class SidestepPrimary(Layer):
     def channels(self):
         p = self._params
         chs = []
-        half = p['stride'] / 2.0
-        h    = p['stride_height']
         d    = 1.0 if p.get('strafe_right', 1.0) >= 0.5 else -1.0
         legs_off = int(p.get('legs_offset', 0))
         hip_off  = int(p.get('hip_offset', 0))
         root_off = int(p.get('root_offset', 0))
 
         # ── 1. lateral stride (translateX) ── cosine shuffle ──
-        # Both feet oscillate laterally in the same direction,
-        # 180° out of phase so they alternate.
+        stride_amp, stride_off = range_amp_off(p['stride_lead'],
+                                                p['stride_trail'])
         chs.append(Channel('IKLeg_R', 'translateX', Wave.COSINE,
-                           amplitude=half * d, n_points=3,
+                           amplitude=stride_amp * d, offset=stride_off * d,
+                           n_points=3,
                            frame_offset=legs_off,
                            label='R Lateral Stride'))
         chs.append(Channel('IKLeg_L', 'translateX', Wave.COSINE,
-                           amplitude=half * d, phase=0.5, n_points=3,
+                           amplitude=stride_amp * d, offset=stride_off * d,
+                           phase=0.5, n_points=3,
                            frame_offset=legs_off,
                            label='L Lateral Stride'))
 
-        # ── 2. foot arc (translateY) ── walk-style 60 % ground contact ──
+        # ── 2. foot arc (translateY) ── lead/trail heights ──
+        if d > 0:  # right strafe: R = lead
+            h_r = p['stride_height_lead']
+            h_l = p['stride_height_trail']
+        else:      # left strafe: L = lead
+            h_r = p['stride_height_trail']
+            h_l = p['stride_height_lead']
         chs.append(Channel('IKLeg_R', 'translateY',
-                           values=[0, 0, 0, h, 0],
+                           values=[0, 0, 0, h_r, 0],
                            frame_offset=legs_off,
                            label='R Foot Arc'))
         chs.append(Channel('IKLeg_L', 'translateY',
-                           values=[0, h, 0, 0, 0],
+                           values=[0, h_l, 0, 0, 0],
                            frame_offset=legs_off,
                            label='L Foot Arc'))
 
-        # ── 3. foot roll (Roll) ── heel strike → toe push ──
-        heel = p['foot_roll_heel']
-        toe  = p['foot_roll_toe']
-        chs.append(Channel('IKLeg_R', 'Roll',
-                           values=[heel, toe, 0, 0, heel],
+        # ── 3. foot roll (Roll) ── cosine with direct signed values ──
+        roll_amp, roll_off = range_amp_off(p['foot_roll_lead'],
+                                            p['foot_roll_trail'])
+        chs.append(Channel('IKLeg_R', 'Roll', Wave.COSINE,
+                           amplitude=roll_amp, offset=roll_off,
+                           n_points=3,
                            frame_offset=legs_off,
                            label='R Roll'))
-        chs.append(Channel('IKLeg_L', 'Roll',
-                           values=[0, 0, heel, toe, 0],
+        chs.append(Channel('IKLeg_L', 'Roll', Wave.COSINE,
+                           amplitude=roll_amp, offset=roll_off,
+                           phase=0.5, n_points=3,
                            frame_offset=legs_off,
                            label='L Roll'))
 
@@ -105,10 +116,11 @@ class SidestepPrimary(Layer):
                            label='Root Bounce'))
 
         # ── 5. root sway (translateZ) ── lateral shift following legs ──
-        sway = p['root_sway']
-        if sway:
+        sway_amp, sway_off = range_amp_off(p['root_sway_lead'],
+                                            p['root_sway_trail'])
+        if sway_amp or sway_off:
             chs.append(Channel('RootX_M', 'translateZ', Wave.COSINE,
-                               amplitude=sway * d,
+                               amplitude=sway_amp * d, offset=sway_off * d,
                                frequency=1, n_points=3,
                                frame_offset=root_off,
                                label='Root Sway'))

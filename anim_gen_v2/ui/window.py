@@ -613,8 +613,10 @@ class AnimGenWindow:
         cmds.separator(height=6, style='none')
         self._section_header('Legs', legs, 'legs')
         self._offset_slider('legs_offset', self._off_half)
-        self._slider('Stride Length', 'stride', d['stride'], self._rng('stride'),
-                     tip='Forward distance (translateZ) the foot travels per step')
+        self._range_slider('Stride', 'stride_back', 'stride_front',
+                           d['stride_back'], d['stride_front'],
+                           self._rng('stride'), None,
+                           tip='Forward/backward reach per step (translateZ). Low = backward, High = forward.')
         self._range_slider('Stride Width', 'stride_width', 'stride_width_swing',
                            d['stride_width'], d.get('stride_width_swing', d['stride_width']),
                            self._rng('stride_wh'), None,
@@ -622,13 +624,14 @@ class AnimGenWindow:
         self._slider('Stride Height', 'stride_height', d['stride_height'],
                      self._rng('stride_h'),
                      tip='Vertical lift of the IK leg goal at mid-stride (translateY)')
-        self._slider('Foot Raise', 'foot_raise', d['foot_raise'], self._rng('foot_raise'),
-                     tip='Peak height the foot reaches during the passing position')
-        self._slider_pair('Roll Heel', 'foot_roll_heel', d['foot_roll_heel'],
-                          'Roll Toe', 'foot_roll_toe', d['foot_roll_toe'],
-                          self._rng('roll'),
-                          tip_a='Heel-strike roll angle at the start of contact phase',
-                          tip_b='Toe-off roll angle at the end of contact phase')
+        self._range_slider('Foot Raise', 'foot_raise_front', 'foot_raise_back',
+                           d['foot_raise_front'], d['foot_raise_back'],
+                           self._rng('foot_raise'), None,
+                           tip='Foot pitch during stride (rotateX). Negative = toes up, positive = toes down.')
+        self._range_slider('Foot Roll', 'foot_roll_front', 'foot_roll_back',
+                           d['foot_roll_front'], d['foot_roll_back'],
+                           self._rng('roll'), None,
+                           tip='Heel-toe roll angle (Roll attr). Negative = heel, positive = toe.')
         self._slider('Foot Bank  rZ', 'foot_bank', d.get('foot_bank', 0.0),
                      self._rng('rotation'), CLR_Z,
                      tip='Lateral foot tilt during push-off (rotateZ on IK leg). Inward bank.')
@@ -666,11 +669,13 @@ class AnimGenWindow:
                           tip_a='Lateral side-to-side tilt of the root (rotateY)',
                           tip_b='Axial rotation of the root around the spine (rotateX)',
                           rng_b=self._rng('twist'))
-        self._slider_pair('Left-Right  tZ', 'root_lr', d['root_lr'],
-                          'Back-Forth  tY', 'root_bf', d['root_bf'],
-                          self._rng('translation'), CLR_Z, CLR_Y,
-                          tip_a='Lateral sway of the root centre of mass (translateZ)',
-                          tip_b='Forward lean of the root centre of mass (translateY)')
+        self._slider('Left-Right  tZ', 'root_lr', d['root_lr'],
+                     self._rng('translation'), CLR_Z,
+                     tip='Lateral sway of the root centre of mass (translateZ)')
+        self._range_slider('Back-Forth  tY', 'root_bf_back', 'root_bf_front',
+                           d['root_bf_back'], d['root_bf_front'],
+                           self._rng('translation'), CLR_Y,
+                           tip='Forward/back sway of the root (translateY). Low = backward, High = forward.')
         cmds.setParent(parent)
 
     # ──────────────────────────────────────────────
@@ -799,16 +804,18 @@ class AnimGenWindow:
         cmds.separator(height=6, style='none')
         self._section_header('Legs', legs, 'ss_legs')
         self._offset_slider('s_legs_offset', self._off_half)
-        self._slider('Stride Length', 's_stride', d['stride'], self._rng('stride'),
-                     tip='Lateral reach distance per step (translateX)')
-        self._slider('Stride Height', 's_stride_height', d['stride_height'],
-                     self._rng('stride_h'),
-                     tip='Foot lift height during swing phase (translateY)')
-        self._slider_pair('Roll Heel', 's_foot_roll_heel', d['foot_roll_heel'],
-                          'Roll Toe', 's_foot_roll_toe', d['foot_roll_toe'],
-                          self._rng('roll'),
-                          tip_a='Heel contact angle',
-                          tip_b='Toe push-off angle')
+        self._range_slider('Stride', 's_stride_trail', 's_stride_lead',
+                           d['stride_trail'], d['stride_lead'],
+                           self._rng('stride'), None,
+                           tip='Lateral reach per step (translateX). Low = trail inward, High = lead outward.')
+        self._range_slider('Stride Height', 's_stride_height_trail', 's_stride_height_lead',
+                           d['stride_height_trail'], d['stride_height_lead'],
+                           self._rng('stride_h'), None,
+                           tip='Foot lift height (translateY). Low = trail foot, High = lead foot.')
+        self._range_slider('Foot Roll', 's_foot_roll_lead', 's_foot_roll_trail',
+                           d['foot_roll_lead'], d['foot_roll_trail'],
+                           self._rng('roll'), None,
+                           tip='Roll at contact (Roll attr). Low = lead heel strike, High = trail toe push.')
 
         # ── Hip ──
         cmds.separator(height=4, style='in')
@@ -826,9 +833,10 @@ class AnimGenWindow:
                            d['root_bounce_lo'], d['root_bounce_hi'],
                            self._rng('translation'), CLR_X,
                            tip='Vertical root bounce. High at mid-stance (walk-style phase).')
-        self._slider('Sway  tZ', 's_root_sway', d['root_sway'],
-                     self._rng('translation'), CLR_Z,
-                     tip='Lateral root shift following the stepping pattern (translateZ)')
+        self._range_slider('Sway  tZ', 's_root_sway_trail', 's_root_sway_lead',
+                           d['root_sway_trail'], d['root_sway_lead'],
+                           self._rng('translation'), CLR_Z,
+                           tip='Lateral root shift (translateZ). Low = trail, High = lead.')
         cmds.setParent(parent)
 
     # ──────────────────────────────────────────────
