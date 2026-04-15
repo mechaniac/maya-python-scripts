@@ -99,7 +99,19 @@ def reset_to_bind_pose():
             except Exception:
                 pass
 
-    cmds.dgdirty(a=1)
+    # Force complete scene evaluation.  dgdirty alone is not enough —
+    # foot-roll expressions only fire on a time change, so the heel /
+    # ball / toetip pivot groups keep stale rotations.  The IK solver
+    # then computes with the wrong handle position, leaving feet
+    # displaced and stretchy joints un-settled.
+    #
+    # Bumping currentTime forces expressions + IK solvers + full DG
+    # pull.  A second bump lets the IK solver converge after the
+    # stretchy joint scales snap back to 1.
+    cur = cmds.currentTime(q=True)
+    cmds.currentTime(cur, e=True)
+    cmds.currentTime(cur, e=True)
+
     cmds.select(cl=1)
     print("// All controls reset to bind pose.")
 
@@ -143,7 +155,7 @@ def create_foot_roll_locators(mapping):
 _CHAN_MAP = {
     # Center body
     'Main_M':           'trs',
-    'RootX_M':          't',
+    'RootX_M':          'tr',
     'HipSwinger_M':     'r',
     'FKSpine_M':        'r',       # translate does NOT propagate (half_grp intermediary)
     'FKChest_M':        'tr',
