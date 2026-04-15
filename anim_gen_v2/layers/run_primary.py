@@ -31,8 +31,8 @@ class RunPrimary(Layer):
         'stride_height_2':   20.0,
         'foot_raise_front': -10.0,
         'foot_raise_back':    5.0,
-        'foot_roll_ball':   -10.0,
-        'foot_roll_toe':     30.0,
+        'foot_roll_front':  -10.0,
+        'foot_roll_back':    30.0,
         # Root translate
         'root_bounce_hi':     5.0,   # flight apex (up)  – tX
         'root_bounce_lo':    -3.0,   # contact compression (down) – tX
@@ -136,15 +136,17 @@ class RunPrimary(Layer):
                            frame_offset=legs_off,
                            label='L Foot Raise'))
 
-        # ── 4. foot roll (Roll) ── ball strike → toe push ──
-        ball = p['foot_roll_ball']
-        toe  = p['foot_roll_toe']
-        chs.append(Channel('IKLeg_R', 'Roll',
-                           values=[ball, toe, 0, 0, ball],
+        # ── 4. foot roll (Roll) ── cosine like stride/raise ──
+        roll_amp, roll_off = range_amp_off(p['foot_roll_back'],
+                                            p['foot_roll_front'])
+        chs.append(Channel('IKLeg_R', 'Roll', Wave.COSINE,
+                           amplitude=roll_amp, offset=roll_off,
+                           n_points=3,
                            frame_offset=legs_off,
                            label='R Roll'))
-        chs.append(Channel('IKLeg_L', 'Roll',
-                           values=[0, 0, ball, toe, 0],
+        chs.append(Channel('IKLeg_L', 'Roll', Wave.COSINE,
+                           amplitude=roll_amp, offset=roll_off,
+                           phase=0.5, n_points=3,
                            frame_offset=legs_off,
                            label='L Roll'))
 

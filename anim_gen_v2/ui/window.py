@@ -717,11 +717,11 @@ class AnimGenWindow:
                            self._rng('foot_raise'), None,
                            tip='Toe pitch (rotateX). Negative = toes up, positive = toes down. '
                                'Low = front foot angle, Hi = back foot angle.')
-        self._slider_pair('Roll Ball', 'r_foot_roll_ball', d['foot_roll_ball'],
-                          'Roll Toe', 'r_foot_roll_toe', d['foot_roll_toe'],
-                          self._rng('roll'),
-                          tip_a='Ball-strike angle at initial contact',
-                          tip_b='Toe push-off angle')
+        self._range_slider('Foot Roll', 'r_foot_roll_front', 'r_foot_roll_back',
+                           d['foot_roll_front'], d['foot_roll_back'],
+                           self._rng('roll'), None,
+                           tip='Roll attribute. Negative = heel, positive = toe. '
+                               'Low = front foot roll, Hi = back foot roll.')
 
         # ── Hip ──
         cmds.separator(height=4, style='in')
