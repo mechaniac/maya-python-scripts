@@ -28,6 +28,8 @@ class RunPrimary(Layer):
         'stride_width_swing': -3.0,
         'stride_height':     35.0,
         'stride_height_2':   20.0,
+        'foot_raise':        10.0,
+        'foot_raise_2':      15.0,
         'foot_roll_ball':   -10.0,
         'foot_roll_toe':     30.0,
         # Root translate
@@ -116,7 +118,19 @@ class RunPrimary(Layer):
                            frame_offset=legs_off,
                            label='L Foot Arc'))
 
-        # ── 3. foot roll (Roll) ── ball strike → toe push ──
+        # ── 3b. foot raise (rotateX) ── toe pitch matching foot arc ──
+        r1 = -p['foot_raise']
+        r2 = -p['foot_raise_2']
+        chs.append(Channel('IKLeg_R', 'rotateX',
+                           values=[r1, 0, r1, r2, r1],
+                           frame_offset=legs_off,
+                           label='R Foot Raise'))
+        chs.append(Channel('IKLeg_L', 'rotateX',
+                           values=[r1, r2, r1, 0, r1],
+                           frame_offset=legs_off,
+                           label='L Foot Raise'))
+
+        # ── 4. foot roll (Roll) ── ball strike → toe push ──
         ball = p['foot_roll_ball']
         toe  = p['foot_roll_toe']
         chs.append(Channel('IKLeg_R', 'Roll',

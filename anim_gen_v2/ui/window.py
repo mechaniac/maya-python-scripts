@@ -709,6 +709,11 @@ class AnimGenWindow:
                            self._rng('stride_h'), None,
                            tip='Foot arc heights (translateY). 1st = peak, 2nd = sustain on next key. '
                                'Lets the foot stay raised longer.')
+        self._range_slider('Foot Raise', 'r_foot_raise', 'r_foot_raise_2',
+                           d['foot_raise'], d['foot_raise_2'],
+                           self._rng('stride_h'), None,
+                           tip='Toe pitch (rotateX) matching foot arc pattern. '
+                               '1st = sustained tilt, 2nd = peak tilt.')
         self._slider_pair('Roll Ball', 'r_foot_roll_ball', d['foot_roll_ball'],
                           'Roll Toe', 'r_foot_roll_toe', d['foot_roll_toe'],
                           self._rng('roll'),
