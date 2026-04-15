@@ -701,7 +701,7 @@ class AnimGenWindow:
         self._range_slider('Stride Length', 'r_stride_front', 'r_stride_back',
                            d['stride_front'], d['stride_back'],
                            self._rng('stride'), None,
-                           tip='Forward/backward step reach (translateZ). '
+                           tip='Step reach (translateZ). Positive = forward, negative = backward. '
                                'Low = front reach, Hi = back reach.')
         self._range_slider('Stride Width', 'r_stride_width', 'r_stride_width_swing',
                            d['stride_width'], d.get('stride_width_swing', d['stride_width']),
@@ -712,11 +712,11 @@ class AnimGenWindow:
                            self._rng('stride_h'), None,
                            tip='Foot arc heights (translateY). 1st = peak, 2nd = sustain on next key. '
                                'Lets the foot stay raised longer.')
-        self._range_slider('Foot Raise', 'r_foot_raise', 'r_foot_raise_2',
-                           d['foot_raise'], d['foot_raise_2'],
+        self._range_slider('Foot Raise', 'r_foot_raise_front', 'r_foot_raise_back',
+                           d['foot_raise_front'], d['foot_raise_back'],
                            self._rng('stride_h'), None,
-                           tip='Toe pitch (rotateX) matching foot arc pattern. '
-                               '1st = sustained tilt, 2nd = peak tilt.')
+                           tip='Toe pitch (rotateX). Negative = toes up, positive = toes down. '
+                               'Low = front foot angle, Hi = back foot angle.')
         self._slider_pair('Roll Ball', 'r_foot_roll_ball', d['foot_roll_ball'],
                           'Roll Toe', 'r_foot_roll_toe', d['foot_roll_toe'],
                           self._rng('roll'),

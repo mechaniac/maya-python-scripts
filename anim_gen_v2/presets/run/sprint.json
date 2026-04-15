@@ -8,7 +8,7 @@
   },
   "primary": {
     "stride_front": 80.0,
-    "stride_back": 80.0,
+    "stride_back": -80.0,
     "stride_width": -2.0,
     "stride_width_swing": -2.0,
     "stride_height": 45.0,

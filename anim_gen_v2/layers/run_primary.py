@@ -24,13 +24,13 @@ class RunPrimary(Layer):
 
     DEFAULTS = {
         'stride_front':      60.0,
-        'stride_back':       60.0,
+        'stride_back':      -60.0,
         'stride_width':      -3.0,
         'stride_width_swing': -3.0,
         'stride_height':     35.0,
         'stride_height_2':   20.0,
-        'foot_raise':        10.0,
-        'foot_raise_2':      15.0,
+        'foot_raise_front': -10.0,
+        'foot_raise_back':    5.0,
         'foot_roll_ball':   -10.0,
         'foot_roll_toe':     30.0,
         # Root translate
@@ -69,8 +69,8 @@ class RunPrimary(Layer):
     def channels(self):
         p = self._params
         chs = []
-        stride_amp = (p['stride_front'] + p['stride_back']) / 2.0
-        stride_off = (p['stride_front'] - p['stride_back']) / 2.0
+        stride_amp, stride_off = range_amp_off(p['stride_front'],
+                                                 p['stride_back'])
         h    = p['stride_height']
         legs_off = int(p.get('legs_offset', 0))
         hip_off  = int(p.get('hip_offset', 0))
@@ -123,15 +123,15 @@ class RunPrimary(Layer):
                            label='L Foot Arc'))
 
         # ── 3b. foot raise (rotateX) ── cosine pitch like stride ──
-        raise_amp = (p['foot_raise'] + p['foot_raise_2']) / 2.0
-        raise_off = (p['foot_raise'] - p['foot_raise_2']) / 2.0
+        raise_amp, raise_off = range_amp_off(p['foot_raise_front'],
+                                              p['foot_raise_back'])
         chs.append(Channel('IKLeg_R', 'rotateX', Wave.COSINE,
-                           amplitude=-raise_amp, offset=-raise_off,
+                           amplitude=raise_amp, offset=raise_off,
                            n_points=3,
                            frame_offset=legs_off,
                            label='R Foot Raise'))
         chs.append(Channel('IKLeg_L', 'rotateX', Wave.COSINE,
-                           amplitude=-raise_amp, offset=-raise_off,
+                           amplitude=raise_amp, offset=raise_off,
                            phase=0.5, n_points=3,
                            frame_offset=legs_off,
                            label='L Foot Raise'))
