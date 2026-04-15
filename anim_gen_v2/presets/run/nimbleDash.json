@@ -7,7 +7,8 @@
     "date": "2026-04-14"
   },
   "primary": {
-    "stride": 110.0,
+    "stride_front": 55.0,
+    "stride_back": 55.0,
     "stride_width": -2.0,
     "stride_width_swing": -2.0,
     "stride_height": 42.0,

@@ -23,7 +23,8 @@ class RunPrimary(Layer):
     name = 'Run \u2013 Primary'
 
     DEFAULTS = {
-        'stride':           120.0,
+        'stride_front':      60.0,
+        'stride_back':       60.0,
         'stride_width':      -3.0,
         'stride_width_swing': -3.0,
         'stride_height':     35.0,
@@ -68,7 +69,8 @@ class RunPrimary(Layer):
     def channels(self):
         p = self._params
         chs = []
-        half = p['stride'] / 2.0
+        stride_amp, stride_off = range_amp_off(p['stride_front'],
+                                                p['stride_back'])
         h    = p['stride_height']
         legs_off = int(p.get('legs_offset', 0))
         hip_off  = int(p.get('hip_offset', 0))
@@ -76,11 +78,13 @@ class RunPrimary(Layer):
 
         # ── 1. stride (translateZ) ── cosine back-and-forth ──
         chs.append(Channel('IKLeg_R', 'translateZ', Wave.COSINE,
-                           amplitude=half, n_points=3,
+                           amplitude=stride_amp, offset=stride_off,
+                           n_points=3,
                            frame_offset=legs_off,
                            label='R Stride'))
         chs.append(Channel('IKLeg_L', 'translateZ', Wave.COSINE,
-                           amplitude=half, phase=0.5, n_points=3,
+                           amplitude=stride_amp, offset=stride_off,
+                           phase=0.5, n_points=3,
                            frame_offset=legs_off,
                            label='L Stride'))
 

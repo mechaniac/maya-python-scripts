@@ -698,8 +698,11 @@ class AnimGenWindow:
         cmds.separator(height=6, style='none')
         self._section_header('Legs', legs, 'run_legs')
         self._offset_slider('r_legs_offset', self._off_half)
-        self._slider('Stride Length', 'r_stride', d['stride'], self._rng('stride'),
-                     tip='Forward distance (translateZ) per step')
+        self._range_slider('Stride Length', 'r_stride_front', 'r_stride_back',
+                           d['stride_front'], d['stride_back'],
+                           self._rng('stride'), None,
+                           tip='Forward/backward step reach (translateZ). '
+                               'Low = front reach, Hi = back reach.')
         self._range_slider('Stride Width', 'r_stride_width', 'r_stride_width_swing',
                            d['stride_width'], d.get('stride_width_swing', d['stride_width']),
                            self._rng('stride_wh'), None,
