@@ -122,15 +122,17 @@ class RunPrimary(Layer):
                            frame_offset=legs_off,
                            label='L Foot Arc'))
 
-        # ── 3b. foot raise (rotateX) ── toe pitch matching foot arc ──
-        r1 = -p['foot_raise']
-        r2 = -p['foot_raise_2']
-        chs.append(Channel('IKLeg_R', 'rotateX',
-                           values=[r1, 0, r1, r2, r1],
+        # ── 3b. foot raise (rotateX) ── cosine pitch like stride ──
+        raise_amp = (p['foot_raise'] + p['foot_raise_2']) / 2.0
+        raise_off = (p['foot_raise'] - p['foot_raise_2']) / 2.0
+        chs.append(Channel('IKLeg_R', 'rotateX', Wave.COSINE,
+                           amplitude=-raise_amp, offset=-raise_off,
+                           n_points=3,
                            frame_offset=legs_off,
                            label='R Foot Raise'))
-        chs.append(Channel('IKLeg_L', 'rotateX',
-                           values=[r1, r2, r1, 0, r1],
+        chs.append(Channel('IKLeg_L', 'rotateX', Wave.COSINE,
+                           amplitude=-raise_amp, offset=-raise_off,
+                           phase=0.5, n_points=3,
                            frame_offset=legs_off,
                            label='L Foot Raise'))
 
