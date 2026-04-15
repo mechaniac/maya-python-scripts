@@ -69,8 +69,8 @@ class RunPrimary(Layer):
     def channels(self):
         p = self._params
         chs = []
-        stride_amp, stride_off = range_amp_off(p['stride_front'],
-                                                 p['stride_back'])
+        stride_amp, stride_off = range_amp_off(p['stride_back'],
+                                                 p['stride_front'])
         h    = p['stride_height']
         legs_off = int(p.get('legs_offset', 0))
         hip_off  = int(p.get('hip_offset', 0))
