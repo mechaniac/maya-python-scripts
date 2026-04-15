@@ -20,7 +20,7 @@ DEFAULT_CLIPS = [
     {'name': 'run',             'frames': 20, 'loop': True,  'category': 'locomotion'},
     {'name': 'strafe_left',     'frames': 30, 'loop': True,  'category': 'locomotion'},
     {'name': 'strafe_right',    'frames': 30, 'loop': True,  'category': 'locomotion'},
-    {'name': 'crouch_idle',     'frames': 30, 'loop': True,  'category': 'locomotion'},
+    {'name': 'crouch_idle',     'frames': 1,  'loop': True,  'category': 'locomotion'},
     {'name': 'crouch_walk',     'frames': 30, 'loop': True,  'category': 'locomotion'},
     # Actions (one-shot)
     {'name': 'jump',            'frames': 30, 'loop': False, 'category': 'action'},
@@ -28,7 +28,7 @@ DEFAULT_CLIPS = [
     {'name': 'land_light',      'frames': 40, 'loop': False, 'category': 'action'},
 ]
 
-DEFAULT_BUFFER = 60     # frames between clips (must exceed worst-case extended key overshoot)
+DEFAULT_BUFFER = 100    # frames between clips (must exceed worst-case extended key overshoot)
 DEFAULT_START = 100     # first clip starts at this frame (leave room for T-pose / rest at 0)
 
 

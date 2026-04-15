@@ -208,10 +208,10 @@ def show_window():
         cmds.menuItem(l="(none)")
         cmds.button(l="< Sel", c=lambda x, k=key: _on_sel(k))
         cmds.setParent("..")
-    cmds.separator(h=6, st="in")
+    cmds.setParent("..")
+
     cmds.button(l="Create Foot Roll Locators", h=28, bgc=(0.6, 0.6, 0.8),
                 c=lambda *a: create_foot_roll_locators(_read_map()))
-    cmds.setParent("..")
 
     cmds.frameLayout(l="Options", cll=1, mw=10, mh=5)
     cmds.rowColumnLayout(nc=2, cw=[(1, 200), (2, 200)])

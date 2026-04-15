@@ -506,7 +506,7 @@ class AnimGenWindow:
             self._section_keys[self._current_section].append(key)
 
     def _scalar_row(self, sections):
-        """Scale slider (0-10, default 1) + Apply button for an entire region."""
+        """Scale slider (0-2, default 1) + Apply button for an entire region."""
         tip = ('Multiply all values in this region by the scale factor.\n'
                '1.0 = no change, 0.5 = halve, 2.0 = double, etc.')
         form = cmds.formLayout(height=22)
@@ -514,7 +514,7 @@ class AnimGenWindow:
                         annotation=tip)
         self._tint_label(lbl, CLR_SCALE)
         fld = cmds.floatField(v=1.0, precision=2, width=50,
-                              minValue=0.0, maxValue=10.0,
+                              minValue=0.0, maxValue=2.0,
                               annotation=tip)
         holder = cmds.columnLayout(adjustableColumn=True, height=20)
         cmds.setParent(form)
@@ -530,7 +530,7 @@ class AnimGenWindow:
             attachControl=[(fld, 'left', 4, lbl),
                            (holder, 'left', 2, fld),
                            (holder, 'right', 2, btn)])
-        sl = embed_single_in_layout(holder, minimum=0.0, maximum=10.0,
+        sl = embed_single_in_layout(holder, minimum=0.0, maximum=2.0,
                                     value=1.0, color=CLR_SCALE)
         sl.setToolTip(tip)
 
