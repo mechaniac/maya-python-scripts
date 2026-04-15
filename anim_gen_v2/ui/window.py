@@ -700,9 +700,15 @@ class AnimGenWindow:
         self._offset_slider('r_legs_offset', self._off_half)
         self._slider('Stride Length', 'r_stride', d['stride'], self._rng('stride'),
                      tip='Forward distance (translateZ) per step')
-        self._slider('Stride Height', 'r_stride_height', d['stride_height'],
-                     self._rng('stride_h'),
-                     tip='Peak foot height during swing phase (translateY)')
+        self._range_slider('Stride Width', 'r_stride_width', 'r_stride_width_swing',
+                           d['stride_width'], d.get('stride_width_swing', d['stride_width']),
+                           self._rng('stride_wh'), None,
+                           tip='Lateral spread (translateX). Low = grounded width, Hi = swing-out width when foot is raised.')
+        self._range_slider('Stride Height', 'r_stride_height', 'r_stride_height_2',
+                           d['stride_height'], d['stride_height_2'],
+                           self._rng('stride_h'), None,
+                           tip='Foot arc heights (translateY). 1st = peak, 2nd = sustain on next key. '
+                               'Lets the foot stay raised longer.')
         self._slider_pair('Roll Ball', 'r_foot_roll_ball', d['foot_roll_ball'],
                           'Roll Toe', 'r_foot_roll_toe', d['foot_roll_toe'],
                           self._rng('roll'),
@@ -726,9 +732,28 @@ class AnimGenWindow:
                            self._rng('translation'), CLR_X,
                            tip='Root height. Low = contact compression, High = flight apex. '
                                'Opposite phase to walk (walk is high at contact).')
-        self._slider('Forward Lean  rZ', 'r_forward_lean', d['forward_lean'],
-                     self._rng('rotation'), CLR_Z,
-                     tip='Constant forward pitch of the root (rotateZ). Run posture.')
+        self._range_slider('Drive  tY', 'r_root_drive_back', 'r_root_drive_front',
+                           d['root_drive_back'], d['root_drive_front'],
+                           self._rng('translation'), CLR_Y,
+                           tip='Forward/back shift of the root (translateY). '
+                               'Freq-2: two cycles per stride.')
+        self._slider('Sway  tZ', 'r_root_sway', d['root_sway'],
+                     self._rng('translation'), CLR_Z,
+                     tip='Left/right shift of the root (translateZ). '
+                         'Freq-1: symmetric oscillation.')
+        self._range_slider('Nod  rZ', 'r_root_nod_back', 'r_root_nod_front',
+                           d['root_nod_back'], d['root_nod_front'],
+                           self._rng('rotation'), CLR_Z,
+                           tip='Forward/back pitch of the root (rotateZ). '
+                               'Freq-2: two nods per stride. Use to set run posture lean.')
+        self._slider('Lean  rY', 'r_root_lean', d['root_lean'],
+                     self._rng('rotation'), CLR_Y,
+                     tip='Lateral side-to-side tilt of the root (rotateY). '
+                         'Freq-1: symmetric oscillation.')
+        self._slider('Twist  rX', 'r_root_twist', d['root_twist'],
+                     self._rng('twist'), CLR_X,
+                     tip='Axial rotation of the root around the spine (rotateX). '
+                         'Freq-1: symmetric oscillation.')
         cmds.setParent(parent)
 
     # ──────────────────────────────────────────────
