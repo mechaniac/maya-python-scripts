@@ -9,12 +9,36 @@ Usage::
     import install_shelf; install_shelf.install()
 """
 
+import os
 import maya.cmds as cmds
 import maya.mel as mel
 import textwrap
 
 
 SHELF_NAME = 'C_Scripts'
+
+# Custom icons live here (a sub-folder of Maya's prefs/icons, which is not
+# recursively scanned by default -- we add it to XBMLANGPATH at install).
+_ICON_SUBFOLDER = 'toolSuite'
+
+
+def _icon_dir():
+    """Return the absolute path to the custom icon folder for this Maya version."""
+    docs = os.path.expanduser('~/Documents')
+    version = cmds.about(version=True)
+    return os.path.normpath(os.path.join(
+        docs, 'maya', version, 'prefs', 'icons', _ICON_SUBFOLDER))
+
+
+def _register_icon_path():
+    """Add the custom icon folder to XBMLANGPATH so Maya finds the PNGs."""
+    path = _icon_dir()
+    if not os.path.isdir(path):
+        return
+    current = os.environ.get('XBMLANGPATH', '')
+    parts = [p for p in current.split(os.pathsep) if p]
+    if path not in parts:
+        os.environ['XBMLANGPATH'] = os.pathsep.join([path] + parts)
 
 
 # ── button definitions ────────────────────────────────────────────
@@ -23,7 +47,7 @@ _BUTTONS = [
     {
         'label': 'S2 Import',
         'annotation': 'Source 2 Character Importer',
-        'image': 'fileOpen.png',
+        'image': 'charImporter.png',
         'command': textwrap.dedent("""\
             import importlib
             import source2_importer.kv3 as _kv3; importlib.reload(_kv3)
@@ -38,7 +62,7 @@ _BUTTONS = [
     {
         'label': 'Ctrl Rig',
         'annotation': 'Auto Control Rig',
-        'image': 'kinJoint.png',
+        'image': 'AutoRig.png',
         'command': textwrap.dedent("""\
             import importlib
             import auto_control_rig.constants as _con; importlib.reload(_con)
@@ -59,7 +83,7 @@ _BUTTONS = [
     {
         'label': 'AnimGen',
         'annotation': 'Animation Generator v2',
-        'image': 'animCurveTA.png',
+        'image': 'AnimGenerator.png',
         'command': textwrap.dedent("""\
             import importlib
             # core
@@ -85,13 +109,48 @@ _BUTTONS = [
     {
         'label': 'Clip Set',
         'annotation': 'Clip Setter — s&box Character Export',
-        'image': 'out_time.png',
+        'image': 'ClipSetter.png',
         'command': textwrap.dedent("""\
             import importlib
             import clip_setter.clips as _clp; importlib.reload(_clp)
             import clip_setter.export as _exp; importlib.reload(_exp)
             import clip_setter.ui as _cui; importlib.reload(_cui)
             _cui.show()
+        """),
+    },
+    {
+        'label': 'glTF\nI/O',
+        'annotation': 'glTF / GLB Importer & Exporter',
+        'image': 'gltfImpExp.png',
+        'command': textwrap.dedent("""\
+            import importlib, sys
+            # Drop any cached gltf_io.* modules so reload picks up new files
+            for _m in [m for m in list(sys.modules) if m == 'gltf_io' or m.startswith('gltf_io.')]:
+                del sys.modules[_m]
+            import gltf_io
+            gltf_io.show()
+        """),
+    },
+    {
+        'label': 'Tools',
+        'annotation': 'Scene Tools (cleanup, plugin requires, helpers)',
+        'image': 'SceneTools.png',
+        'command': textwrap.dedent("""\
+            import importlib
+            import tools_window.logic as _twl; importlib.reload(_twl)
+            import tools_window.ui as _twu; importlib.reload(_twu)
+            _twu.show_window()
+        """),
+    },
+    {
+        'label': 'Render\nLyr',
+        'annotation': 'Render Layer Setter',
+        'image': 'RenderLayerSetter.png',
+        'command': textwrap.dedent("""\
+            import importlib
+            import render_layer_setter.logic as _rls; importlib.reload(_rls)
+            import render_layer_setter.run as _rlr; importlib.reload(_rlr)
+            _rlr.run()
         """),
     },
     {
@@ -127,6 +186,7 @@ def _clear_shelf(shelf_path):
 
 def install():
     """Create (or refresh) the C_Scripts shelf with the latest buttons."""
+    _register_icon_path()
     shelf_path = _ensure_shelf()
     _clear_shelf(shelf_path)
 
@@ -138,7 +198,6 @@ def install():
             image1=btn.get('image', 'commandButton.png'),
             command=btn['command'],
             sourceType='python',
-            imageOverlayLabel=btn['label'].replace('\n', ' '),
         )
 
     # Switch to the newly created/updated shelf so the user sees it
