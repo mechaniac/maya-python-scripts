@@ -12,6 +12,7 @@ Usage::
 import os
 import maya.cmds as cmds
 import maya.mel as mel
+import maya.utils as maya_utils
 import textwrap
 
 
@@ -160,7 +161,7 @@ _BUTTONS = [
         'command': textwrap.dedent("""\
             import importlib
             import install_shelf; importlib.reload(install_shelf)
-            install_shelf.install()
+            install_shelf.install_deferred()
         """),
     },
 ]
@@ -184,7 +185,7 @@ def _clear_shelf(shelf_path):
         cmds.deleteUI(child)
 
 
-def install():
+def _install_now():
     """Create (or refresh) the C_Scripts shelf with the latest buttons."""
     _register_icon_path()
     shelf_path = _ensure_shelf()
@@ -204,3 +205,13 @@ def install():
     top = mel.eval('$__tmp = $gShelfTopLevel')
     cmds.tabLayout(top, e=True, selectTab=SHELF_NAME)
     print('// C_Scripts shelf installed  ({} buttons)'.format(len(_BUTTONS)))
+
+
+def install_deferred():
+    """Rebuild the shelf after the current UI callback completes."""
+    maya_utils.executeDeferred(_install_now)
+
+
+def install():
+    """Public installer entry point."""
+    _install_now()
