@@ -2,6 +2,7 @@
 
 import os
 import maya.cmds as cmds
+import ui_word_weighting
 
 from . import importer, exporter, plugin, fbx2gltf
 
@@ -53,6 +54,7 @@ def show():
 
     _refresh_status()
     cmds.showWindow(_WIN)
+    ui_word_weighting.apply_deferred(_WIN)
 
 
 # ── tab builders ──────────────────────────────────────────────────

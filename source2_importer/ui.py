@@ -2,6 +2,7 @@
 
 import os
 import maya.cmds as cmds
+import ui_word_weighting
 
 from . import vrf as _vrf
 from . import pipeline
@@ -78,6 +79,7 @@ def show():
     cmds.text("s2i_status", label="", align="left", wordWrap=True)
 
     cmds.showWindow(_WIN)
+    ui_word_weighting.apply_deferred(_WIN)
 
 
 # ── callbacks ─────────────────────────────────────────────────────

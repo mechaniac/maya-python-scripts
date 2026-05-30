@@ -1,6 +1,8 @@
 import maya.cmds as cmds
 import math
 
+from . import chypershade
+
 # === Plugin and node cleanup ===
 plugin_blacklist = [
     "CP_Exporter2009",
@@ -15,6 +17,19 @@ mental_ray_nodes = [
     "mentalrayOptions",
     "mentalrayFramebuffer",
 ]
+
+
+def toggle_display_affected(*args):
+    """Toggle 'Display Affected' (history highlight) on selected nodes."""
+    current = cmds.displayPref(q=True, displayAffected=True)
+    cmds.displayPref(displayAffected=not current)
+    print("Display Affected (History Highlight) is now: {0}".format(
+        not current))
+
+
+def open_chypershade(*args):
+    chypershade.open_panel()
+
 
 def prep_function(*args):
     cmds.delete(cmds.ls(type='constraint'))

@@ -10,6 +10,7 @@ import os
 
 import maya.cmds as cmds
 import maya.OpenMayaUI as omui
+import ui_word_weighting
 from shiboken6 import wrapInstance
 from PySide6 import QtWidgets
 
@@ -153,6 +154,7 @@ class ClipSetterWindow:
             attachNone=[(bottom, 'top')])
 
         cmds.showWindow(win)
+        ui_word_weighting.apply_deferred(WINDOW_NAME)
 
     # ──────────────────────────────────────────────
     #  Clip rows

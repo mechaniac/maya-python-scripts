@@ -1,5 +1,6 @@
 import maya.cmds as cmds
 import os
+import ui_word_weighting
 
 from .constants import SLOT_DEFS
 from .builder import AutoControlRigBuilder
@@ -281,3 +282,4 @@ def show_window():
     cmds.setParent("..")
 
     cmds.showWindow(w)
+    ui_word_weighting.apply_deferred(w)

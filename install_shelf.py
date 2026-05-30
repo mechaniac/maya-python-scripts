@@ -51,6 +51,7 @@ _BUTTONS = [
         'image': 'charImporter.png',
         'command': textwrap.dedent("""\
             import importlib
+            import ui_word_weighting as _uww; importlib.reload(_uww)
             import source2_importer.kv3 as _kv3; importlib.reload(_kv3)
             import source2_importer.vrf as _vrf; importlib.reload(_vrf)
             import source2_importer.materials as _mat; importlib.reload(_mat)
@@ -66,6 +67,7 @@ _BUTTONS = [
         'image': 'AutoRig.png',
         'command': textwrap.dedent("""\
             import importlib
+            import ui_word_weighting as _uww; importlib.reload(_uww)
             import auto_control_rig.constants as _con; importlib.reload(_con)
             import auto_control_rig.utils as _utl; importlib.reload(_utl)
             import auto_control_rig.helpers as _hlp; importlib.reload(_hlp)
@@ -87,6 +89,7 @@ _BUTTONS = [
         'image': 'AnimGenerator.png',
         'command': textwrap.dedent("""\
             import importlib
+            import ui_word_weighting as _uww; importlib.reload(_uww)
             # core
             import anim_gen_v2.core.patterns as _pat; importlib.reload(_pat)
             import anim_gen_v2.core.channel as _ch; importlib.reload(_ch)
@@ -113,6 +116,7 @@ _BUTTONS = [
         'image': 'ClipSetter.png',
         'command': textwrap.dedent("""\
             import importlib
+            import ui_word_weighting as _uww; importlib.reload(_uww)
             import clip_setter.clips as _clp; importlib.reload(_clp)
             import clip_setter.export as _exp; importlib.reload(_exp)
             import clip_setter.ui as _cui; importlib.reload(_cui)
@@ -125,6 +129,7 @@ _BUTTONS = [
         'image': 'gltfImpExp.png',
         'command': textwrap.dedent("""\
             import importlib, sys
+            import ui_word_weighting as _uww; importlib.reload(_uww)
             # Drop any cached gltf_io.* modules so reload picks up new files
             for _m in [m for m in list(sys.modules) if m == 'gltf_io' or m.startswith('gltf_io.')]:
                 del sys.modules[_m]
@@ -133,11 +138,26 @@ _BUTTONS = [
         """),
     },
     {
+        'label': 'Blend\nSetup',
+        'annotation': 'Multi-object blendshape setup and edit targets',
+        'image': 'commandButton.png',
+        'command': textwrap.dedent("""\
+            import importlib
+            import ui_word_weighting as _uww; importlib.reload(_uww)
+            import blendshape_setup.logic as _bsl; importlib.reload(_bsl)
+            import blendshape_setup.ui as _bsu; importlib.reload(_bsu)
+            import blendshapeSetup; importlib.reload(blendshapeSetup)
+            blendshapeSetup.show()
+        """),
+    },
+    {
         'label': 'Tools',
         'annotation': 'Scene Tools (cleanup, plugin requires, helpers)',
         'image': 'SceneTools.png',
         'command': textwrap.dedent("""\
             import importlib
+            import ui_word_weighting as _uww; importlib.reload(_uww)
+            import tools_window.chypershade as _twh; importlib.reload(_twh)
             import tools_window.logic as _twl; importlib.reload(_twl)
             import tools_window.ui as _twu; importlib.reload(_twu)
             _twu.show_window()

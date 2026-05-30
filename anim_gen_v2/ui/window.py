@@ -10,6 +10,7 @@ import json
 import os
 
 import maya.cmds as cmds
+import ui_word_weighting
 
 from ..core import engine, presets
 from ..layers.walk_primary import WalkPrimary
@@ -156,6 +157,7 @@ class AnimGenWindow:
             attachNone=[(bottom, 'top')])
 
         cmds.showWindow(win)
+        ui_word_weighting.apply_deferred(WINDOW_NAME)
 
     # ──────────────────────────────────────────────
     #  Helpers
