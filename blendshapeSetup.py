@@ -2,8 +2,14 @@
 
 
 def show():
-    from blendshape_setup.ui import show as _show
-    _show()
+    import importlib
+
+    from blendshape_setup import logic
+    from blendshape_setup import ui
+
+    importlib.reload(logic)
+    importlib.reload(ui)
+    ui.show()
 
 
 if __name__ == "__main__":

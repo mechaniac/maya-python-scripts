@@ -14,6 +14,7 @@ _TAG_RE = re.compile(r"<[^>]+>")
 _PROP_BASE_POINT = "_cscript_word_weight_base_point"
 _PROP_BASE_WEIGHT = "_cscript_word_weight_base_weight"
 _PROP_BASE_STYLESHEET = "_cscript_word_weight_base_stylesheet"
+_PROP_DESCRIPTION_STYLE = "_cscript_window_description_style"
 
 _SEMANTIC_OVERLAY = 0.8
 _STRING_WORDS = {
@@ -82,6 +83,8 @@ def apply_to_window(window_name, min_extra=0.0, max_scale=1.0):
     entries = _collect_text_entries(root, qt)
     if not entries:
         return {"widgets": 0, "words": 0}
+
+    _apply_window_chrome(root, entries, qt)
 
     styled = 0
     for widget, text in entries:
@@ -316,6 +319,105 @@ def _mix_color(base, overlay, amount):
         int(round((overlay[i] * amount) + (base[i] * (1.0 - amount))))
         for i in range(3)
     )
+
+
+def _apply_window_chrome(root, entries, qt):
+    _hide_duplicate_window_titles(root, entries, qt)
+    _style_window_description(root, entries, qt)
+
+
+def _hide_duplicate_window_titles(root, entries, qt):
+    title = _clean_text(root.windowTitle())
+    if not title:
+        return
+
+    title_key = _title_key(title)
+    QtWidgets = qt["QtWidgets"]
+    for widget, text in entries:
+        if not isinstance(widget, QtWidgets.QLabel):
+            continue
+        if _title_key(text) != title_key:
+            continue
+        widget.setVisible(False)
+        try:
+            widget.setMaximumHeight(0)
+        except Exception:
+            pass
+
+
+def _style_window_description(root, entries, qt):
+    title_key = _title_key(root.windowTitle())
+    QtWidgets = qt["QtWidgets"]
+
+    candidates = []
+    for widget, text in entries:
+        if not isinstance(widget, QtWidgets.QLabel) or _is_hidden(widget):
+            continue
+
+        clean = _clean_text(text)
+        if not _looks_like_window_description(clean, title_key):
+            continue
+
+        try:
+            top = widget.mapTo(root, widget.rect().topLeft()).y()
+        except Exception:
+            top = widget.y()
+        if top > 140:
+            continue
+
+        candidates.append((top, widget))
+
+    if not candidates:
+        return
+
+    _, widget = sorted(candidates, key=lambda item: item[0])[0]
+    if widget.property(_PROP_DESCRIPTION_STYLE):
+        return
+
+    font = qt["QtGui"].QFont(widget.font())
+    point_size = font.pointSizeF()
+    if point_size <= 0:
+        point_size = 9.0
+    font.setPointSizeF(max(7.0, point_size - 1.0))
+    font.setItalic(True)
+    font.setWeight(_qt_font_weight(qt["QtGui"], 50))
+    widget.setFont(font)
+    widget.setStyleSheet(
+        ((widget.styleSheet() or "") + "\n"
+         "color: rgba(190, 215, 225, 150); padding: 0px 6px;").strip()
+    )
+    try:
+        widget.setMaximumHeight(18)
+    except Exception:
+        pass
+    widget.setProperty(_PROP_DESCRIPTION_STYLE, True)
+
+
+def _looks_like_window_description(text, title_key):
+    if not text:
+        return False
+    if _title_key(text) == title_key:
+        return False
+    if len(text) < 12 or len(text) > 140:
+        return False
+    if text.endswith(":"):
+        return False
+
+    words = _words(text)
+    if len(words) < 3:
+        return False
+    return True
+
+
+def _title_key(text):
+    return re.sub(r"[^a-z0-9]+", "", _clean_text(text).lower())
+
+
+def _is_hidden(widget):
+    try:
+        return widget.isHidden() or not widget.isVisible()
+    except Exception:
+        return False
 
 
 def _bump_minimum_height(widget, font, qt):

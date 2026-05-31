@@ -202,7 +202,6 @@ def _section(parent, label, area_key):
         collapse=False,
         marginWidth=6,
         marginHeight=4,
-        borderStyle="etchedIn",
     )
     _apply_bg(frame, area["header"])
     _remember_style(frame, fg=area["accent"], bg=area["header"],
@@ -260,15 +259,6 @@ def show_window():
         columnAlign="center",
     )
     _apply_bg(main, THEME["window"])
-
-    header = cmds.columnLayout(
-        parent=main,
-        adjustableColumn=True,
-        rowSpacing=2,
-        columnAlign="center",
-    )
-    _apply_bg(header, AREAS["scene"]["header"])
-    _title(header, "Scene Tools", "scene")
 
     scene = _section(main, "Scene And View", "scene")
     _button(scene, "Clean Scene", logic.run_cleanup, "scene")

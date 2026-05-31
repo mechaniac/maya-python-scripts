@@ -18,11 +18,6 @@ def show():
     main = cmds.columnLayout(adjustableColumn=True, rowSpacing=4,
                              columnAttach=("both", 8))
 
-    cmds.separator(height=4, style="none")
-    cmds.text(label="glTF / GLB Importer & Exporter",
-              font="boldLabelFont", align="center")
-    cmds.separator(height=8, style="in")
-
     # ── backend status ─────────────────────────────────────────────
     cmds.text("gltf_status_plugin", label="", align="left", wordWrap=True)
     cmds.text("gltf_status_fbx", label="", align="left", wordWrap=True)

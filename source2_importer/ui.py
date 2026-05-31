@@ -25,11 +25,6 @@ def show():
     main = cmds.columnLayout(adjustableColumn=True, rowSpacing=5,
                              columnAttach=("both", 8))
 
-    cmds.separator(height=4, style="none")
-    cmds.text(label="Source 2 Character Importer", font="boldLabelFont",
-              align="center")
-    cmds.separator(height=8, style="in")
-
     # ── model file ────────────────────────────────────────────────
     cmds.text(label="Model File (.vmdl):", align="left")
     r1 = cmds.rowLayout(numberOfColumns=2, adjustableColumn=1,

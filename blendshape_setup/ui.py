@@ -6,6 +6,15 @@ import ui_word_weighting
 from . import logic
 
 
+_LEGACY_WRAP_DISPLAY_GUARD_JOBS = list(
+    globals().get("_wrap_display_guard_jobs", []) or []
+)
+for _legacy_name in (
+    "wrap_display_time_guard",
+    "_install_wrap_display_guard_jobs",
+):
+    globals().pop(_legacy_name, None)
+
 WINDOW_NAME = "blendshapeSetupWin"
 WINDOW_TITLE = "Blendshape Setup"
 DEFAULT_WIDTH = 300
@@ -26,35 +35,54 @@ THEME = {
 TOOLTIPS = {
     "header": "Creates one synchronized blendShape target set across multiple selected polygon meshes.",
     "subtitle": "Each target becomes an editable modelling pose and a keyed time-slider state.",
-    "generate_section": "Set up the generated blendShape target names, timing, and editor behavior.",
-    "targets_section": "Buttons for the generated targets. Each button activates one target for editing.",
+    "generate_section": "Set up generated blendShape names, timing, transform keys, and editor behavior.",
+    "targets_section": "Buttons for BindPose and generated targets. Each button activates one keyed time-slider state.",
     "actions_section": "Utility actions for finding, resetting, or leaving the generated edit setup.",
-    "selection": "Shows how many selected transform nodes contain polygon mesh shapes.",
-    "refresh": "Recount the currently selected polygon mesh transforms.",
+    "wire_tests_section": "Isolated viewport display tests for selected polygon meshes. Use these on wrap drivers like wrapSkull or wrapJaw to find the method Maya respects in this scene.",
+    "selection": "Shows how many selected or descendant transform nodes contain polygon mesh shapes.",
+    "refresh": "Recount the currently selected polygon mesh transforms, including meshes under selected groups.",
+    "template": "Create a BlendshapeRoster group with Meshes, WRAPExample, and WRAPExample/WRAPTarget folders.",
     "prefix": "Fallback prefix used for empty target names or extra targets beyond the default list.",
     "count": "Number of blendShape targets to create. Changing this rebuilds the name fields.",
     "start": "Frame where every generated blendShape target is keyed to 0.",
     "interval": "Frame distance between active target keys. Target 1 is start plus this interval.",
+    "wrap_distance": "Maximum wrap influence distance in scene units. Vertices farther away from the wrap driver receive 0 wrap weight; 0 disables the distance limit.",
     "target_names": "Names for the blendShape weight aliases and final target buttons. Invalid Maya characters are cleaned on generate.",
-    "open_editor": "When enabled, opening or clicking a target also opens Maya's Blend Shape or Shape Editor.",
-    "generate": "Generate the setup only when no managed setup exists in the scene.",
-    "remove": "Delete all blendShape nodes created by this tool and return to a clean setup state.",
+    "open_editor": "When enabled, Generate opens Maya's Blend Shape or Shape Editor once. Target buttons keep it hidden.",
+    "generate": "Generate blendShapes for meshes, transform keys for selected/descendant transforms plus mesh parent groups, and managed wraps from WRAP*/WRAPTarget groups.",
+    "remove": "Delete all blendShape, wrap, and helper nodes created by this tool and return to a clean setup state.",
     "discover": "Scan the scene for blendShape setups created by this tool and rebuild the target button list.",
-    "all_off": "Set all generated target weights to 0, jump to the start frame, and select the managed meshes.",
+    "all_off": "Set all generated target weights to 0, jump to the start frame, and keep the current selection.",
+    "bind_pose": "Jump to the setup start frame and set every generated blendShape target to 0.",
     "stop_edit": "Leave blendShape sculpt/edit mode without deleting the generated setup.",
+    "wire_reset": "Reset the display-only wire test edits on selected meshes and remove curve wire proxies created by this tool.",
     "status": "Reports the latest Blendshape Setup action, warning, or selection state.",
     "empty_targets": "No managed blendShape setup has been generated or discovered yet.",
 }
 
+AUTO_KEY_WARNING = (
+    "Auto Key is disabled. Transform edits on target frames will not be "
+    "recorded automatically."
+)
+
 _ui = {}
 _records = []
+_active_wire_test = None
+_active_target_index = None
+_BIND_POSE_INDEX = -1
 
 
 def show():
+    global _active_wire_test, _active_target_index
+
+    _kill_legacy_wrap_display_jobs()
     if cmds.window(WINDOW_NAME, exists=True):
         cmds.deleteUI(WINDOW_NAME)
+    _kill_legacy_wrap_display_jobs()
 
     _ui.clear()
+    _active_wire_test = None
+    _active_target_index = _BIND_POSE_INDEX
 
     cmds.window(
         WINDOW_NAME,
@@ -82,20 +110,15 @@ def show():
     header = cmds.columnLayout(
         parent=main,
         adjustableColumn=True,
-        rowSpacing=3,
+        rowSpacing=0,
     )
     _apply_bg(header, THEME["header"])
-    _title(
-        header,
-        "Blendshape Setup",
-        THEME["header"],
-        tooltip=TOOLTIPS["header"],
-    )
     subtitle = cmds.text(
         parent=header,
-        label="Multi-object WYSIWYG blendshape modelling",
-        align="center",
-        height=22,
+        label="// multi-object blendshape modelling",
+        align="left",
+        height=16,
+        font="smallObliqueLabelFont",
     )
     _annotate(subtitle, TOOLTIPS["subtitle"])
 
@@ -112,13 +135,17 @@ def show():
         height=20,
     )
     _annotate(_ui["selection"], TOOLTIPS["selection"])
-    _button(
-        setup,
-        "Refresh Selection Count",
-        _refresh_selection,
-        THEME["neutral"],
-        tooltip=TOOLTIPS["refresh"],
+    template_row = cmds.rowLayout(
+        parent=setup,
+        numberOfColumns=2,
+        adjustableColumn=1,
+        columnWidth2=(126, 126),
+        columnAttach2=("both", "both"),
     )
+    _button(template_row, "Refresh Count", _refresh_selection,
+            THEME["neutral"], tooltip=TOOLTIPS["refresh"])
+    _button(template_row, "Create Template", _create_template,
+            THEME["neutral"], tooltip=TOOLTIPS["template"])
 
     _field_row(
         setup,
@@ -153,6 +180,14 @@ def show():
         value=logic.DEFAULT_INTERVAL,
         tooltip=TOOLTIPS["interval"],
     )
+    _field_row(
+        setup,
+        "Wrap Distance",
+        "wrap_max_distance",
+        field_type="float",
+        value=logic.DEFAULT_WRAP_MAX_DISTANCE,
+        tooltip=TOOLTIPS["wrap_distance"],
+    )
 
     target_names_label = cmds.text(
         parent=setup,
@@ -172,7 +207,7 @@ def show():
 
     _ui["open_editor"] = cmds.checkBox(
         parent=setup,
-        label="Open Blend Shape Editor on target buttons",
+        label="Open Blend Shape Editor after generate",
         value=True,
     )
     _annotate(_ui["open_editor"], TOOLTIPS["open_editor"])
@@ -229,9 +264,18 @@ def show():
     )
     _annotate(_ui["status"], TOOLTIPS["status"])
 
+    wire_tests = _section(
+        main,
+        "Wire Display Tests",
+        (0.20, 0.27, 0.24),
+        tooltip=TOOLTIPS["wire_tests_section"],
+    )
+    _wire_test_buttons(wire_tests)
+
     _refresh_selection()
     _discover(update_status=False)
     _update_generate_toggle()
+    _warn_auto_key_disabled()
 
     cmds.showWindow(WINDOW_NAME)
     _finish_deferred()
@@ -240,9 +284,8 @@ def show():
 def _generate_or_remove(*_):
     global _records
 
-    existing = logic.discover_setups()
-    if existing:
-        _records = existing
+    if logic.generated_setup_exists():
+        _records = logic.discover_setups()
         _remove_setup()
         return
 
@@ -250,7 +293,7 @@ def _generate_or_remove(*_):
 
 
 def _generate(*_):
-    global _records
+    global _records, _active_target_index
 
     try:
         _sync_target_name_fields()
@@ -260,6 +303,11 @@ def _generate(*_):
             target_names=_target_name_values(),
             start_frame=cmds.intField(_ui["start_frame"], query=True, value=True),
             interval=cmds.intField(_ui["interval"], query=True, value=True),
+            wrap_max_distance=cmds.floatField(
+                _ui["wrap_max_distance"],
+                query=True,
+                value=True,
+            ),
             replace_existing=False,
             open_editor=cmds.checkBox(
                 _ui["open_editor"],
@@ -272,12 +320,17 @@ def _generate(*_):
         cmds.warning(str(exc))
         return
 
+    _active_target_index = _BIND_POSE_INDEX
     _rebuild_target_buttons()
     _refresh_selection()
-    _set_status(
-        "Generated {0} target(s) on {1} mesh(es).".format(
+    _set_status_with_auto_key(
+        "Generated {0} target(s) on {1} mesh(es), {2} wrap(s), "
+        "{3} helper(s), {4} transform-keyed node(s).".format(
             len(_records[0]["targets"]) if _records else 0,
             len(_records),
+            len(logic.discover_wrap_setups()),
+            len(logic.discover_helper_nodes()),
+            len(logic.discover_transform_key_nodes()),
         )
     )
     _update_generate_toggle()
@@ -285,47 +338,65 @@ def _generate(*_):
 
 
 def _discover(*_, update_status=True):
-    global _records
+    global _records, _active_target_index
     _records = logic.discover_setups()
+    wrap_count = len(logic.discover_wrap_setups())
+    helper_count = len(logic.discover_helper_nodes())
+    transform_key_count = len(logic.discover_transform_key_nodes())
+    _active_target_index = _target_index_from_current_time()
     _rebuild_target_buttons()
     _update_generate_toggle()
     if update_status:
-        if _records:
-            _set_status("Discovered {0} managed blendShape node(s).".format(
-                len(_records)))
+        if _records or wrap_count or helper_count or transform_key_count:
+            _set_status(
+                "Discovered {0} blendShape node(s), {1} wrap node(s), "
+                "{2} helper node(s), and transform keys on {3} node(s).".format(
+                    len(_records),
+                    wrap_count,
+                    helper_count,
+                    transform_key_count,
+                )
+            )
         else:
             _set_status("No managed blendshape setup found in the scene.")
         _finish_deferred()
 
 
 def _activate(index):
+    global _active_target_index
+
     try:
         frame = logic.activate_target(
             index,
             records=_records,
-            open_editor=cmds.checkBox(
-                _ui["open_editor"],
-                query=True,
-                value=True,
-            ),
+            open_editor=False,
         )
     except Exception as exc:
         _set_status(str(exc), warning=True)
         cmds.warning(str(exc))
         return
 
+    _active_target_index = index
+    _update_target_button_states()
     target_name = _records[0]["targets"][index]
-    _set_status("Editing {0} at frame {1}.".format(target_name, frame))
+    _set_status_with_auto_key(
+        "Editing {0} at frame {1}.".format(target_name, frame)
+    )
+    logic.hide_blendshape_editor()
 
 
 def _activate_all_off(*_):
+    global _active_target_index
+
     try:
         frame = logic.activate_all_off(records=_records)
     except Exception as exc:
         _set_status(str(exc), warning=True)
         cmds.warning(str(exc))
         return
-    _set_status("All targets off at frame {0}.".format(frame))
+    _active_target_index = _BIND_POSE_INDEX
+    _update_target_button_states()
+    _set_status_with_auto_key("BindPose at frame {0}.".format(frame))
 
 
 def _stop_edit_mode(*_):
@@ -333,8 +404,54 @@ def _stop_edit_mode(*_):
     _set_status("Blendshape edit mode disabled.")
 
 
+def _run_wire_test(method_id):
+    global _active_wire_test
+
+    try:
+        if _active_wire_test == method_id:
+            message = logic.reset_wire_display_tests()
+            _active_wire_test = None
+            _update_wire_test_toggles()
+            _set_status("{0} off. {1}".format(
+                _wire_test_label(method_id),
+                message,
+            ))
+            _finish_deferred()
+            return
+
+        if _active_wire_test:
+            logic.reset_wire_display_tests()
+
+        message = logic.apply_wire_display_test(method_id)
+    except Exception as exc:
+        _set_status(str(exc), warning=True)
+        cmds.warning(str(exc))
+        return
+
+    _active_wire_test = method_id
+    _update_wire_test_toggles()
+    _set_status(message)
+    _finish_deferred()
+
+
+def _reset_wire_tests(*_):
+    global _active_wire_test
+
+    try:
+        message = logic.reset_wire_display_tests()
+    except Exception as exc:
+        _set_status(str(exc), warning=True)
+        cmds.warning(str(exc))
+        return
+
+    _active_wire_test = None
+    _update_wire_test_toggles()
+    _set_status(message)
+    _finish_deferred()
+
+
 def _remove_setup(*_):
-    global _records
+    global _records, _active_target_index
 
     try:
         removed_count = logic.remove_setup(records=_records)
@@ -344,10 +461,36 @@ def _remove_setup(*_):
         return
 
     _records = []
+    _active_target_index = None
     _rebuild_target_buttons()
     _update_generate_toggle()
-    _set_status("Removed {0} generated blendShape setup node(s).".format(
-        removed_count))
+    _set_status(
+        "Removed {0} blendShape node(s), {1} wrap node(s), "
+        "{2} helper node(s), transform keys on {3} node(s), "
+        "and {4} wrap influence attr(s).".format(
+            removed_count.get("blendShapes", 0),
+            removed_count.get("wraps", 0),
+            removed_count.get("helpers", 0),
+            removed_count.get("transformKeyedNodes", 0),
+            removed_count.get("wrapInfluenceAttrs", 0),
+        )
+    )
+    _finish_deferred()
+
+
+def _create_template(*_):
+    try:
+        template = logic.create_template()
+    except Exception as exc:
+        _set_status(str(exc), warning=True)
+        cmds.warning(str(exc))
+        return
+
+    _refresh_selection()
+    _set_status(
+        "Created template group: {0}. Put driver meshes in WRAPExample and "
+        "affected meshes in WRAPTarget.".format(template["root"])
+    )
     _finish_deferred()
 
 
@@ -356,7 +499,7 @@ def _update_generate_toggle():
     if not button or not cmds.control(button, exists=True):
         return
 
-    has_setup = bool(logic.discover_setups())
+    has_setup = logic.generated_setup_exists()
     if has_setup:
         cmds.button(button, edit=True, label="Remove Generated Setup")
         _apply_bg(button, THEME["danger"])
@@ -365,6 +508,24 @@ def _update_generate_toggle():
         cmds.button(button, edit=True, label="Generate Blend Shapes")
         _apply_bg(button, THEME["create"])
         _annotate(button, TOOLTIPS["generate"])
+
+
+def _warn_auto_key_disabled():
+    if logic.auto_key_enabled():
+        return False
+
+    cmds.warning(AUTO_KEY_WARNING)
+    _set_status(AUTO_KEY_WARNING, warning=True)
+    return True
+
+
+def _set_status_with_auto_key(message):
+    if logic.auto_key_enabled():
+        _set_status(message)
+        return
+
+    cmds.warning(AUTO_KEY_WARNING)
+    _set_status("{0} {1}".format(message, AUTO_KEY_WARNING), warning=True)
 
 
 def _refresh_selection(*_):
@@ -382,6 +543,8 @@ def _rebuild_target_buttons():
     if not target_col or not cmds.layout(target_col, exists=True):
         return
 
+    _ui["target_buttons"] = {}
+    _ui["bind_pose_button"] = None
     children = cmds.columnLayout(
         target_col,
         query=True,
@@ -403,8 +566,17 @@ def _rebuild_target_buttons():
     first = _records[0]
     targets = first["targets"]
 
+    _ui["bind_pose_button"] = _button(
+        target_col,
+        "BindPose",
+        _activate_all_off,
+        THEME["target"],
+        height=32,
+        tooltip=TOOLTIPS["bind_pose"],
+    )
+
     for index, target_name in enumerate(targets):
-        _button(
+        button = _button(
             target_col,
             target_name,
             lambda *_args, i=index: _activate(i),
@@ -412,9 +584,61 @@ def _rebuild_target_buttons():
             height=32,
             tooltip=(
                 "Activate {0}: jump to its keyed frame, set only this "
-                "target to 1, and enter blendShape edit mode."
+                "target to 1, ensure transform keys, and enter blendShape "
+                "edit mode while keeping the current selection."
             ).format(target_name),
         )
+        _ui["target_buttons"][index] = button
+    _update_target_button_states()
+
+
+def _update_target_button_states():
+    buttons = _ui.get("target_buttons", {})
+    bind_button = _ui.get("bind_pose_button")
+    if bind_button and cmds.control(bind_button, exists=True):
+        if _active_target_index == _BIND_POSE_INDEX:
+            cmds.button(bind_button, edit=True, label="[ON] BindPose")
+            _apply_bg(bind_button, THEME["create"])
+        else:
+            cmds.button(bind_button, edit=True, label="BindPose")
+            _apply_bg(bind_button, THEME["target"])
+
+    if not buttons:
+        return
+
+    targets = _records[0]["targets"] if _records else []
+    for index, button in buttons.items():
+        if not cmds.control(button, exists=True):
+            continue
+        target_name = targets[index] if index < len(targets) else str(index + 1)
+        if index == _active_target_index:
+            cmds.button(button, edit=True, label="[ON] {0}".format(target_name))
+            _apply_bg(button, THEME["create"])
+        else:
+            cmds.button(button, edit=True, label=target_name)
+            _apply_bg(button, THEME["target"])
+
+
+def _target_index_from_current_time():
+    if not _records:
+        return None
+    first = _records[0]
+    try:
+        frame = int(round(cmds.currentTime(query=True)))
+    except Exception:
+        return None
+
+    if frame == int(first.get("start_frame", logic.DEFAULT_START_FRAME)):
+        return _BIND_POSE_INDEX
+
+    for index in range(len(first.get("targets", []))):
+        if frame == logic.target_frame(
+            index,
+            first.get("start_frame", logic.DEFAULT_START_FRAME),
+            first.get("interval", logic.DEFAULT_INTERVAL),
+        ):
+            return index
+    return None
 
 
 def _sync_target_name_fields(*_):
@@ -471,6 +695,76 @@ def _target_name_values():
     return values
 
 
+def _wire_test_buttons(parent):
+    _ui["wire_test_buttons"] = {}
+    methods = list(logic.WIRE_TEST_METHODS)
+    for row_start in range(0, len(methods), 2):
+        row_methods = methods[row_start:row_start + 2]
+        row_kwargs = {
+            "parent": parent,
+            "numberOfColumns": len(row_methods),
+            "adjustableColumn": 1,
+        }
+        if len(row_methods) == 1:
+            row_kwargs["columnAttach1"] = "both"
+        else:
+            row_kwargs["columnAttach2"] = ("both", "both")
+            row_kwargs["columnWidth2"] = (126, 126)
+        row = cmds.rowLayout(**row_kwargs)
+        if len(row_methods) == 2:
+            cmds.rowLayout(row, edit=True, columnWidth2=(126, 126))
+
+        for method in row_methods:
+            method_id = method["id"]
+            button = _button(
+                row,
+                method["label"],
+                lambda *_args, current=method_id: _run_wire_test(current),
+                THEME["neutral"],
+                tooltip=method["tooltip"],
+            )
+            _ui["wire_test_buttons"][method_id] = button
+
+    _button(
+        parent,
+        "Reset Wire Tests",
+        _reset_wire_tests,
+        THEME["danger"],
+        tooltip=TOOLTIPS["wire_reset"],
+    )
+    _update_wire_test_toggles()
+
+
+def _update_wire_test_toggles():
+    buttons = _ui.get("wire_test_buttons", {})
+    if not buttons:
+        return
+
+    for method in logic.WIRE_TEST_METHODS:
+        method_id = method["id"]
+        button = buttons.get(method_id)
+        if not button or not cmds.control(button, exists=True):
+            continue
+
+        if method_id == _active_wire_test:
+            cmds.button(
+                button,
+                edit=True,
+                label="[ON] {0}".format(method["label"]),
+            )
+            _apply_bg(button, THEME["create"])
+        else:
+            cmds.button(button, edit=True, label=method["label"])
+            _apply_bg(button, THEME["neutral"])
+
+
+def _wire_test_label(method_id):
+    for method in logic.WIRE_TEST_METHODS:
+        if method["id"] == method_id:
+            return method["label"]
+    return method_id
+
+
 def _field_row(parent, label, key, field_type="int", value=0,
                change_command=None, tooltip=""):
     row = cmds.rowLayout(
@@ -489,6 +783,13 @@ def _field_row(parent, label, key, field_type="int", value=0,
 
     if field_type == "text":
         control = cmds.textField(parent=row, text=value, **kwargs)
+    elif field_type == "float":
+        control = cmds.floatField(
+            parent=row,
+            value=float(value),
+            precision=3,
+            **kwargs
+        )
     else:
         control = cmds.intField(parent=row, value=int(value), **kwargs)
     _apply_bg(control, THEME["input"])
@@ -505,7 +806,6 @@ def _section(parent, label, color, tooltip=""):
         collapse=False,
         marginWidth=5,
         marginHeight=5,
-        borderStyle="etchedIn",
     )
     _apply_bg(frame, color)
     _annotate(frame, tooltip)
@@ -576,6 +876,43 @@ def _finish_deferred():
         maya_utils.executeDeferred(_finish)
     except Exception:
         _finish()
+
+
+def _kill_legacy_wrap_display_jobs():
+    job_ids = set()
+    for job_id in _LEGACY_WRAP_DISPLAY_GUARD_JOBS:
+        try:
+            job_ids.add(int(job_id))
+        except (TypeError, ValueError):
+            pass
+
+    tokens = (
+        "wrap_display_time_guard",
+        "guard_wrap_display_on_time_change",
+        "apply_wrap_display_defaults",
+        "_install_wrap_display_guard_jobs",
+    )
+    for job in cmds.scriptJob(listJobs=True) or []:
+        if not any(token in job for token in tokens):
+            continue
+        try:
+            job_ids.add(int(job.split(":", 1)[0].strip()))
+        except (IndexError, TypeError, ValueError):
+            pass
+
+    killed = []
+    for job_id in sorted(job_ids):
+        try:
+            if cmds.scriptJob(exists=job_id):
+                cmds.scriptJob(kill=job_id, force=True)
+                killed.append(job_id)
+        except Exception:
+            pass
+
+    if killed:
+        print("[BlendshapeSetup] killed legacy wrap display job(s): {0}".format(
+            ", ".join(str(job_id) for job_id in killed)
+        ))
 
 
 def _set_window_min_width():
