@@ -54,6 +54,7 @@ TOOLTIPS = {
     "discover": "Scan the scene for blendShape setups created by this tool and rebuild the target button list.",
     "all_off": "Set all generated target weights to 0, jump to the start frame, and keep the current selection.",
     "bind_pose": "Jump to the setup start frame and set every generated blendShape target to 0.",
+    "key_groups": "Create or update a separate BlendshapeKeyGroups hierarchy with one visibility-keyed empty group per target button.",
     "stop_edit": "Leave blendShape sculpt/edit mode without deleting the generated setup.",
     "wire_reset": "Reset the display-only wire test edits on selected meshes and remove curve wire proxies created by this tool.",
     "status": "Reports the latest Blendshape Setup action, warning, or selection state.",
@@ -252,6 +253,9 @@ def show(move_to_primary=False):
     _button(action_row, "All Targets Off", _activate_all_off,
             THEME["neutral"], tooltip=TOOLTIPS["all_off"])
 
+    _button(actions, "GenerateKeyGroups", _generate_key_groups,
+            THEME["edit"], tooltip=TOOLTIPS["key_groups"])
+
     _button(actions, "Stop Edit Mode", _stop_edit_mode,
             THEME["danger"], tooltip=TOOLTIPS["stop_edit"])
 
@@ -416,6 +420,23 @@ def _activate_all_off(*_):
 def _stop_edit_mode(*_):
     logic.disable_edit_mode(records=_records)
     _set_status("Blendshape edit mode disabled.")
+
+
+def _generate_key_groups(*_):
+    try:
+        result = logic.generate_key_groups(records=_records)
+    except Exception as exc:
+        _set_status(str(exc), warning=True)
+        cmds.warning(str(exc))
+        return
+
+    _set_status(
+        "Generated key groups under {0}: {1} group(s).".format(
+            result.get("root", ""),
+            len(result.get("groups", [])),
+        )
+    )
+    _finish_deferred()
 
 
 def _run_wire_test(method_id):

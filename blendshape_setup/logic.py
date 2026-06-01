@@ -13,6 +13,10 @@ INTERVAL_ATTR = "cbsInterval"
 COUNT_ATTR = "cbsTargetCount"
 TRANSFORM_KEYS_ATTR = "cbsTransformKeysManaged"
 TRANSFORM_FRAMES_ATTR = "cbsTransformKeyFrames"
+KEY_GROUP_ROOT_ATTR = "cbsKeyGroupRootManaged"
+KEY_GROUP_MANAGED_ATTR = "cbsKeyGroupManaged"
+KEY_GROUP_INDEX_ATTR = "cbsKeyGroupIndex"
+KEY_GROUP_TARGET_ATTR = "cbsKeyGroupTarget"
 WRAP_MANAGED_ATTR = "cbsWrapManaged"
 WRAP_DRIVER_ATTR = "cbsWrapDriver"
 WRAP_TARGET_ATTR = "cbsWrapTarget"
@@ -25,6 +29,8 @@ WIRE_PROXY_OWNER_ATTR = "cbsWireProxyOwner"
 TEMP_TARGET_MANAGED_ATTR = "cbsTempTargetManaged"
 
 DEFAULT_PREFIX = "blendShape"
+KEY_GROUP_ROOT = "BlendshapeKeyGroups"
+KEY_GROUP_BIND_POSE = "BindPose"
 TEMPLATE_ROOT = "BlendshapeRoster"
 TEMPLATE_MESHES = "Meshes"
 TEMPLATE_WRAP = "WRAPExample"
@@ -250,37 +256,42 @@ def activate_target(index, records=None, open_editor=False,
         raise RuntimeError("Target index out of range.")
 
     previous_selection = cmds.ls(selection=True, long=True) or []
-    frame = target_frame(index, first["start_frame"], first["interval"])
-    cmds.currentTime(frame, edit=True)
-    ensure_transform_keys(records, frame)
+    auto_key_state = _set_auto_key_state(False)
+    try:
+        frame = target_frame(index, first["start_frame"], first["interval"])
+        cmds.currentTime(frame, edit=True)
+        ensure_transform_keys(records, frame)
 
-    selected_meshes = []
-    for record in records:
-        node = record["node"]
-        if not cmds.objExists(node):
-            continue
-        if index >= len(record.get("targets", [])):
-            continue
+        selected_meshes = []
+        for record in records:
+            node = record["node"]
+            if not cmds.objExists(node):
+                continue
+            if index >= len(record.get("targets", [])):
+                continue
 
-        _set_active_weights(node, len(record["targets"]), index)
-        mesh = record.get("mesh")
-        try:
-            _set_sculpt_target(node, index, mesh)
-        except Exception as exc:
-            cmds.warning("Could not set edit target on {0}: {1}".format(
-                node, exc))
+            _set_active_weights(node, len(record["targets"]), index)
+            mesh = record.get("mesh")
+            try:
+                _set_sculpt_target(node, index, mesh)
+            except Exception as exc:
+                cmds.warning("Could not set edit target on {0}: {1}".format(
+                    node, exc))
 
-        if mesh and cmds.objExists(mesh):
-            selected_meshes.append(mesh)
+            if mesh and cmds.objExists(mesh):
+                selected_meshes.append(mesh)
 
-    if selected_meshes and not preserve_selection:
-        cmds.select(selected_meshes, replace=True)
+        if selected_meshes and not preserve_selection:
+            cmds.select(selected_meshes, replace=True)
 
-    if open_editor:
-        open_blendshape_editor()
+        if open_editor:
+            open_blendshape_editor()
 
-    if preserve_selection:
-        _restore_selection(previous_selection)
+        _force_viewport_update()
+    finally:
+        if preserve_selection:
+            _restore_selection(previous_selection)
+        _set_auto_key_state(auto_key_state)
 
     print("Editing {0} at frame {1}.".format(targets[index], frame))
     return frame
@@ -293,28 +304,33 @@ def activate_all_off(records=None, preserve_selection=True):
         raise RuntimeError("No managed blendshape setup found.")
 
     previous_selection = cmds.ls(selection=True, long=True) or []
-    start_frame = records[0]["start_frame"]
-    cmds.currentTime(start_frame, edit=True)
-    ensure_transform_keys(records, start_frame)
-    for record in records:
-        node = record["node"]
-        if not cmds.objExists(node):
-            continue
-        _set_active_weights(node, len(record["targets"]), -1)
-        try:
-            cmds.sculptTarget(node, edit=True, target=-1)
-        except Exception:
-            pass
+    auto_key_state = _set_auto_key_state(False)
+    try:
+        start_frame = records[0]["start_frame"]
+        cmds.currentTime(start_frame, edit=True)
+        ensure_transform_keys(records, start_frame)
+        for record in records:
+            node = record["node"]
+            if not cmds.objExists(node):
+                continue
+            _set_active_weights(node, len(record["targets"]), -1)
+            try:
+                cmds.sculptTarget(node, edit=True, target=-1)
+            except Exception:
+                pass
 
-    meshes = [
-        record["mesh"] for record in records
-        if record.get("mesh") and cmds.objExists(record["mesh"])
-    ]
-    if meshes and not preserve_selection:
-        cmds.select(meshes, replace=True)
+        meshes = [
+            record["mesh"] for record in records
+            if record.get("mesh") and cmds.objExists(record["mesh"])
+        ]
+        if meshes and not preserve_selection:
+            cmds.select(meshes, replace=True)
 
-    if preserve_selection:
-        _restore_selection(previous_selection)
+        _force_viewport_update()
+    finally:
+        if preserve_selection:
+            _restore_selection(previous_selection)
+        _set_auto_key_state(auto_key_state)
 
     print("All managed blendShape targets set to 0 at frame {0}.".format(
         start_frame))
@@ -345,6 +361,174 @@ def generated_setup_exists():
     """Return True if this tool has generated blendShapes or wraps."""
     return bool(discover_setups() or discover_wrap_setups()
                 or discover_helper_nodes() or discover_transform_key_nodes())
+
+
+def generate_key_groups(records=None):
+    """Create/update a separate keyed visibility group per target button."""
+    records = records or discover_setups()
+    if not records:
+        raise RuntimeError("Generate the blendshape setup first.")
+
+    first = records[0]
+    targets = list(first.get("targets") or [])
+    if not targets:
+        raise RuntimeError("The discovered setup has no blendshape targets.")
+
+    start_frame = int(first.get("start_frame", DEFAULT_START_FRAME))
+    interval = int(first.get("interval", DEFAULT_INTERVAL))
+    key_items = [(-1, KEY_GROUP_BIND_POSE, all_zero_frame(start_frame))]
+    key_items.extend(
+        (index, target, target_frame(index, start_frame, interval))
+        for index, target in enumerate(targets)
+    )
+
+    previous_selection = cmds.ls(selection=True, long=True) or []
+    auto_key_state = _set_auto_key_state(False)
+    groups = []
+    cmds.undoInfo(openChunk=True)
+    try:
+        root = _ensure_key_group_root()
+        _write_key_group_root_metadata(root)
+        for index, label, frame in key_items:
+            group = _ensure_key_group(root, index, label)
+            _write_key_group_metadata(group, index, label)
+            _key_key_group_visibility(group, frame, key_items)
+            groups.append({
+                "index": index,
+                "name": label,
+                "frame": frame,
+                "group": group,
+            })
+    finally:
+        _set_auto_key_state(auto_key_state)
+        _restore_selection(previous_selection)
+        cmds.undoInfo(closeChunk=True)
+
+    print("Generated key groups under {0}: {1} group(s).".format(
+        root,
+        len(groups),
+    ))
+    return {
+        "root": root,
+        "groups": groups,
+    }
+
+
+def repair_setup():
+    """Repair an existing setup whose visibility has drifted out of sync.
+
+    Safe, non-destructive operation for existing scenes:
+
+    1. Clear any keys / direct overrides on per-mesh ``.visibility`` and
+       ``.lodVisibility`` under every ``BlendshapeKeyGroups/*`` group, and
+       force them to 1. Effective visibility is then governed exclusively
+       by the keyed parent-group ``.visibility``.
+    2. Also clear ``.visibility`` keys on the shape nodes and force them
+       on (shapes hidden directly will not respond to parent visibility).
+    3. Re-key every parent key group's ``.visibility`` cleanly via
+       :func:`generate_key_groups` (step tangents, single source of truth).
+    4. Force a DG dirty + viewport refresh.
+
+    Returns a summary dict with the number of nodes touched. Does not
+    re-parent meshes, does not regenerate blendShape nodes, does not
+    touch wrap deformers.
+    """
+    records = discover_setups()
+    if not records:
+        raise RuntimeError("No managed blendshape setup found in this scene.")
+
+    roots = _key_group_roots()
+    if not roots:
+        raise RuntimeError(
+            "No BlendshapeKeyGroups root found. Run Generate Key Groups first."
+        )
+
+    touched_transforms = 0
+    touched_shapes = 0
+    reconnected_curves = 0
+    cmds.undoInfo(openChunk=True)
+    try:
+        for root in roots:
+            groups = cmds.listRelatives(
+                root,
+                children=True,
+                type="transform",
+                fullPath=True,
+            ) or []
+            for group in groups:
+                # Reconnect any disconnected time inputs on this group's
+                # visibility curves. This alone fixes existing scenes whose
+                # animCurves got orphaned from time1 (the root cause of the
+                # "salmon-colored channel / target button does nothing" bug).
+                for attr_name in ("visibility", "lodVisibility"):
+                    attr = "{0}.{1}".format(group, attr_name)
+                    if cmds.objExists(attr):
+                        reconnected_curves += _ensure_curve_time_input(attr)
+
+                descendants = cmds.listRelatives(
+                    group,
+                    allDescendents=True,
+                    type="transform",
+                    fullPath=True,
+                ) or []
+                for node in descendants:
+                    if _reset_visibility(node):
+                        touched_transforms += 1
+                    shapes = cmds.listRelatives(
+                        node,
+                        shapes=True,
+                        fullPath=True,
+                        noIntermediate=True,
+                    ) or []
+                    for shape in shapes:
+                        if _reset_visibility(shape):
+                            touched_shapes += 1
+
+        # Rewrite parent group visibility keys cleanly with current logic.
+        generate_key_groups(records=records)
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+    _force_viewport_update()
+
+    print(
+        "Repaired blendshape setup: "
+        "reset visibility on {0} transform(s) and {1} shape(s); "
+        "reconnected {2} stray animCurve time input(s); "
+        "rebuilt key group visibility keys.".format(
+            touched_transforms, touched_shapes, reconnected_curves,
+        )
+    )
+    return {
+        "transforms": touched_transforms,
+        "shapes": touched_shapes,
+        "reconnected_curves": reconnected_curves,
+    }
+
+
+def _reset_visibility(node):
+    """Clear visibility keys and force visibility/lodVisibility on."""
+    changed = False
+    for attr_name in ("visibility", "lodVisibility"):
+        attr = "{0}.{1}".format(node, attr_name)
+        if not cmds.objExists(attr):
+            continue
+        try:
+            if cmds.getAttr(attr, lock=True):
+                cmds.setAttr(attr, lock=False)
+        except Exception:
+            pass
+        try:
+            cmds.cutKey(attr, clear=True)
+        except Exception:
+            pass
+        try:
+            if not bool(cmds.getAttr(attr)):
+                cmds.setAttr(attr, True)
+                changed = True
+        except Exception:
+            pass
+    return changed
 
 
 def remove_setup(records=None):
@@ -1338,6 +1522,261 @@ def _restore_selection(selection):
             pass
 
     cmds.select(clear=True)
+
+
+def _set_auto_key_state(state):
+    try:
+        previous = cmds.autoKeyframe(query=True, state=True)
+        if state is not None:
+            cmds.autoKeyframe(state=bool(state))
+        return previous
+    except Exception:
+        return None
+
+
+def _force_viewport_update():
+    """Force the DG and viewport to re-evaluate after a time/weight change.
+
+    Without this, Maya 2026 cached playback / Viewport 2.0 will frequently
+    skip re-evaluating keyed .visibility on currently-hidden DAG nodes, so
+    the time slider moves but the viewport keeps drawing the previous
+    target's state (meshes look hidden-but-painted or visible-but-blank).
+    """
+    # 1. Invalidate the cached playback cache for the current frame range.
+    #    Cached playback can hold stale visibility values on currently-hidden
+    #    DAG nodes; refresh(force=True) alone does not flush it.
+    try:
+        cmds.cacheEvaluator(invalidate=True)
+    except Exception:
+        pass
+    try:
+        cmds.flushIdleQueue()
+    except Exception:
+        pass
+
+    # 2. Force every managed key-group visibility plug to re-evaluate. This
+    #    is the surgical fix for "key value is 1 at current frame but
+    #    getAttr returns 0" — dgeval forces the animCurve to recompute.
+    try:
+        for root in _key_group_roots():
+            groups = cmds.listRelatives(
+                root, children=True, type="transform", fullPath=True,
+            ) or []
+            for group in groups:
+                for attr_name in ("visibility", "lodVisibility"):
+                    attr = "{0}.{1}".format(group, attr_name)
+                    if cmds.objExists(attr):
+                        try:
+                            cmds.dgeval(attr)
+                        except Exception:
+                            pass
+    except Exception:
+        pass
+
+    # 3. Mark everything dirty and force a viewport redraw.
+    try:
+        cmds.dgdirty(allPlugs=True)
+    except Exception:
+        pass
+    try:
+        cmds.refresh(force=True)
+    except Exception:
+        pass
+
+
+def _ensure_key_group_root():
+    roots = _key_group_roots()
+    if roots:
+        return roots[0]
+    root = cmds.group(empty=True, name=_unique_name(KEY_GROUP_ROOT))
+    return _long_name(root)
+
+
+def _key_group_roots():
+    roots = []
+    for node in cmds.ls(type="transform", long=True) or []:
+        attr = "{0}.{1}".format(node, KEY_GROUP_ROOT_ATTR)
+        if cmds.objExists(attr) and cmds.getAttr(attr):
+            roots.append(node)
+    roots.sort()
+    return roots
+
+
+def _write_key_group_root_metadata(root):
+    _ensure_bool_attr(root, KEY_GROUP_ROOT_ATTR)
+    cmds.setAttr("{0}.{1}".format(root, KEY_GROUP_ROOT_ATTR), True)
+
+
+def _ensure_key_group(root, index, label):
+    for child in _key_group_children(root):
+        existing_index = _read_numeric_attr(child, KEY_GROUP_INDEX_ATTR, None)
+        if existing_index is not None and int(existing_index) == int(index):
+            return child
+
+    for child in _key_group_children(root):
+        existing_label = _read_string_attr(child, KEY_GROUP_TARGET_ATTR)
+        if existing_label == label:
+            return child
+
+    name = _unique_child_name(root, _safe_target_name(label))
+    group = cmds.group(empty=True, name=name, parent=root)
+    return _long_name(group)
+
+
+def _key_group_children(root):
+    children = cmds.listRelatives(
+        root,
+        children=True,
+        type="transform",
+        fullPath=True,
+    ) or []
+    result = []
+    for child in children:
+        attr = "{0}.{1}".format(child, KEY_GROUP_MANAGED_ATTR)
+        if cmds.objExists(attr) and cmds.getAttr(attr):
+            result.append(child)
+    return result
+
+
+def _write_key_group_metadata(group, index, label):
+    _ensure_bool_attr(group, KEY_GROUP_MANAGED_ATTR)
+    cmds.setAttr("{0}.{1}".format(group, KEY_GROUP_MANAGED_ATTR), True)
+
+    _ensure_long_attr(group, KEY_GROUP_INDEX_ATTR)
+    cmds.setAttr("{0}.{1}".format(group, KEY_GROUP_INDEX_ATTR), int(index))
+
+    _ensure_string_attr(group, KEY_GROUP_TARGET_ATTR)
+    cmds.setAttr(
+        "{0}.{1}".format(group, KEY_GROUP_TARGET_ATTR),
+        label,
+        type="string",
+    )
+
+
+def _key_key_group_visibility(group, active_frame, key_items):
+    attr = "{0}.visibility".format(group)
+    if not cmds.objExists(attr):
+        return
+
+    try:
+        cmds.cutKey(attr, clear=True)
+    except Exception:
+        pass
+
+    # Only write keys here — do NOT setAttr inside the loop. Writing the
+    # attr per-iteration leaves it holding the last loop value (often the
+    # wrong group ends up "snapped on") until the canonical fix-up below
+    # runs. Keyframes with step tangents are the source of truth.
+    for _index, _label, frame in key_items:
+        value = int(frame) == int(active_frame)
+        try:
+            cmds.setKeyframe(attr, time=int(frame), value=bool(value))
+        except Exception:
+            pass
+
+    try:
+        cmds.keyTangent(
+            attr,
+            edit=True,
+            inTangentType="stepnext",
+            outTangentType="step",
+        )
+    except Exception:
+        pass
+
+    # Critical: ensure every animCurve driving this attr is connected to
+    # time1.outTime. Without this connection the curve evaluates at a
+    # stale .input value (often 0) instead of the current frame, so the
+    # attribute reads as 0 even though there is a key value of 1 at the
+    # current frame. This is the root cause of the "target button does
+    # nothing" / "salmon-colored channel" symptom.
+    _ensure_curve_time_input(attr)
+
+    try:
+        current_frame = int(round(cmds.currentTime(query=True)))
+        cmds.setAttr(
+            attr,
+            _key_group_visible_at_frame(active_frame, key_items, current_frame),
+        )
+    except Exception:
+        pass
+
+
+def _key_group_visible_at_frame(active_frame, key_items, current_frame):
+    sorted_items = sorted(
+        (int(frame), int(index)) for index, _label, frame in key_items
+    )
+    active_frame = int(active_frame)
+    current_frame = int(current_frame)
+
+    for offset, (frame, _index) in enumerate(sorted_items):
+        next_frame = None
+        if offset + 1 < len(sorted_items):
+            next_frame = sorted_items[offset + 1][0]
+        if frame != active_frame:
+            continue
+        if next_frame is None:
+            return current_frame >= frame
+        return frame <= current_frame < next_frame
+
+
+def _ensure_curve_time_input(attr):
+    """Make sure every animCurve driving ``attr`` is connected to time1.
+
+    A scene-saved-with-broken-eval state or a stray "disconnect from time"
+    leaves animCurve.input with no incoming connection. The curve then
+    evaluates at whatever value .input was last set to (frequently 0),
+    making the attribute appear stuck regardless of the playhead. This
+    helper reconnects ``time1.outTime`` to every driving curve's input.
+
+    Returns the number of connections it had to make.
+    """
+    fixed = 0
+    if not cmds.objExists("time1"):
+        return fixed
+    try:
+        curves = cmds.listConnections(
+            attr, source=True, destination=False, type="animCurve",
+        ) or []
+    except Exception:
+        return fixed
+    for curve in curves:
+        input_plug = "{0}.input".format(curve)
+        if not cmds.objExists(input_plug):
+            continue
+        try:
+            existing = cmds.listConnections(
+                input_plug, source=True, destination=False, plugs=True,
+            ) or []
+        except Exception:
+            existing = []
+        if existing:
+            continue
+        try:
+            cmds.connectAttr("time1.outTime", input_plug, force=True)
+            fixed += 1
+        except Exception:
+            pass
+    return fixed
+    return False
+
+
+def _unique_child_name(parent, base_name):
+    existing = {
+        _short_name(child)
+        for child in cmds.listRelatives(
+            parent,
+            children=True,
+            type="transform",
+            fullPath=True,
+        ) or []
+    }
+    candidate = base_name
+    index = 1
+    while candidate in existing:
+        candidate = "{0}_{1}".format(base_name, index)
+        index += 1
+    return candidate
 
 
 def _wrap_group_for_mesh(mesh):
