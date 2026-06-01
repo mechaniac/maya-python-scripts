@@ -72,7 +72,7 @@ _active_target_index = None
 _BIND_POSE_INDEX = -1
 
 
-def show():
+def show(move_to_primary=False):
     global _active_wire_test, _active_target_index
 
     _kill_legacy_wrap_display_jobs()
@@ -278,7 +278,21 @@ def show():
     _warn_auto_key_disabled()
 
     cmds.showWindow(WINDOW_NAME)
+    if move_to_primary:
+        _move_window_to_primary_screen_deferred()
     _finish_deferred()
+
+
+def show_on_main_screen():
+    if not cmds.window(WINDOW_NAME, exists=True):
+        show(move_to_primary=True)
+        return
+
+    try:
+        cmds.showWindow(WINDOW_NAME)
+    except Exception:
+        pass
+    _move_window_to_primary_screen_deferred()
 
 
 def _generate_or_remove(*_):
@@ -876,6 +890,80 @@ def _finish_deferred():
         maya_utils.executeDeferred(_finish)
     except Exception:
         _finish()
+
+
+def _move_window_to_primary_screen_deferred():
+    try:
+        import maya.utils as maya_utils
+        maya_utils.executeDeferred(_move_window_to_primary_screen)
+    except Exception:
+        _move_window_to_primary_screen()
+
+
+def _move_window_to_primary_screen():
+    try:
+        from maya import OpenMayaUI as omui
+        try:
+            from PySide6 import QtWidgets, QtGui
+            from shiboken6 import wrapInstance
+        except ImportError:
+            from PySide2 import QtWidgets, QtGui
+            from shiboken2 import wrapInstance
+    except Exception:
+        return _move_window_with_cmds_fallback()
+
+    ptr = omui.MQtUtil.findWindow(WINDOW_NAME)
+    if ptr is None:
+        return _move_window_with_cmds_fallback()
+
+    widget = wrapInstance(int(ptr), QtWidgets.QWidget)
+    if widget is None:
+        return _move_window_with_cmds_fallback()
+
+    screen = None
+    try:
+        screen = QtGui.QGuiApplication.primaryScreen()
+    except Exception:
+        pass
+    if screen is None:
+        try:
+            app = QtWidgets.QApplication.instance()
+            screen = app.primaryScreen() if app else None
+        except Exception:
+            pass
+
+    if screen is None:
+        widget.move(80, 80)
+    else:
+        geometry = screen.availableGeometry()
+        margin = 32
+        width = max(widget.width(), DEFAULT_WIDTH)
+        height = max(widget.height(), 420)
+        max_width = max(DEFAULT_WIDTH, geometry.width() - (margin * 2))
+        max_height = max(300, geometry.height() - (margin * 2))
+        width = min(width, max_width)
+        height = min(height, max_height)
+        if widget.width() != width or widget.height() != height:
+            widget.resize(width, height)
+
+        x = geometry.x() + max(margin, int((geometry.width() - width) / 2))
+        y = geometry.y() + max(margin, int((geometry.height() - height) / 2))
+        widget.move(x, y)
+
+    widget.show()
+    widget.raise_()
+    widget.activateWindow()
+    return True
+
+
+def _move_window_with_cmds_fallback():
+    if not cmds.window(WINDOW_NAME, exists=True):
+        return False
+    try:
+        cmds.window(WINDOW_NAME, edit=True, topLeftCorner=(80, 80))
+        return True
+    except Exception:
+        return False
 
 
 def _kill_legacy_wrap_display_jobs():
