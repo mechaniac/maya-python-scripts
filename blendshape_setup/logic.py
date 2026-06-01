@@ -518,33 +518,40 @@ def repair_setup():
     }
 
 
-def bake_targets(records=None, preserve_selection=True, hide_source=True):
-    """Bake every blendshape state into its key group as static meshes.
+def bake_targets(records=None, preserve_selection=True):
+    """Snapshot the whole character hierarchy per state, then replace
+    the source setup with the snapshots.
 
-    For each state (BindPose plus every target) this:
+    Algorithm:
 
-    1. Sets the blendShape weights for that state (no edit mode, no
-       sculpt target, no keying).
-    2. Duplicates every managed mesh, deletes construction history on
-       the duplicate so it freezes at the deformed shape, then parents
-       it under the matching key group.
-    3. Tags every duplicate with ``cbsBakeManaged`` so re-running this
-       function replaces previous bakes cleanly (any non-baked children
-       under the key groups are left alone).
+    1. Compute the **snapshot root** = lowest common ancestor of every
+       managed mesh. That subtree is the "whole character hierarchy"
+       and contains all transform anim curves we want to preserve.
+    2. **Loop 1**: for each state (BindPose plus every target), set the
+       blendShape weights, duplicate the snapshot root (with input
+       connections so transform anim curves come along), delete
+       construction history on every mesh in the duplicate (which
+       freezes the deformed shape and removes the blendShape /
+       wrap / helper nodes), then also duplicate the matching
+       ``BlendshapeKeyGroups/<state>`` subtree if any user content
+       exists there. Park both under a temporary world-level group so
+       they survive step 3.
+    3. **Clean**: delete the original snapshot root and the entire
+       original ``BlendshapeKeyGroups`` hierarchy. The source setup is
+       gone.
+    4. **Loop 2**: build a fresh ``BlendshapeKeyGroups`` root with one
+       collapsed group per state. Re-parent each parked snapshot under
+       its matching state group. Wire visibility so the existing
+       Target buttons toggle exactly one snapshot visible at a time.
 
-    After all states are baked the visibility is reset to BindPose and,
-    if ``hide_source`` is True, the source ``BlendshapeRoster/Meshes``
-    group is hidden so the key-group visibility toggles are the only
-    thing the viewport sees.
-
-    Returns a summary dict ``{"bakes": int, "groups": int}``.
+    Returns ``{"states": int, "snapshot_root": str}``.
     """
     records = records or discover_setups()
     if not records:
         raise RuntimeError("No managed blendshape setup found.")
 
     meshes = [
-        record for record in records
+        record["mesh"] for record in records
         if record.get("mesh") and cmds.objExists(record["mesh"])
     ]
     if not meshes:
@@ -555,31 +562,24 @@ def bake_targets(records=None, preserve_selection=True, hide_source=True):
     if not targets:
         raise RuntimeError("The discovered setup has no blendshape targets.")
 
-    # Make sure the key group hierarchy exists and is in a known state.
-    if not _key_group_roots():
-        generate_key_groups(records=records)
+    snapshot_root = _common_ancestor(meshes)
+    if not snapshot_root:
+        raise RuntimeError(
+            "Managed meshes share no common ancestor; cannot snapshot "
+            "the character hierarchy."
+        )
 
-    # Map label -> key group transform. Generate fills BindPose + all targets.
-    label_to_group = {}
+    # Capture each existing key group's subtree (without the group
+    # transform itself) so user-added content survives the rebuild.
+    keygroup_label_to_extras = {}
     for root in _key_group_roots():
         for group in _key_group_children(root):
             label = _read_string_attr(group, KEY_GROUP_TARGET_ATTR) or \
                 _short_name(group)
-            label_to_group[label] = group
-
-    missing = [KEY_GROUP_BIND_POSE] + [
-        target for target in targets if target not in label_to_group
-    ]
-    missing = [label for label in missing if label not in label_to_group]
-    if missing:
-        # Force a regenerate to fill in any missing key groups.
-        generate_key_groups(records=records)
-        label_to_group = {}
-        for root in _key_group_roots():
-            for group in _key_group_children(root):
-                label = _read_string_attr(group, KEY_GROUP_TARGET_ATTR) or \
-                    _short_name(group)
-                label_to_group[label] = group
+            children = cmds.listRelatives(
+                group, children=True, type="transform", fullPath=True,
+            ) or []
+            keygroup_label_to_extras.setdefault(label, []).extend(children)
 
     # (label, blendShape weight index) pairs. -1 = all weights at 0.
     states = [(KEY_GROUP_BIND_POSE, -1)] + [
@@ -588,198 +588,345 @@ def bake_targets(records=None, preserve_selection=True, hide_source=True):
 
     previous_selection = cmds.ls(selection=True, long=True) or []
     auto_key_state = _set_auto_key_state(False)
-    total_bakes = 0
     cmds.undoInfo(openChunk=True)
+
+    parking_name = _unique_name("BlendshapeBakeParking_TEMP")
+    parking = cmds.group(empty=True, name=parking_name, world=True)
+    parking = _long_name(parking)
+
+    snapshots = []  # list of (label, parked_node_long_path)
     try:
-        # Clear previous bake content from every key group (only nodes
-        # tagged with cbsBakeManaged are deleted; user content is kept).
-        for group in label_to_group.values():
-            _clear_baked_children(group)
-
+        # ---- Loop 1: snapshot every state into the parking group. ----
         for label, index in states:
-            group = label_to_group.get(label)
-            if not group or not cmds.objExists(group):
-                continue
-
             for record in records:
                 node = record["node"]
                 if cmds.objExists(node):
                     _set_active_weights(node, len(record["targets"]), index)
 
-            for record in meshes:
-                mesh = record["mesh"]
-                if not cmds.objExists(mesh):
-                    continue
+            snapshot_group = _snapshot_state(
+                label=label,
+                snapshot_root=snapshot_root,
+                extra_sources=keygroup_label_to_extras.get(label, []),
+                parking=parking,
+            )
+            snapshots.append((label, snapshot_group))
+
+        # ---- Clean: remove the original source + key group hierarchy. ----
+        for root in _key_group_roots():
+            if cmds.objExists(root):
                 try:
-                    _bake_mesh_into_group(mesh, label, group)
-                    total_bakes += 1
+                    cmds.delete(root)
                 except Exception as exc:
                     cmds.warning(
-                        "Could not bake {0} for {1}: {2}".format(
-                            mesh, label, exc,
+                        "Could not delete old key group root {0}: {1}".format(
+                            root, exc,
                         )
                     )
 
-        # Reset weights back to zero (BindPose), and switch visibility.
-        for record in records:
-            node = record["node"]
-            if cmds.objExists(node):
-                _set_active_weights(node, len(record["targets"]), -1)
+        # Delete the source character subtree last so anim curves on the
+        # parked duplicates don't accidentally end up the only reference
+        # to any shared upstream node.
+        if cmds.objExists(snapshot_root):
+            try:
+                cmds.delete(snapshot_root)
+            except Exception as exc:
+                cmds.warning(
+                    "Could not delete source hierarchy {0}: {1}".format(
+                        snapshot_root, exc,
+                    )
+                )
 
-        if hide_source:
-            _hide_source_mesh_groups(records)
+        # Strip leftover managed blendShape / wrap / helper nodes that
+        # may not have been parented under snapshot_root.
+        _purge_leftover_managed_nodes()
 
+        # ---- Loop 2: rebuild a fresh BlendshapeKeyGroups hierarchy. ----
+        new_root = cmds.group(empty=True, name=_unique_name(KEY_GROUP_ROOT))
+        new_root = _long_name(new_root)
+        _write_key_group_root_metadata(new_root)
+
+        for state_index, (label, snapshot_group) in enumerate(snapshots):
+            kg_name = _unique_child_name(new_root, _safe_target_name(label))
+            kg = cmds.group(empty=True, name=kg_name, parent=new_root)
+            kg = _long_name(kg)
+            # Group index: -1 for BindPose, 0..N-1 for targets (matches
+            # the order in `states`).
+            group_index = -1 if state_index == 0 else state_index - 1
+            _write_key_group_metadata(kg, group_index, label)
+
+            if snapshot_group and cmds.objExists(snapshot_group):
+                parented = cmds.parent(snapshot_group, kg) or [snapshot_group]
+                # Resolve to long name after re-parenting.
+                _long_name(parented[0])
+
+        # Tear down the now-empty parking group.
+        if cmds.objExists(parking):
+            try:
+                cmds.delete(parking)
+            except Exception:
+                pass
+
+        # Visibility: show BindPose only. Direct setAttr, no curves.
         _apply_group_visibility(KEY_GROUP_BIND_POSE)
+
+        # Collapse the new key groups in the outliner so children stay
+        # hidden by default.
+        _collapse_in_outliner([new_root])
+        new_group_paths = cmds.listRelatives(
+            new_root, children=True, type="transform", fullPath=True,
+        ) or []
+        _collapse_in_outliner(new_group_paths)
     finally:
         if preserve_selection:
             _restore_selection(previous_selection)
+        else:
+            try:
+                cmds.select(clear=True)
+            except Exception:
+                pass
         _set_auto_key_state(auto_key_state)
         cmds.undoInfo(closeChunk=True)
 
     _force_viewport_update()
 
     print(
-        "Baked {0} mesh state(s) across {1} key group(s).".format(
-            total_bakes,
-            len(label_to_group),
+        "Baked {0} state snapshot(s) under new {1}.".format(
+            len(snapshots), new_root,
         )
     )
     return {
-        "bakes": total_bakes,
-        "groups": len(label_to_group),
+        "states": len(snapshots),
+        "snapshot_root": new_root,
     }
 
 
-def _bake_mesh_into_group(mesh, label, group):
-    """Duplicate ``mesh`` at its current deformed state into ``group``."""
-    base = "{0}_{1}_bake".format(
-        _short_name(mesh),
+def _snapshot_state(label, snapshot_root, extra_sources, parking):
+    """Duplicate ``snapshot_root`` (and any per-state extras) into a single
+    parked group, freezing every mesh by deleting construction history.
+    """
+    state_name = _unique_name("{0}_{1}_bake".format(
+        _short_name(snapshot_root),
         _safe_target_name(label),
-    )
-    name = _unique_name(base)
+    ))
+
+    # Duplicate the whole character subtree. inputConnections=True keeps
+    # the transform anim curves on the duplicate's transforms.
     duplicates = cmds.duplicate(
-        mesh,
-        name=name,
+        snapshot_root,
+        name=state_name,
         returnRootsOnly=True,
-        inputConnections=False,
         renameChildren=True,
+        inputConnections=True,
     ) or []
     if not duplicates:
-        raise RuntimeError("duplicate returned nothing")
+        raise RuntimeError(
+            "duplicate returned nothing for {0}".format(snapshot_root)
+        )
+    snapshot = _long_name(duplicates[0])
 
-    dup = duplicates[0]
-
-    # Strip every deformer / history on the duplicate so it freezes at the
-    # current shape with no construction history.
-    try:
-        cmds.delete(dup, constructionHistory=True)
-    except Exception:
-        pass
-
-    # Tag before re-parenting so the cleanup pass can find it later.
-    _ensure_bool_attr(dup, BAKE_MANAGED_ATTR)
-    cmds.setAttr("{0}.{1}".format(dup, BAKE_MANAGED_ATTR), True)
-    _ensure_string_attr(dup, BAKE_SOURCE_ATTR)
-    cmds.setAttr(
-        "{0}.{1}".format(dup, BAKE_SOURCE_ATTR),
-        _long_name(mesh),
-        type="string",
-    )
-    _ensure_string_attr(dup, BAKE_LABEL_ATTR)
-    cmds.setAttr(
-        "{0}.{1}".format(dup, BAKE_LABEL_ATTR),
-        label,
-        type="string",
-    )
-
-    # Re-parent into the key group, preserving world transform so the
-    # baked mesh sits where the source mesh sits.
-    current_parents = cmds.listRelatives(dup, parent=True, fullPath=True) or []
-    current_parent = current_parents[0] if current_parents else None
-    if current_parent != group:
-        parented = cmds.parent(dup, group) or [dup]
-        dup = parented[0]
-        if not dup.startswith("|"):
-            # cmds.parent returns short names; resolve to long.
-            dup = _long_name(dup)
-
-    return dup
-
-
-def _clear_baked_children(group):
-    """Delete every descendant of ``group`` tagged with ``BAKE_MANAGED_ATTR``."""
-    children = cmds.listRelatives(
-        group,
-        allDescendents=True,
-        type="transform",
-        fullPath=True,
+    # Freeze every mesh in the duplicate: delete construction history
+    # removes blendShape/wrap/skinCluster connections and bakes the
+    # currently-deformed shape into the static mesh. delete -ch does NOT
+    # remove animation curves on transforms.
+    descendant_meshes = cmds.listRelatives(
+        snapshot, allDescendents=True, type="mesh", fullPath=True,
+        noIntermediate=True,
     ) or []
-    to_delete = []
-    for child in children:
-        attr = "{0}.{1}".format(child, BAKE_MANAGED_ATTR)
+    transform_paths = set()
+    for shape in descendant_meshes:
+        parents = cmds.listRelatives(shape, parent=True, fullPath=True) or []
+        if parents:
+            transform_paths.add(parents[0])
+    if transform_paths:
+        try:
+            cmds.delete(list(transform_paths), constructionHistory=True)
+        except Exception as exc:
+            cmds.warning(
+                "delete -ch failed on {0}: {1}".format(label, exc)
+            )
+
+    # Strip any managed metadata attrs that survived (blendShape /
+    # wrap / helper attrs may still be present on cleared transforms).
+    _strip_managed_attrs_recursive(snapshot)
+
+    # Park under the temporary parking node so nothing dangles in world
+    # while we delete the originals.
+    parented = cmds.parent(snapshot, parking) or [snapshot]
+    snapshot = _long_name(parented[0])
+
+    # Duplicate per-state extras (user content under the matching old
+    # key group) and stuff them under the same snapshot.
+    for extra in extra_sources:
+        if not cmds.objExists(extra):
+            continue
+        try:
+            extra_dup = cmds.duplicate(
+                extra,
+                returnRootsOnly=True,
+                renameChildren=True,
+                inputConnections=True,
+            ) or []
+        except Exception as exc:
+            cmds.warning(
+                "Could not duplicate extra {0} for {1}: {2}".format(
+                    extra, label, exc,
+                )
+            )
+            continue
+        if not extra_dup:
+            continue
+        try:
+            cmds.parent(extra_dup[0], snapshot)
+        except Exception:
+            pass
+
+    # Tag the snapshot so we can identify baked content later.
+    _ensure_bool_attr(snapshot, BAKE_MANAGED_ATTR)
+    cmds.setAttr("{0}.{1}".format(snapshot, BAKE_MANAGED_ATTR), True)
+    _ensure_string_attr(snapshot, BAKE_LABEL_ATTR)
+    cmds.setAttr(
+        "{0}.{1}".format(snapshot, BAKE_LABEL_ATTR), label, type="string",
+    )
+
+    return snapshot
+
+
+def _common_ancestor(nodes):
+    """Return the longest common DAG ancestor of ``nodes`` (long path).
+
+    For a single node this is its parent transform. If no common
+    ancestor exists above the world, returns ``""``.
+    """
+    if not nodes:
+        return ""
+    paths = []
+    for node in nodes:
+        long_path = _long_name(node)
+        if not long_path or not long_path.startswith("|"):
+            return ""
+        paths.append(long_path.split("|")[1:])  # drop leading ""
+
+    common = []
+    for parts in zip(*paths):
+        first = parts[0]
+        if all(part == first for part in parts):
+            common.append(first)
+        else:
+            break
+
+    # If every node shares the full path (single node case), drop the
+    # last segment so we get the parent.
+    if len(common) == len(paths[0]):
+        common = common[:-1]
+    if not common:
+        return ""
+
+    candidate = "|" + "|".join(common)
+    if cmds.objExists(candidate):
+        return candidate
+    return ""
+
+
+def _strip_managed_attrs_recursive(root):
+    """Remove cbs* metadata attrs from every transform under ``root``.
+
+    Stops the rebuilt setup from being re-discovered as the original
+    managed setup. Best effort; ignores locked / unknown attrs.
+    """
+    cbs_attrs = (
+        MANAGED_ATTR, TARGETS_ATTR, START_ATTR, INTERVAL_ATTR, COUNT_ATTR,
+        TRANSFORM_KEYS_ATTR, TRANSFORM_FRAMES_ATTR,
+        KEY_GROUP_ROOT_ATTR, KEY_GROUP_MANAGED_ATTR, KEY_GROUP_INDEX_ATTR,
+        KEY_GROUP_TARGET_ATTR,
+        WRAP_MANAGED_ATTR, WRAP_DRIVER_ATTR, WRAP_TARGET_ATTR,
+        WRAP_MAX_DISTANCE_ATTR,
+        HELPER_MANAGED_ATTR, HELPER_ROLE_ATTR, HELPER_OWNER_ATTR,
+        WIRE_PROXY_MANAGED_ATTR, WIRE_PROXY_OWNER_ATTR,
+        TEMP_TARGET_MANAGED_ATTR,
+    )
+    nodes = [root] + (cmds.listRelatives(
+        root, allDescendents=True, type="transform", fullPath=True,
+    ) or [])
+    for node in nodes:
+        for attr in cbs_attrs:
+            full = "{0}.{1}".format(node, attr)
+            if cmds.objExists(full):
+                try:
+                    cmds.setAttr(full, lock=False)
+                except Exception:
+                    pass
+                try:
+                    cmds.deleteAttr(node, attribute=attr)
+                except Exception:
+                    pass
+
+
+def _purge_leftover_managed_nodes():
+    """Delete leftover managed blendShape / wrap / helper / temp nodes
+    that may have survived because they were not parented under the
+    snapshot root."""
+    # Managed blendShape nodes.
+    for node in cmds.ls(type="blendShape") or []:
+        attr = "{0}.{1}".format(node, MANAGED_ATTR)
         if cmds.objExists(attr):
             try:
-                if cmds.getAttr(attr):
-                    to_delete.append(child)
+                if cmds.getAttr(attr) and cmds.objExists(node):
+                    cmds.delete(node)
             except Exception:
                 pass
-    for node in to_delete:
-        if cmds.objExists(node):
+    # Managed wrap deformers.
+    for node in cmds.ls(type="wrap") or []:
+        attr = "{0}.{1}".format(node, WRAP_MANAGED_ATTR)
+        if cmds.objExists(attr):
             try:
-                cmds.delete(node)
+                if cmds.getAttr(attr) and cmds.objExists(node):
+                    cmds.delete(node)
             except Exception:
                 pass
+    # Helper transforms.
+    for node in cmds.ls(type="transform", long=True) or []:
+        attr = "{0}.{1}".format(node, HELPER_MANAGED_ATTR)
+        if cmds.objExists(attr):
+            try:
+                if cmds.getAttr(attr) and cmds.objExists(node):
+                    cmds.delete(node)
+            except Exception:
+                pass
+    # Temp target meshes.
+    _delete_temporary_target_meshes()
 
 
-def _hide_source_mesh_groups(records):
-    """Hide the source mesh hierarchy so only baked key groups draw."""
-    hidden = set()
-    candidates = set()
+def _collapse_in_outliner(nodes):
+    """Best-effort: collapse the given DAG nodes in the active outliner.
 
-    for record in records:
-        mesh = record.get("mesh")
-        if not mesh or not cmds.objExists(mesh):
-            continue
-        # Walk up to find a BlendshapeRoster ancestor; fall back to the
-        # mesh's immediate parent transform.
-        ancestor = _find_named_ancestor(mesh, TEMPLATE_ROOT)
-        if ancestor:
-            candidates.add(ancestor)
-            continue
-        parents = cmds.listRelatives(mesh, parent=True, fullPath=True) or []
-        if parents:
-            candidates.add(parents[0])
+    Maya has no public per-node outliner-collapse API. The closest
+    reliable trick is to select the nodes and run the ``OutlinerCollapse``
+    MEL runtime command, which collapses every selected item in the
+    focused outliner. Silent on failure; this is a UI nicety, and newly
+    created groups are collapsed by default anyway as long as nothing
+    expands them.
+    """
+    if not nodes:
+        return
+    existing = [_long_name(n) for n in nodes if cmds.objExists(n)]
+    if not existing:
+        return
+    try:
+        previous = cmds.ls(selection=True, long=True) or []
+        cmds.select(existing, replace=True, noExpand=True)
+        try:
+            mel.eval("OutlinerCollapse;")
+        except Exception:
+            pass
+        if previous:
+            try:
+                cmds.select(previous, replace=True, noExpand=True)
+            except Exception:
+                cmds.select(clear=True)
         else:
-            candidates.add(mesh)
-
-    for node in candidates:
-        attr = "{0}.visibility".format(node)
-        if not cmds.objExists(attr):
-            continue
-        try:
-            if cmds.getAttr(attr, lock=True):
-                cmds.setAttr(attr, lock=False)
-        except Exception:
-            pass
-        _strip_anim_curves(attr)
-        try:
-            cmds.setAttr(attr, False)
-            hidden.add(node)
-        except Exception:
-            pass
-    return hidden
-
-
-def _find_named_ancestor(node, base_name):
-    current = node
-    while current:
-        if _short_name(current) == base_name:
-            return current
-        parents = cmds.listRelatives(current, parent=True, fullPath=True) or []
-        if not parents:
-            return None
-        current = parents[0]
-    return None
+            cmds.select(clear=True)
+    except Exception:
+        pass
 
 
 def _reset_visibility(node):
