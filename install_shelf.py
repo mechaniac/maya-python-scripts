@@ -22,6 +22,102 @@ SHELF_NAME = 'C_Scripts'
 # recursively scanned by default -- we add it to XBMLANGPATH at install).
 _ICON_SUBFOLDER = 'toolSuite'
 
+_DEFAULT_ICON_SPECS = {
+    'charImporter.png': {
+        'label': 'S2',
+        'bg': (45, 83, 118),
+        'accent': (93, 170, 210),
+    },
+    'AutoRig.png': {
+        'label': 'RIG',
+        'bg': (66, 78, 62),
+        'accent': (127, 176, 82),
+    },
+    'AnimGenerator.png': {
+        'label': 'AN',
+        'bg': (88, 67, 112),
+        'accent': (181, 134, 218),
+    },
+    'ClipSetter.png': {
+        'label': 'CLP',
+        'bg': (96, 76, 54),
+        'accent': (213, 158, 77),
+    },
+    'gltfImpExp.png': {
+        'label': 'GLB',
+        'bg': (55, 82, 88),
+        'accent': (98, 196, 186),
+    },
+    'BlendShapeSetup.png': {
+        'label': 'BS',
+        'bg': (78, 59, 96),
+        'accent': (210, 152, 214),
+    },
+    'SceneTools.png': {
+        'label': 'TL',
+        'bg': (65, 68, 74),
+        'accent': (135, 167, 199),
+    },
+    'RenderLayerSetter.png': {
+        'label': 'RLY',
+        'bg': (91, 54, 48),
+        'accent': (220, 117, 94),
+    },
+    'refresh.png': {
+        'label': 'SET',
+        'bg': (48, 80, 76),
+        'accent': (91, 186, 154),
+    },
+}
+
+_STOCK_ICON_FALLBACKS = {
+    'charImporter.png': 'fileOpen.png',
+    'AutoRig.png': 'kinJoint.png',
+    'AnimGenerator.png': 'setKeyframe.png',
+    'ClipSetter.png': 'timeEditorClip.png',
+    'gltfImpExp.png': 'polyCube.png',
+    'BlendShapeSetup.png': 'blendShape.png',
+    'SceneTools.png': 'toolSettings.png',
+    'RenderLayerSetter.png': 'renderLayerEditor.png',
+    'refresh.png': 'refresh.png',
+}
+
+_SHELF_TOOLTIPS = {
+    'charImporter.png': (
+        'Open the Source 2 Character Importer for loading and converting '
+        'Source 2 character assets.'
+    ),
+    'AutoRig.png': (
+        'Open the Auto Control Rig builder for controls, helpers, twist '
+        'joints, and stretchy IK setup.'
+    ),
+    'AnimGenerator.png': (
+        'Open Animation Generator v2 for procedural walk, run, sidestep, '
+        'and layered animation generation.'
+    ),
+    'ClipSetter.png': (
+        'Open Clip Setter for s&box character clip export and timeline setup.'
+    ),
+    'gltfImpExp.png': (
+        'Open glTF/GLB import and export tools with plugin and fallback '
+        'status checks.'
+    ),
+    'BlendShapeSetup.png': (
+        'Open Blendshape Setup for multi-mesh targets, wrap deformers, '
+        'BindPose, and keyed modeling poses.'
+    ),
+    'SceneTools.png': (
+        'Open Scene Tools for cleanup, UV/layout helpers, reduced '
+        'Hypershade, and scene utilities.'
+    ),
+    'RenderLayerSetter.png': (
+        'Run Render Layer Setter for render layer setup.'
+    ),
+    'refresh.png': (
+        'Rebuild the C_Scripts shelf and recreate missing default shelf icons.'
+    ),
+}
+
 
 def _icon_dir():
     """Return the absolute path to the custom icon folder for this Maya version."""
@@ -42,12 +138,147 @@ def _register_icon_path():
         os.environ['XBMLANGPATH'] = os.pathsep.join([path] + parts)
 
 
+def _ensure_default_icons():
+    """Create simple default shelf icons if prefs/custom icons were wiped."""
+    path = _icon_dir()
+    try:
+        if not os.path.isdir(path):
+            os.makedirs(path)
+    except OSError:
+        return
+
+    try:
+        try:
+            from PySide6 import QtCore, QtGui
+        except ImportError:
+            from PySide2 import QtCore, QtGui
+    except Exception:
+        return
+
+    for image_name, spec in _DEFAULT_ICON_SPECS.items():
+        icon_path = os.path.join(path, image_name)
+        if os.path.isfile(icon_path):
+            continue
+        _draw_default_icon(icon_path, spec, QtCore, QtGui)
+
+
+def _draw_default_icon(icon_path, spec, QtCore, QtGui):
+    size = 64
+    try:
+        image_format = QtGui.QImage.Format_ARGB32
+    except AttributeError:
+        image_format = QtGui.QImage.Format.Format_ARGB32
+    image = QtGui.QImage(size, size, image_format)
+    try:
+        image.fill(QtCore.Qt.transparent)
+    except AttributeError:
+        image.fill(QtCore.Qt.GlobalColor.transparent)
+
+    painter = QtGui.QPainter(image)
+    try:
+        hint = QtGui.QPainter.Antialiasing
+    except AttributeError:
+        hint = QtGui.QPainter.RenderHint.Antialiasing
+    painter.setRenderHint(hint)
+
+    bg = QtGui.QColor(*spec['bg'])
+    accent = QtGui.QColor(*spec['accent'])
+    text = QtGui.QColor(236, 244, 248)
+
+    try:
+        painter.setPen(QtCore.Qt.NoPen)
+    except AttributeError:
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+    painter.setBrush(bg)
+    painter.drawRoundedRect(0, 0, size, size, 10, 10)
+    painter.setBrush(accent)
+    painter.drawRect(0, size - 12, size, 12)
+
+    font = painter.font()
+    font.setBold(True)
+    font.setPixelSize(24 if len(spec['label']) <= 2 else 18)
+    painter.setFont(font)
+    painter.setPen(text)
+
+    try:
+        align = QtCore.Qt.AlignCenter
+    except AttributeError:
+        align = QtCore.Qt.AlignmentFlag.AlignCenter
+    painter.drawText(QtCore.QRect(0, 0, size, size - 4), align, spec['label'])
+    painter.end()
+
+    image.save(icon_path)
+
+
+def _button_icon(btn):
+    image_name = btn.get('image', 'commandButton.png')
+    icon_path = os.path.join(_icon_dir(), image_name)
+    if os.path.isfile(icon_path):
+        return icon_path
+    return _STOCK_ICON_FALLBACKS.get(image_name, 'commandButton.png')
+
+
+def _button_tooltip(btn):
+    image_name = btn.get('image', '')
+    return _SHELF_TOOLTIPS.get(
+        image_name,
+        btn.get('annotation') or btn.get('label', '').replace('\n', ' '),
+    )
+
+
 # ── button definitions ────────────────────────────────────────────
+
+def _apply_rollover_tooltips(button_tooltips):
+    for button, tooltip in button_tooltips:
+        _set_rollover_tooltip(button, tooltip)
+
+
+def _set_rollover_tooltip(button, tooltip):
+    if not button or not tooltip:
+        return False
+
+    for command in (cmds.shelfButton, cmds.control):
+        try:
+            command(button, edit=True, annotation=tooltip)
+        except Exception:
+            pass
+
+    try:
+        from maya import OpenMayaUI as omui
+        try:
+            from PySide6 import QtWidgets
+            from shiboken6 import wrapInstance
+        except ImportError:
+            from PySide2 import QtWidgets
+            from shiboken2 import wrapInstance
+    except Exception:
+        return False
+
+    ptr = omui.MQtUtil.findControl(button)
+    if ptr is None:
+        return False
+
+    widget = wrapInstance(int(ptr), QtWidgets.QWidget)
+    if widget is None:
+        return False
+
+    widget.setToolTip(tooltip)
+    widget.setStatusTip(tooltip)
+    widget.setWhatsThis(tooltip)
+    try:
+        widget.setToolTipDuration(-1)
+    except Exception:
+        pass
+    return True
+
 
 _BUTTONS = [
     {
         'label': 'S2 Import',
-        'annotation': 'Source 2 Character Importer',
+        'annotation': (
+            'Open the Source 2 Character Importer for loading and converting '
+            'Source 2 character assets.'
+        ),
         'image': 'charImporter.png',
         'command': textwrap.dedent("""\
             import importlib
@@ -63,7 +294,10 @@ _BUTTONS = [
     },
     {
         'label': 'Ctrl Rig',
-        'annotation': 'Auto Control Rig',
+        'annotation': (
+            'Open the Auto Control Rig builder for controls, helpers, twist '
+            'joints, and stretchy IK setup.'
+        ),
         'image': 'AutoRig.png',
         'command': textwrap.dedent("""\
             import importlib
@@ -85,7 +319,10 @@ _BUTTONS = [
     },
     {
         'label': 'AnimGen',
-        'annotation': 'Animation Generator v2',
+        'annotation': (
+            'Open Animation Generator v2 for procedural walk, run, sidestep, '
+            'and layered animation generation.'
+        ),
         'image': 'AnimGenerator.png',
         'command': textwrap.dedent("""\
             import importlib
@@ -140,7 +377,7 @@ _BUTTONS = [
     {
         'label': 'Blend\nSetup',
         'annotation': 'Multi-object blendshape setup and edit targets',
-        'image': 'commandButton.png',
+        'image': 'BlendShapeSetup.png',
         'command': textwrap.dedent("""\
             import importlib
             import ui_word_weighting as _uww; importlib.reload(_uww)
@@ -207,19 +444,28 @@ def _clear_shelf(shelf_path):
 
 def _install_now():
     """Create (or refresh) the C_Scripts shelf with the latest buttons."""
+    _ensure_default_icons()
     _register_icon_path()
     shelf_path = _ensure_shelf()
     _clear_shelf(shelf_path)
 
+    button_tooltips = []
     for btn in _BUTTONS:
-        cmds.shelfButton(
+        tooltip = _button_tooltip(btn)
+        button = cmds.shelfButton(
             parent=shelf_path,
             label=btn['label'],
-            annotation=btn.get('annotation', ''),
-            image1=btn.get('image', 'commandButton.png'),
+            annotation=tooltip,
+            image1=_button_icon(btn),
             command=btn['command'],
             sourceType='python',
         )
+        button_tooltips.append((button, tooltip))
+        _set_rollover_tooltip(button, tooltip)
+
+    maya_utils.executeDeferred(
+        lambda tooltips=button_tooltips: _apply_rollover_tooltips(tooltips)
+    )
 
     # Switch to the newly created/updated shelf so the user sees it
     top = mel.eval('$__tmp = $gShelfTopLevel')
