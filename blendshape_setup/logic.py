@@ -287,6 +287,11 @@ def activate_target(index, records=None, open_editor=False,
         if open_editor:
             open_blendshape_editor()
 
+        # Direct visibility: no animCurves, no time dependency, no DG
+        # eval surprises. The label of the active key group equals the
+        # target name; BindPose is shown only by activate_all_off.
+        _apply_group_visibility(targets[index])
+
         _force_viewport_update()
     finally:
         if preserve_selection:
@@ -325,6 +330,9 @@ def activate_all_off(records=None, preserve_selection=True):
         ]
         if meshes and not preserve_selection:
             cmds.select(meshes, replace=True)
+
+        # Direct visibility: show BindPose only.
+        _apply_group_visibility(KEY_GROUP_BIND_POSE)
 
         _force_viewport_update()
     finally:
@@ -445,7 +453,7 @@ def repair_setup():
 
     touched_transforms = 0
     touched_shapes = 0
-    reconnected_curves = 0
+    stripped_curves = 0
     cmds.undoInfo(openChunk=True)
     try:
         for root in roots:
@@ -456,14 +464,15 @@ def repair_setup():
                 fullPath=True,
             ) or []
             for group in groups:
-                # Reconnect any disconnected time inputs on this group's
-                # visibility curves. This alone fixes existing scenes whose
-                # animCurves got orphaned from time1 (the root cause of the
-                # "salmon-colored channel / target button does nothing" bug).
+                # Delete every animCurve on this group's visibility.
+                # The curve-driven visibility system was unreliable in
+                # Maya 2026 (orphaned time inputs, DG eval refusing to
+                # propagate). The replacement is direct setAttr on every
+                # Target button click; no curves needed.
                 for attr_name in ("visibility", "lodVisibility"):
                     attr = "{0}.{1}".format(group, attr_name)
                     if cmds.objExists(attr):
-                        reconnected_curves += _ensure_curve_time_input(attr)
+                        stripped_curves += _strip_anim_curves(attr)
 
                 descendants = cmds.listRelatives(
                     group,
@@ -484,7 +493,7 @@ def repair_setup():
                         if _reset_visibility(shape):
                             touched_shapes += 1
 
-        # Rewrite parent group visibility keys cleanly with current logic.
+        # Rewrite parent group visibility (now direct setAttr, no curves).
         generate_key_groups(records=records)
     finally:
         cmds.undoInfo(closeChunk=True)
@@ -494,15 +503,15 @@ def repair_setup():
     print(
         "Repaired blendshape setup: "
         "reset visibility on {0} transform(s) and {1} shape(s); "
-        "reconnected {2} stray animCurve time input(s); "
-        "rebuilt key group visibility keys.".format(
-            touched_transforms, touched_shapes, reconnected_curves,
+        "stripped {2} stale animCurve(s) from key group visibility; "
+        "key group visibility is now direct setAttr (no animation).".format(
+            touched_transforms, touched_shapes, stripped_curves,
         )
     )
     return {
         "transforms": touched_transforms,
         "shapes": touched_shapes,
-        "reconnected_curves": reconnected_curves,
+        "stripped_curves": stripped_curves,
     }
 
 
@@ -1654,52 +1663,97 @@ def _write_key_group_metadata(group, index, label):
 
 
 def _key_key_group_visibility(group, active_frame, key_items):
+    """Set this key group's visibility directly (no animCurves).
+
+    The previous time-driven curve approach was unreliable in Maya 2026:
+    curves could get orphaned from time1, the DG sometimes refused to
+    propagate the curve output to the attribute even when everything was
+    connected, and step-tangent rounding produced salmon channels.
+
+    The replacement: strip any existing animCurves on this attribute and
+    setAttr the correct value directly. ``active_frame`` is compared to
+    ``cmds.currentTime`` to decide whether this group is the active one.
+    """
+    del key_items  # only kept for backward signature compatibility
     attr = "{0}.visibility".format(group)
     if not cmds.objExists(attr):
         return
 
-    try:
-        cmds.cutKey(attr, clear=True)
-    except Exception:
-        pass
-
-    # Only write keys here — do NOT setAttr inside the loop. Writing the
-    # attr per-iteration leaves it holding the last loop value (often the
-    # wrong group ends up "snapped on") until the canonical fix-up below
-    # runs. Keyframes with step tangents are the source of truth.
-    for _index, _label, frame in key_items:
-        value = int(frame) == int(active_frame)
-        try:
-            cmds.setKeyframe(attr, time=int(frame), value=bool(value))
-        except Exception:
-            pass
-
-    try:
-        cmds.keyTangent(
-            attr,
-            edit=True,
-            inTangentType="stepnext",
-            outTangentType="step",
-        )
-    except Exception:
-        pass
-
-    # Critical: ensure every animCurve driving this attr is connected to
-    # time1.outTime. Without this connection the curve evaluates at a
-    # stale .input value (often 0) instead of the current frame, so the
-    # attribute reads as 0 even though there is a key value of 1 at the
-    # current frame. This is the root cause of the "target button does
-    # nothing" / "salmon-colored channel" symptom.
-    _ensure_curve_time_input(attr)
+    _strip_anim_curves(attr)
 
     try:
         current_frame = int(round(cmds.currentTime(query=True)))
-        cmds.setAttr(
-            attr,
-            _key_group_visible_at_frame(active_frame, key_items, current_frame),
-        )
+    except Exception:
+        current_frame = int(active_frame)
+
+    try:
+        if cmds.getAttr(attr, lock=True):
+            cmds.setAttr(attr, lock=False)
     except Exception:
         pass
+
+    try:
+        cmds.setAttr(attr, int(active_frame) == int(current_frame))
+    except Exception:
+        pass
+
+
+def _apply_group_visibility(active_label):
+    """Show only the key group matching ``active_label``; hide the rest.
+
+    Direct setAttr, no animCurves. Strips any leftover animCurves on each
+    group's .visibility before writing, so nothing fights the value.
+    """
+    for root in _key_group_roots():
+        for group in _key_group_children(root):
+            attr = "{0}.visibility".format(group)
+            if not cmds.objExists(attr):
+                continue
+            _strip_anim_curves(attr)
+            try:
+                if cmds.getAttr(attr, lock=True):
+                    cmds.setAttr(attr, lock=False)
+            except Exception:
+                pass
+            label = _read_string_attr(group, KEY_GROUP_TARGET_ATTR) or \
+                _short_name(group)
+            try:
+                cmds.setAttr(attr, label == active_label)
+            except Exception:
+                pass
+
+
+def _strip_anim_curves(attr):
+    """Disconnect and delete every animCurve driving ``attr``.
+
+    Returns the number of curves removed. Safe if there are none.
+    """
+    removed = 0
+    try:
+        curves = cmds.listConnections(
+            attr, source=True, destination=False, type="animCurve",
+        ) or []
+    except Exception:
+        return 0
+    for curve in curves:
+        try:
+            outputs = cmds.listConnections(
+                curve + ".output",
+                source=False, destination=True, plugs=True,
+            ) or []
+            for dest in outputs:
+                try:
+                    cmds.disconnectAttr(curve + ".output", dest)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            cmds.delete(curve)
+            removed += 1
+        except Exception:
+            pass
+    return removed
 
 
 def _key_group_visible_at_frame(active_frame, key_items, current_frame):
