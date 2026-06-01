@@ -27,6 +27,9 @@ HELPER_OWNER_ATTR = "cbsHelperOwner"
 WIRE_PROXY_MANAGED_ATTR = "cbsWireProxyManaged"
 WIRE_PROXY_OWNER_ATTR = "cbsWireProxyOwner"
 TEMP_TARGET_MANAGED_ATTR = "cbsTempTargetManaged"
+BAKE_MANAGED_ATTR = "cbsBakeManaged"
+BAKE_SOURCE_ATTR = "cbsBakeSource"
+BAKE_LABEL_ATTR = "cbsBakeLabel"
 
 DEFAULT_PREFIX = "blendShape"
 KEY_GROUP_ROOT = "BlendshapeKeyGroups"
@@ -513,6 +516,270 @@ def repair_setup():
         "shapes": touched_shapes,
         "stripped_curves": stripped_curves,
     }
+
+
+def bake_targets(records=None, preserve_selection=True, hide_source=True):
+    """Bake every blendshape state into its key group as static meshes.
+
+    For each state (BindPose plus every target) this:
+
+    1. Sets the blendShape weights for that state (no edit mode, no
+       sculpt target, no keying).
+    2. Duplicates every managed mesh, deletes construction history on
+       the duplicate so it freezes at the deformed shape, then parents
+       it under the matching key group.
+    3. Tags every duplicate with ``cbsBakeManaged`` so re-running this
+       function replaces previous bakes cleanly (any non-baked children
+       under the key groups are left alone).
+
+    After all states are baked the visibility is reset to BindPose and,
+    if ``hide_source`` is True, the source ``BlendshapeRoster/Meshes``
+    group is hidden so the key-group visibility toggles are the only
+    thing the viewport sees.
+
+    Returns a summary dict ``{"bakes": int, "groups": int}``.
+    """
+    records = records or discover_setups()
+    if not records:
+        raise RuntimeError("No managed blendshape setup found.")
+
+    meshes = [
+        record for record in records
+        if record.get("mesh") and cmds.objExists(record["mesh"])
+    ]
+    if not meshes:
+        raise RuntimeError("No managed meshes found to bake.")
+
+    first = records[0]
+    targets = list(first.get("targets") or [])
+    if not targets:
+        raise RuntimeError("The discovered setup has no blendshape targets.")
+
+    # Make sure the key group hierarchy exists and is in a known state.
+    if not _key_group_roots():
+        generate_key_groups(records=records)
+
+    # Map label -> key group transform. Generate fills BindPose + all targets.
+    label_to_group = {}
+    for root in _key_group_roots():
+        for group in _key_group_children(root):
+            label = _read_string_attr(group, KEY_GROUP_TARGET_ATTR) or \
+                _short_name(group)
+            label_to_group[label] = group
+
+    missing = [KEY_GROUP_BIND_POSE] + [
+        target for target in targets if target not in label_to_group
+    ]
+    missing = [label for label in missing if label not in label_to_group]
+    if missing:
+        # Force a regenerate to fill in any missing key groups.
+        generate_key_groups(records=records)
+        label_to_group = {}
+        for root in _key_group_roots():
+            for group in _key_group_children(root):
+                label = _read_string_attr(group, KEY_GROUP_TARGET_ATTR) or \
+                    _short_name(group)
+                label_to_group[label] = group
+
+    # (label, blendShape weight index) pairs. -1 = all weights at 0.
+    states = [(KEY_GROUP_BIND_POSE, -1)] + [
+        (target, index) for index, target in enumerate(targets)
+    ]
+
+    previous_selection = cmds.ls(selection=True, long=True) or []
+    auto_key_state = _set_auto_key_state(False)
+    total_bakes = 0
+    cmds.undoInfo(openChunk=True)
+    try:
+        # Clear previous bake content from every key group (only nodes
+        # tagged with cbsBakeManaged are deleted; user content is kept).
+        for group in label_to_group.values():
+            _clear_baked_children(group)
+
+        for label, index in states:
+            group = label_to_group.get(label)
+            if not group or not cmds.objExists(group):
+                continue
+
+            for record in records:
+                node = record["node"]
+                if cmds.objExists(node):
+                    _set_active_weights(node, len(record["targets"]), index)
+
+            for record in meshes:
+                mesh = record["mesh"]
+                if not cmds.objExists(mesh):
+                    continue
+                try:
+                    _bake_mesh_into_group(mesh, label, group)
+                    total_bakes += 1
+                except Exception as exc:
+                    cmds.warning(
+                        "Could not bake {0} for {1}: {2}".format(
+                            mesh, label, exc,
+                        )
+                    )
+
+        # Reset weights back to zero (BindPose), and switch visibility.
+        for record in records:
+            node = record["node"]
+            if cmds.objExists(node):
+                _set_active_weights(node, len(record["targets"]), -1)
+
+        if hide_source:
+            _hide_source_mesh_groups(records)
+
+        _apply_group_visibility(KEY_GROUP_BIND_POSE)
+    finally:
+        if preserve_selection:
+            _restore_selection(previous_selection)
+        _set_auto_key_state(auto_key_state)
+        cmds.undoInfo(closeChunk=True)
+
+    _force_viewport_update()
+
+    print(
+        "Baked {0} mesh state(s) across {1} key group(s).".format(
+            total_bakes,
+            len(label_to_group),
+        )
+    )
+    return {
+        "bakes": total_bakes,
+        "groups": len(label_to_group),
+    }
+
+
+def _bake_mesh_into_group(mesh, label, group):
+    """Duplicate ``mesh`` at its current deformed state into ``group``."""
+    base = "{0}_{1}_bake".format(
+        _short_name(mesh),
+        _safe_target_name(label),
+    )
+    name = _unique_name(base)
+    duplicates = cmds.duplicate(
+        mesh,
+        name=name,
+        returnRootsOnly=True,
+        inputConnections=False,
+        renameChildren=True,
+    ) or []
+    if not duplicates:
+        raise RuntimeError("duplicate returned nothing")
+
+    dup = duplicates[0]
+
+    # Strip every deformer / history on the duplicate so it freezes at the
+    # current shape with no construction history.
+    try:
+        cmds.delete(dup, constructionHistory=True)
+    except Exception:
+        pass
+
+    # Tag before re-parenting so the cleanup pass can find it later.
+    _ensure_bool_attr(dup, BAKE_MANAGED_ATTR)
+    cmds.setAttr("{0}.{1}".format(dup, BAKE_MANAGED_ATTR), True)
+    _ensure_string_attr(dup, BAKE_SOURCE_ATTR)
+    cmds.setAttr(
+        "{0}.{1}".format(dup, BAKE_SOURCE_ATTR),
+        _long_name(mesh),
+        type="string",
+    )
+    _ensure_string_attr(dup, BAKE_LABEL_ATTR)
+    cmds.setAttr(
+        "{0}.{1}".format(dup, BAKE_LABEL_ATTR),
+        label,
+        type="string",
+    )
+
+    # Re-parent into the key group, preserving world transform so the
+    # baked mesh sits where the source mesh sits.
+    current_parents = cmds.listRelatives(dup, parent=True, fullPath=True) or []
+    current_parent = current_parents[0] if current_parents else None
+    if current_parent != group:
+        parented = cmds.parent(dup, group) or [dup]
+        dup = parented[0]
+        if not dup.startswith("|"):
+            # cmds.parent returns short names; resolve to long.
+            dup = _long_name(dup)
+
+    return dup
+
+
+def _clear_baked_children(group):
+    """Delete every descendant of ``group`` tagged with ``BAKE_MANAGED_ATTR``."""
+    children = cmds.listRelatives(
+        group,
+        allDescendents=True,
+        type="transform",
+        fullPath=True,
+    ) or []
+    to_delete = []
+    for child in children:
+        attr = "{0}.{1}".format(child, BAKE_MANAGED_ATTR)
+        if cmds.objExists(attr):
+            try:
+                if cmds.getAttr(attr):
+                    to_delete.append(child)
+            except Exception:
+                pass
+    for node in to_delete:
+        if cmds.objExists(node):
+            try:
+                cmds.delete(node)
+            except Exception:
+                pass
+
+
+def _hide_source_mesh_groups(records):
+    """Hide the source mesh hierarchy so only baked key groups draw."""
+    hidden = set()
+    candidates = set()
+
+    for record in records:
+        mesh = record.get("mesh")
+        if not mesh or not cmds.objExists(mesh):
+            continue
+        # Walk up to find a BlendshapeRoster ancestor; fall back to the
+        # mesh's immediate parent transform.
+        ancestor = _find_named_ancestor(mesh, TEMPLATE_ROOT)
+        if ancestor:
+            candidates.add(ancestor)
+            continue
+        parents = cmds.listRelatives(mesh, parent=True, fullPath=True) or []
+        if parents:
+            candidates.add(parents[0])
+        else:
+            candidates.add(mesh)
+
+    for node in candidates:
+        attr = "{0}.visibility".format(node)
+        if not cmds.objExists(attr):
+            continue
+        try:
+            if cmds.getAttr(attr, lock=True):
+                cmds.setAttr(attr, lock=False)
+        except Exception:
+            pass
+        _strip_anim_curves(attr)
+        try:
+            cmds.setAttr(attr, False)
+            hidden.add(node)
+        except Exception:
+            pass
+    return hidden
+
+
+def _find_named_ancestor(node, base_name):
+    current = node
+    while current:
+        if _short_name(current) == base_name:
+            return current
+        parents = cmds.listRelatives(current, parent=True, fullPath=True) or []
+        if not parents:
+            return None
+        current = parents[0]
+    return None
 
 
 def _reset_visibility(node):

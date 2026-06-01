@@ -55,6 +55,7 @@ TOOLTIPS = {
     "all_off": "Set all generated target weights to 0, jump to the start frame, and keep the current selection.",
     "bind_pose": "Jump to the setup start frame and set every generated blendShape target to 0.",
     "key_groups": "Create or update a separate BlendshapeKeyGroups hierarchy with one visibility-keyed empty group per target button.",
+    "bake": "Bake every blendshape state into its key group as a static mesh with no construction history. Source meshes are hidden so target buttons just toggle which baked set is shown.",
     "stop_edit": "Leave blendShape sculpt/edit mode without deleting the generated setup.",
     "wire_reset": "Reset the display-only wire test edits on selected meshes and remove curve wire proxies created by this tool.",
     "status": "Reports the latest Blendshape Setup action, warning, or selection state.",
@@ -256,6 +257,9 @@ def show(move_to_primary=False):
     _button(actions, "GenerateKeyGroups", _generate_key_groups,
             THEME["edit"], tooltip=TOOLTIPS["key_groups"])
 
+    _button(actions, "Bake Targets", _bake_targets,
+            THEME["create"], tooltip=TOOLTIPS["bake"])
+
     _button(actions, "Stop Edit Mode", _stop_edit_mode,
             THEME["danger"], tooltip=TOOLTIPS["stop_edit"])
 
@@ -434,6 +438,27 @@ def _generate_key_groups(*_):
         "Generated key groups under {0}: {1} group(s).".format(
             result.get("root", ""),
             len(result.get("groups", [])),
+        )
+    )
+    _finish_deferred()
+
+
+def _bake_targets(*_):
+    global _active_target_index
+
+    try:
+        result = logic.bake_targets(records=_records)
+    except Exception as exc:
+        _set_status(str(exc), warning=True)
+        cmds.warning(str(exc))
+        return
+
+    _active_target_index = _BIND_POSE_INDEX
+    _update_target_button_states()
+    _set_status(
+        "Baked {0} mesh state(s) across {1} key group(s).".format(
+            result.get("bakes", 0),
+            result.get("groups", 0),
         )
     )
     _finish_deferred()
