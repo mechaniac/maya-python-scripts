@@ -30,6 +30,7 @@ TEMP_TARGET_MANAGED_ATTR = "cbsTempTargetManaged"
 BAKE_MANAGED_ATTR = "cbsBakeManaged"
 BAKE_SOURCE_ATTR = "cbsBakeSource"
 BAKE_LABEL_ATTR = "cbsBakeLabel"
+BAKE_DRIVER_MARK_ATTR = "cbsBakeDriverRemove"
 
 DEFAULT_PREFIX = "blendShape"
 KEY_GROUP_ROOT = "BlendshapeKeyGroups"
@@ -594,6 +595,12 @@ def bake_targets(records=None, preserve_selection=True):
     parking = cmds.group(empty=True, name=parking_name, world=True)
     parking = _long_name(parking)
 
+    # Tag every wrap driver transform with a marker attr. The marker
+    # survives cmds.duplicate, so every snapshot will carry it on the
+    # same nodes and we can find + delete them per snapshot. After bake
+    # we only want the wrapped targets, not the drivers.
+    _tag_wrap_drivers_for_removal()
+
     snapshots = []  # list of (label, parked_node_long_path)
     try:
         # ---- Loop 1: snapshot every state into the parking group. ----
@@ -737,6 +744,13 @@ def _snapshot_state(label, snapshot_root, extra_sources, parking):
         parents = cmds.listRelatives(shape, parent=True, fullPath=True) or []
         if parents:
             transform_paths.add(parents[0])
+
+    # Capture shader assignments BEFORE delete -ch: wrap-driven meshes
+    # in particular tend to lose their shadingEngine link when their
+    # deformer chain is destroyed, falling back to the default lambert
+    # (green in the viewport). We re-apply by transform after the freeze.
+    shader_records = _capture_shader_assignments(transform_paths)
+
     if transform_paths:
         try:
             cmds.delete(list(transform_paths), constructionHistory=True)
@@ -744,6 +758,12 @@ def _snapshot_state(label, snapshot_root, extra_sources, parking):
             cmds.warning(
                 "delete -ch failed on {0}: {1}".format(label, exc)
             )
+
+    _restore_shader_assignments(shader_records)
+
+    # Remove every node tagged as a wrap driver. The marker was set on
+    # the source before duplication, so duplicate carried it along.
+    _remove_tagged_wrap_drivers(snapshot)
 
     # Strip any managed metadata attrs that survived (blendShape /
     # wrap / helper attrs may still be present on cleared transforms).
@@ -859,6 +879,97 @@ def _strip_managed_attrs_recursive(root):
                     cmds.deleteAttr(node, attribute=attr)
                 except Exception:
                     pass
+
+
+def _capture_shader_assignments(transforms):
+    """Return a list of (shape_long_path, shadingEngine) pairs for the
+    visible shape under every transform.
+
+    Recorded BEFORE delete -ch so we can restore the assignments after
+    the deformer chain (especially wrap) is torn down, since otherwise
+    the deformed shape falls back to the default lambert shader.
+    """
+    records = []
+    for transform in transforms:
+        if not cmds.objExists(transform):
+            continue
+        shapes = cmds.listRelatives(
+            transform, shapes=True, fullPath=True, noIntermediate=True,
+        ) or []
+        for shape in shapes:
+            try:
+                ses = cmds.listConnections(
+                    shape, source=False, destination=True,
+                    type="shadingEngine",
+                ) or []
+            except Exception:
+                ses = []
+            for se in dict.fromkeys(ses):  # preserve order, dedupe
+                records.append((shape, se))
+    return records
+
+
+def _restore_shader_assignments(records):
+    """Re-add shapes to their original shadingEngines via cmds.sets."""
+    for shape, se in records:
+        if not cmds.objExists(shape) or not cmds.objExists(se):
+            continue
+        try:
+            cmds.sets(shape, edit=True, forceElement=se)
+        except Exception:
+            pass
+
+
+def _tag_wrap_drivers_for_removal():
+    """Add a marker bool attr to every wrap driver transform so the
+    duplicated copies in each snapshot can be located and deleted.
+
+    Resolves the driver path from each managed wrap node's metadata.
+    Silent on missing nodes; this is a best-effort tag pass.
+    """
+    for record in discover_wrap_setups():
+        driver_path = record.get("driver") or ""
+        if not driver_path or not cmds.objExists(driver_path):
+            continue
+        # Drivers stored in WRAP_DRIVER_ATTR are mesh transforms; tag
+        # the transform itself.
+        node = _long_name(driver_path)
+        if not node:
+            continue
+        try:
+            _ensure_bool_attr(node, BAKE_DRIVER_MARK_ATTR)
+            cmds.setAttr(
+                "{0}.{1}".format(node, BAKE_DRIVER_MARK_ATTR), True,
+            )
+        except Exception:
+            pass
+
+
+def _remove_tagged_wrap_drivers(root):
+    """Delete every transform under ``root`` carrying the wrap-driver
+    marker attr. After bake we only want the wrap targets, not drivers.
+    """
+    candidates = [root] + (cmds.listRelatives(
+        root, allDescendents=True, type="transform", fullPath=True,
+    ) or [])
+    to_delete = []
+    for node in candidates:
+        attr = "{0}.{1}".format(node, BAKE_DRIVER_MARK_ATTR)
+        if cmds.objExists(attr):
+            try:
+                if cmds.getAttr(attr):
+                    to_delete.append(node)
+            except Exception:
+                pass
+    # Delete deepest paths first so we don't try to delete a child of an
+    # already-deleted parent.
+    to_delete.sort(key=lambda p: p.count("|"), reverse=True)
+    for node in to_delete:
+        if cmds.objExists(node):
+            try:
+                cmds.delete(node)
+            except Exception:
+                pass
 
 
 def _purge_leftover_managed_nodes():
