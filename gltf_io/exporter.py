@@ -67,7 +67,7 @@ def _ensure_fbx_plugin():
         try:
             cmds.loadPlugin("fbxmaya", quiet=True)
         except Exception as exc:
-            raise RuntimeError("Could not load Maya FBX plugin: " + str(exc))
+            raise RuntimeError("Could not load Maya FBX plugin: " + str(exc)) from exc
 
 
 def _configure_fbx(export_animation, export_skin, frame_range):

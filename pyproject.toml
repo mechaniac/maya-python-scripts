@@ -1,0 +1,32 @@
+[project]
+name = "maya-python-scripts"
+version = "0.1.0"
+description = "Maya tools: procedural animation, auto control rig, Source 2 import, glTF I/O, scene tools."
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+extend-exclude = [
+    "__pycache__",
+    "source2_importer/vrf",
+    "gltf_io/fbx2gltf",
+]
+
+[tool.ruff.lint]
+# Narrow ruleset focused on REAL bugs, not style:
+#   F  pyflakes (undefined names, unused imports/variables)
+#   B  flake8-bugbear (subset — real bugs like B904, B006, B008-off)
+# Style/format rules are intentionally NOT enforced; this is a legacy
+# Maya codebase and a mass-reformat would obscure history.
+select = ["F", "B"]
+ignore = [
+    "B008",   # default arg call common in Maya cmds wrappers
+    "B007",   # unused loop var ('for _ in range(N)') intentional
+    "B905",   # zip(strict=) noise — Maya code is fine without
+    "F401",   # unused imports — many tools sit in __init__ for reload chains
+    "F841",   # unused locals — common during incremental edits
+]
+
+[tool.ruff.lint.per-file-ignores]
+"animation_generators/*.py" = ["E711", "E712"]

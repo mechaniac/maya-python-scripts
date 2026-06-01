@@ -18,10 +18,13 @@ Or launch tools individually:
 from anim_gen_v2 import launcher; launcher.show()
 
 # Auto Control Rig
-import autoControlRig; autoControlRig.show()
+from auto_control_rig.ui import show_window; show_window()
 
 # Source 2 Importer
-import source2Importer; source2Importer.show()
+from source2_importer.ui import show; show()
+
+# Legacy v1 generators (flight, hand-walk, tail wiggle, ...)
+from animation_generators.launcher import show; show()
 ```
 
 ### Package Overview
@@ -29,10 +32,26 @@ import source2Importer; source2Importer.show()
 | Package | Description |
 |---|---|
 | `anim_gen_v2/` | Layered keyframe engine with walk, run, and sidestep generators, JSON presets, slider UI |
+| `animation_generators/` | Legacy v1 generators kept for tools v2 doesn't cover yet — flight, hand-walk, hand-sidestep, tail wiggle |
 | `auto_control_rig/` | AdvancedSkeleton-compatible FK/IK control rig builder for any skeleton |
 | `source2_importer/` | Import Source 2 `.vmdl` models (mesh, skeleton, textures, materials) into Maya |
+| `gltf_io/` | glTF / GLB import & export (Maya plugin or pure-Python fallback) |
+| `clip_setter/` | Manage animation clip layout for Maya → s&box FBX export |
+| `blendshape_setup/` | Multi-mesh blendshape targets, wrap deformers, BindPose, keyed modeling poses |
+| `tools_window/` | Scene cleanup, UV/layout helpers, reduced Hypershade panel |
+| `render_layer_setter/` | Per-light / AO / depth render layer setup |
 | `install_shelf.py` | One-click shelf installer — creates/updates `C_Scripts` shelf with reload buttons for all tools |
-| `*.py` (root) | Legacy v1 animation generators, utility scripts, scene cleanup tools |
+| `ui_word_weighting.py` | Shared word-weight helper used by every tool window for consistent label sizing |
+
+### Development
+
+```bash
+pip install ruff
+ruff check .                    # lint (real-bug rules: F + B)
+python -m py_compile $(git ls-files '*.py')   # syntax sweep
+```
+
+Lint and syntax checks run on every push via `.github/workflows/lint.yml`.
 
 ---
 
@@ -318,146 +337,27 @@ Parsed structure (meshes, materials, scale)
 
 ---
 
-## Animation Generator Scripts (Legacy v1)
+## Legacy v1 Animation Generators — `animation_generators`
 
-### walkcycleGenerator.py — `WalkCycleTool`
+The original `walkcycleGenerator.py`, `runCycleGenerator.py`, `sideStepGenerator.py`, `handWalkCycleGenerator.py`, `HandSideStepGenerator.py`, `FlightGenerator.py`, and `tailSwingAndWiggleGenerator.py` scripts now live as classes inside the `animation_generators/` package. Walk / run / sidestep have been superseded by the layered `anim_gen_v2` engine above; flight, hand-walk, hand-sidestep, and tail wiggle remain v1 only.
 
-Generates a bipedal walk cycle using IK legs and FK upper body.
+**Usage:**
+```python
+from animation_generators.launcher import show
+show()
+```
 
-| Controller | Type | Attributes Keyed | Role |
-|---|---|---|---|
-| `IKLeg_R` | IK Handle | translateX, translateY, translateZ, rotateX, stretchy | Right foot stride, lift, raise |
-| `IKLeg_L` | IK Handle | translateX, translateY, translateZ, rotateX, stretchy | Left foot stride, lift, raise |
-| `HipSwinger_M` | FK | rotateX, rotateY | Hip swing (forward/back) and sway (L/R) |
-| `RootX_M` | Root | translateX, translateY, translateZ, rotateX, rotateY, rotateZ | Bounce, sway, rock, twist, left-right, back-forth |
-| `FKSpine1_M` | FK | rotateX, rotateY, rotateZ | Spine twist/sway/rock |
-| `FKChest_M` | FK | rotateX, rotateY, rotateZ | Chest twist/sway/rock |
-| `FKNeck_M` | FK | rotateX, rotateY, rotateZ | Neck counter-motion |
-| `FKHead_M` | FK | rotateX, rotateY, rotateZ | Head counter-motion |
-| `FKScapula_R` | FK | rotateY, rotateZ | Right scapula down + swing |
-| `FKScapula_L` | FK | rotateY, rotateZ | Left scapula (mirrored) |
-| `FKShoulder_R` / `_L` | FK | rotateX, rotateY, rotateZ | Shoulder down position + arm swing |
-| `FKElbow_R` / `_L` | FK | rotateZ | Elbow bend during swing |
-| `FKWrist_R` / `_L` | FK | rotateZ | Wrist follow-through |
+| Module | Class | Status |
+|---|---|---|
+| `walk_cycle` | `WalkCycleTool` | superseded by `anim_gen_v2` |
+| `run_cycle` | `RunCycleGenerator` | superseded by `anim_gen_v2` |
+| `side_step` | `SideStepGenerator` | superseded by `anim_gen_v2` |
+| `hand_walk_cycle` | `HandWalkCycleTool` | v1 only |
+| `hand_side_step` | `HandSideStepGenerator` | v1 only |
+| `flight` | `FlightGenerator` | v1 only |
+| `tail_wiggle` | `TailWiggleGenerator` | v1 only |
 
----
-
-### runCycleGenerator.py — `RunCycleGenerator`
-
-Generates a bipedal run cycle with enhanced dynamics (bounce, lean, corkscrew twist).
-
-| Controller | Type | Attributes Keyed | Role |
-|---|---|---|---|
-| `RootX_M` | Root | translateX, translateY, translateZ, rotateX, rotateY, rotateZ | Bounce up/down, lean, sway, swing, corkscrew, back-forth |
-| `IKLeg_R` | IK Handle | translateX, translateY, translateZ, rotateX | Right foot stride, height, raise |
-| `IKLeg_L` | IK Handle | translateX, translateY, translateZ, rotateX | Left foot stride, height, raise |
-| `FKChest_M` (alias: `FKChest1_M`) | FK | rotateX, rotateY, rotateZ | Chest bounce, swing, tilt |
-| `FKSpine_M` (alias: `FKSpine1_M`) | FK | rotateX, rotateY, rotateZ | Spine bounce, swing, tilt |
-| `HipSwinger_M` (alias: `HipSwinger1_M`) | FK | rotateX, rotateY | Hip swing and side motion |
-| `FKNeck_M` | FK | translateY, rotateX, rotateY, rotateZ | Neck bounce, rock, lean, sway, swing |
-| `FKHead_M` (alias: `FKHead1_M`) | FK | translateY, rotateX, rotateY, rotateZ | Head bounce, rock, lean, sway, swing |
-| `FKScapula1_L` / `FKScapula_L` | FK | rotateZ | Left scapula swing |
-| `FKScapula1_R` / `FKScapula_R` | FK | rotateZ | Right scapula swing |
-| `FKShoulder_L` / `_R` | FK | rotateX, rotateY, rotateZ | Shoulder down, rotate, swing, sway-out |
-| `FKElbow_L` / `_R` | FK | rotateZ | Elbow flex (forward bias) |
-
----
-
-### sideStepGenerator.py — `SideStepGenerator`
-
-Generates a lateral side-step animation with mirroring support.
-
-| Controller | Type | Attributes Keyed | Role |
-|---|---|---|---|
-| `RootX_M` | Root | translateX, translateY, rotateZ | Root shift, bounce, tilt |
-| `IKLeg_R` | IK Handle | translateX, translateY | Right foot lateral step |
-| `IKLeg_L` | IK Handle | translateX, translateY | Left foot lateral step |
-| `HipSwinger_M` | FK | rotateY | Hip sway (side whip) |
-| `FKSpine1_M` | FK | rotateY | Spine sway |
-| `FKChest_M` | FK | rotateY | Chest sway |
-| `FKNeck_M` | FK | rotateY | Neck sway |
-| `FKHead_M` | FK | rotateY | Head sway |
-| `FKScapula_L` / `_R` | FK | rotateX, rotateY, rotateZ | Scapula swing + additive down/bent/twist |
-| `FKShoulder_L` / `_R` | FK | rotateX, rotateY, rotateZ | Shoulder swing + additive |
-| `FKElbow_L` / `_R` | FK | rotateX, rotateY, rotateZ | Elbow swing + additive |
-| `FKWrist_L` / `_R` | FK | rotateX, rotateY, rotateZ | Wrist additive pose |
-
----
-
-### handWalkCycleGenerator.py — `HandWalkCycleTool`
-
-Generates a quadruped-style hand-walk cycle (character walking on hands). Uses IK arms for hand placement and IK legs for feet.
-
-| Controller | Type | Attributes Keyed | Role |
-|---|---|---|---|
-| `IKArm_R` / `IKArm_L` | IK Handle | translateX, translateY, translateZ, rotateY, stretchy | Hand stride, lift, offsets |
-| `RootX_M` | Root | translateX, translateY, translateZ, rotateX, rotateY, rotateZ | Bounce, sway, rock, shift, swing, forward bounce |
-| `HipSwinger_M` | FK | rotateX, rotateY | Hip swing and sway |
-| `IKLeg_R` / `IKLeg_L` | IK Handle | translateX, translateY, translateZ, rotateX | Feet follow with offsets, bounce, swing, back-forth |
-| `FKScapula_L` / `_R` | FK | rotateX, rotateY, rotateZ | Scapula rotation + offsets |
-| `FKSpine_M` / `FKSpine1_M` | FK | rotateX, rotateY, rotateZ | Spine swing, rock, sway |
-| `FKChest_M` | FK | rotateX, rotateY, rotateZ | Chest swing, rock, sway |
-| `FKNeck_M` | FK | translateX, translateY, translateZ, rotateX, rotateY, rotateZ | Neck counter-rotation, bounce, bob, sway |
-| `FKHead_M` | FK | translateX, translateY, translateZ, rotateX, rotateY, rotateZ | Head counter-rotation, bounce, bob, sway |
-| `PoleArm_R` / `PoleArm_L` | Pole Vector | translateX, translateY, translateZ | Elbow pole positioning |
-| `FKIKLeg_R` / `FKIKLeg_L` | Blend | FKIKBlend | FK/IK leg blend (0..10) |
-| `FKHip_R` / `_L` | FK | rotateZ | FK leg hip pose |
-| `FKKnee_R` / `_L` | FK | rotateZ | FK leg knee pose |
-| `FKFoot_R` / `_L` | FK | rotateZ | FK leg foot pose |
-| `FKToe_R` / `_L` | FK | rotateZ | FK leg toe pose |
-
----
-
-### HandSideStepGenerator.py — `HandSideStepGenerator`
-
-Generates a lateral side-step using hands (IK arms) as the stepping limbs.
-
-| Controller | Type | Attributes Keyed | Role |
-|---|---|---|---|
-| `IKArm_R` / `IKArm_L` | IK Handle | translateX, translateY, stretchy | Hand lateral step, lift |
-| `RootX_M` | Root | translateX, translateY, rotateZ | Root shift, bounce, tilt |
-| `HipSwinger_M` | FK | rotateY | Hip sway |
-| `FKSpine1_M` | FK | rotateY | Spine sway |
-| `FKChest_M` | FK | rotateY | Chest sway |
-| `FKNeck_M` | FK | rotateY | Neck sway |
-| `FKHead_M` | FK | rotateY | Head sway |
-| `FKScapula_L` / `_R` | FK | rotateX, rotateY, rotateZ | Scapula swing + additive |
-| `FKIKLeg_R` / `FKIKLeg_L` | Blend | FKIKBlend | FK/IK leg blend |
-| `FKHip_R` / `_L` | FK | rotateZ | FK leg hip pose (static) |
-| `FKKnee_R` / `_L` | FK | rotateZ | FK leg knee pose (static) |
-| `FKFoot_R` / `_L` | FK | rotateZ | FK leg foot pose (static) |
-| `FKToe_R` / `_L` | FK | rotateZ | FK leg toe pose (static) |
-
----
-
-### FlightGenerator.py — `FlightGenerator`
-
-Generates a flying/flapping animation cycle using IK arms for wing motion.
-
-| Controller | Type | Attributes Keyed | Role |
-|---|---|---|---|
-| `IKArm_L` / `IKArm_R` | IK Handle | translateX, translateY, translateZ, rotateX, rotateY | Wing flap (Z), hand flap (Y), positioning (X/Y), arm angle (X) |
-| `FKIKArm_L` / `FKIKArm_R` | Blend | FKIKBlend | Arm FK/IK blend (0..10) |
-| `RootX_M` | Root | translateY, translateZ, rotateX | Up/down, back/forth translate, rotateX |
-| `FKScapula_L` / `_R` | FK | rotateX, rotateY, rotateZ | Scapula flap with offset/base/mid per axis |
-| `PoleArm_L` / `PoleArm_R` | Pole Vector | translateX, translateY, translateZ | Elbow pole positioning with offset + base/mid |
-| `FKSpine1_M` / `FKSpine_M` | FK | rotateZ | Spine stretch & bend posture |
-| `FKChest_M` | FK | rotateZ | Chest stretch & bend posture |
-| `FKNeck_M` | FK | rotateZ | Neck stretch & bend posture |
-| `FKHead_M` | FK | rotateZ | Head stretch & bend posture |
-| `IKLeg_L` / `IKLeg_R` | IK Handle | translateX, translateY, translateZ, rotateX | Feet position and angle during flight |
-
----
-
-### tailSwingAndWiggleGenerator.py — `TailWiggleGenerator`
-
-Generates oscillating animation on any sequential FK chain (tails, hair, trunks, tentacles, etc.).
-
-| Controller | Type | Attributes Keyed | Role |
-|---|---|---|---|
-| `FK{name}{N}_{side}` (e.g. `FKhair0_M`) | FK Chain | rotateX, rotateY, rotateZ | Per-joint amplitude, offset, halves/sine patterns |
-
-> The chain is auto-detected from a seed name (e.g., `FKhair0_M` finds `FKhair0_M`, `FKhair1_M`, ...). Supports mirror X/Y/Z globally. Works on any numbered FK chain.
+See the Consolidated Controller Reference below for the controllers each generator targets.
 
 ---
 
@@ -529,11 +429,11 @@ All unique controllers targeted by the animation scripts:
 
 ## Utility Scripts
 
-## Clip Setter — `clip_setter`
+### Clip Setter — `clip_setter`
 
 Manages animation clip layout for Maya → s&box FBX export. Defines clip names, frame counts, and loop flags, then lays them out sequentially on the Maya timeline with configurable buffer frames. Applies clips directly to the Game Exporter node for one-click export.
 
-### Default Clip Set (s&box Citizen Reference)
+#### Default Clip Set (s&box Citizen Reference)
 
 Frame counts are matched to the default s&box citizen character animations (`Citizen@*.fbx` at 30fps NTSC):
 
@@ -552,42 +452,53 @@ Frame counts are matched to the default s&box citizen character animations (`Cit
 
 The citizen uses a directional blend tree (`N/S/E/W/NE/NW/SE/SW` variants per locomotion type) driven by movement direction. Sidestep clips map to the east/west walk variants.
 
-### Legacy: clipSetter.py — `GameExporterGenerator`
-Legacy GUI tool to generate Maya Game FBX Exporter `.mel` preset files. Defines animation clip blocks (name, count, frame length) and outputs clips with frame ranges, optionally with color-tagged house variants.
+### Scene Tools — `tools_window`
 
-### SceneCleanup.py / toolsWindow.py
-Scene cleanup and utility tools:
+Combined scene maintenance + helper UI. Replaces the old root-level `SceneCleanup.py` and `toolsWindow.py`.
 - Delete constraints, characters, script nodes, Mental Ray nodes
 - Remove legacy plugin requirements
-- Rename selected nodes with `_##` suffix
+- Rename selected nodes with `_##` suffix; remove substrings
 - Delete/rename UV sets, set active UV set
-- Grid-place selected objects
-- Spiral curve generator
-- Circular instance/copy ring generator
-- Remove substrings from node names
+- Grid-place selected objects; spiral / circular instance generators
+- Reduced Hypershade panel that hides default materials
 
-### renderLayerSetter.py
-Automated render layer setup (PyMEL, tested on Maya 2017/2018, uses legacy render layers). Creates per-light render layers, ambient occlusion layer, depth-of-field layer, and per-object mask layers with shader networks.
+```python
+from tools_window.ui import show_window; show_window()
+```
 
-**Prerequisites:** geometry in a group called `renderset`, a camera called `rendercam`. Shader assignment must be per-object (not per-face).
+### Render Layer Setter — `render_layer_setter`
 
-### simpleCharacterRig_01.py / SimpleCRig.py
-Character rigging preparation utilities:
-- Mesh mirroring with UV correction
-- Pre-rig cleanup (delete constraints, history, mirror meshes, combine)
-- AdvancedSkeleton rig creation (calls `asReBuildAdvancedSkeleton`)
-- Skin binding to `Root_M`
-- Controller shape adjustment (scaling CVs on `RootX_M`, `FKNeck_M`, `FKRoot_M`, `FKSpine1_M`, `FKChest_M`, etc.)
+Automated legacy render-layer setup. Creates per-light render layers, AO, depth-of-field, and per-object mask layers. Requires geometry under a `renderset` group and a `rendercam` camera; per-object shader assignment.
+
+```python
+from render_layer_setter.run import run; run()
+```
+
+### Blendshape Setup — `blendshape_setup`
+
+Multi-mesh blendshape target setup with wrap deformers, BindPose handling, and keyed modeling poses.
+
+```python
+from blendshape_setup.ui import show; show()
+```
+
+### glTF I/O — `gltf_io`
+
+Import and export glTF / GLB through Maya's native plugin (when available) with a pure-Python fallback importer for meshes + skinning.
+
+```python
+import gltf_io; gltf_io.show()
+```
 
 ---
 
-## Auto Control Rig — `autoControlRig.py`
+## Auto Control Rig — `auto_control_rig`
 
 Generates AdvancedSkeleton-compatible controls on **any joint hierarchy**, designed for use with the **s&box Citizen character rig** (`citizen_REF.fbx`) but works with any skeleton. A clean intermediate "driver" skeleton is built with proper orientations; IK/FK controls drive the driver joints, which in turn parent-constrain the original skin joints.
 
 **Usage:**
 ```python
-import autoControlRig; autoControlRig.show()
+from auto_control_rig.ui import show_window; show_window()
 ```
 
 ### Architecture

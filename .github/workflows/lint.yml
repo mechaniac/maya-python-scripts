@@ -1,0 +1,28 @@
+name: lint
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Syntax check (py_compile)
+        run: |
+          # Compile every tracked .py file. Fails fast on a typo that would
+          # only surface inside Maya.
+          git ls-files '*.py' | xargs -r python -m py_compile
+
+      - name: Ruff
+        run: ruff check .

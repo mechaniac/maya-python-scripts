@@ -13,7 +13,6 @@ import os
 import maya.cmds as cmds
 import maya.mel as mel
 import maya.utils as maya_utils
-import textwrap
 
 
 SHELF_NAME = 'C_Scripts'
@@ -275,153 +274,139 @@ def _set_rollover_tooltip(button, tooltip):
 _BUTTONS = [
     {
         'label': 'S2 Import',
-        'annotation': (
-            'Open the Source 2 Character Importer for loading and converting '
-            'Source 2 character assets.'
-        ),
         'image': 'charImporter.png',
-        'command': textwrap.dedent("""\
-            import importlib
-            import ui_word_weighting as _uww; importlib.reload(_uww)
-            import source2_importer.kv3 as _kv3; importlib.reload(_kv3)
-            import source2_importer.vrf as _vrf; importlib.reload(_vrf)
-            import source2_importer.materials as _mat; importlib.reload(_mat)
-            import source2_importer.pipeline as _pip; importlib.reload(_pip)
-            import source2_importer.ui as _sui; importlib.reload(_sui)
-            import source2Importer; importlib.reload(source2Importer)
-            source2Importer.show()
-        """),
+        'modules': [
+            'ui_word_weighting',
+            'source2_importer.kv3',
+            'source2_importer.vrf',
+            'source2_importer.materials',
+            'source2_importer.pipeline',
+            'source2_importer.ui',
+        ],
+        'entry': 'source2_importer.ui.show()',
     },
     {
         'label': 'Ctrl Rig',
-        'annotation': (
-            'Open the Auto Control Rig builder for controls, helpers, twist '
-            'joints, and stretchy IK setup.'
-        ),
         'image': 'AutoRig.png',
-        'command': textwrap.dedent("""\
-            import importlib
-            import ui_word_weighting as _uww; importlib.reload(_uww)
-            import auto_control_rig.constants as _con; importlib.reload(_con)
-            import auto_control_rig.utils as _utl; importlib.reload(_utl)
-            import auto_control_rig.helpers as _hlp; importlib.reload(_hlp)
-            import auto_control_rig.skeleton as _skl; importlib.reload(_skl)
-            import auto_control_rig.controls as _ctl; importlib.reload(_ctl)
-            import auto_control_rig.stretchy as _str; importlib.reload(_str)
-            import auto_control_rig.twist as _twt; importlib.reload(_twt)
-            import auto_control_rig.mapping as _map; importlib.reload(_map)
-            import auto_control_rig.operations as _ops; importlib.reload(_ops)
-            import auto_control_rig.debug as _dbg; importlib.reload(_dbg)
-            import auto_control_rig.builder as _bld; importlib.reload(_bld)
-            import auto_control_rig.ui as _ui; importlib.reload(_ui)
-            _ui.show_window()
-        """),
+        'modules': [
+            'ui_word_weighting',
+            'auto_control_rig.constants',
+            'auto_control_rig.utils',
+            'auto_control_rig.helpers',
+            'auto_control_rig.skeleton',
+            'auto_control_rig.controls',
+            'auto_control_rig.stretchy',
+            'auto_control_rig.twist',
+            'auto_control_rig.mapping',
+            'auto_control_rig.operations',
+            'auto_control_rig.debug',
+            'auto_control_rig.builder',
+            'auto_control_rig.ui',
+        ],
+        'entry': 'auto_control_rig.ui.show_window()',
     },
     {
         'label': 'AnimGen',
-        'annotation': (
-            'Open Animation Generator v2 for procedural walk, run, sidestep, '
-            'and layered animation generation.'
-        ),
         'image': 'AnimGenerator.png',
-        'command': textwrap.dedent("""\
-            import importlib
-            import ui_word_weighting as _uww; importlib.reload(_uww)
-            # core
-            import anim_gen_v2.core.patterns as _pat; importlib.reload(_pat)
-            import anim_gen_v2.core.channel as _ch; importlib.reload(_ch)
-            import anim_gen_v2.core.resolver as _res; importlib.reload(_res)
-            import anim_gen_v2.core.engine as _eng; importlib.reload(_eng)
-            import anim_gen_v2.core.presets as _pre; importlib.reload(_pre)
-            # layers
-            import anim_gen_v2.layers as _lay; importlib.reload(_lay)
-            import anim_gen_v2.layers.walk_primary as _wp; importlib.reload(_wp)
-            import anim_gen_v2.layers.walk_secondary as _ws; importlib.reload(_ws)
-            import anim_gen_v2.layers.walk_arms as _wa; importlib.reload(_wa)
-            import anim_gen_v2.layers.run_primary as _rp; importlib.reload(_rp)
-            import anim_gen_v2.layers.sidestep_primary as _sp; importlib.reload(_sp)
-            # ui
-            import anim_gen_v2.ui.range_slider as _rs; importlib.reload(_rs)
-            import anim_gen_v2.ui.window as _win; importlib.reload(_win)
-            import anim_gen_v2.launcher as _lnc; importlib.reload(_lnc)
-            _lnc.show()
-        """),
+        'modules': [
+            'ui_word_weighting',
+            'anim_gen_v2.core.patterns',
+            'anim_gen_v2.core.channel',
+            'anim_gen_v2.core.resolver',
+            'anim_gen_v2.core.engine',
+            'anim_gen_v2.core.presets',
+            'anim_gen_v2.layers',
+            'anim_gen_v2.layers.walk_primary',
+            'anim_gen_v2.layers.walk_secondary',
+            'anim_gen_v2.layers.walk_arms',
+            'anim_gen_v2.layers.run_primary',
+            'anim_gen_v2.layers.sidestep_primary',
+            'anim_gen_v2.ui.range_slider',
+            'anim_gen_v2.ui.window',
+            'anim_gen_v2.launcher',
+        ],
+        'entry': 'anim_gen_v2.launcher.show()',
     },
     {
         'label': 'Clip Set',
-        'annotation': 'Clip Setter — s&box Character Export',
         'image': 'ClipSetter.png',
-        'command': textwrap.dedent("""\
-            import importlib
-            import ui_word_weighting as _uww; importlib.reload(_uww)
-            import clip_setter.clips as _clp; importlib.reload(_clp)
-            import clip_setter.export as _exp; importlib.reload(_exp)
-            import clip_setter.ui as _cui; importlib.reload(_cui)
-            _cui.show()
-        """),
+        'modules': [
+            'ui_word_weighting',
+            'clip_setter.clips',
+            'clip_setter.export',
+            'clip_setter.ui',
+        ],
+        'entry': 'clip_setter.ui.show()',
     },
     {
         'label': 'glTF\nI/O',
-        'annotation': 'glTF / GLB Importer & Exporter',
         'image': 'gltfImpExp.png',
-        'command': textwrap.dedent("""\
-            import importlib, sys
-            import ui_word_weighting as _uww; importlib.reload(_uww)
-            # Drop any cached gltf_io.* modules so reload picks up new files
-            for _m in [m for m in list(sys.modules) if m == 'gltf_io' or m.startswith('gltf_io.')]:
-                del sys.modules[_m]
-            import gltf_io
-            gltf_io.show()
-        """),
+        'modules': ['ui_word_weighting'],
+        'hard_reload': ['gltf_io'],
+        'entry': 'gltf_io.show()',
     },
     {
         'label': 'Blend\nSetup',
-        'annotation': 'Multi-object blendshape setup and edit targets',
         'image': 'BlendShapeSetup.png',
-        'command': textwrap.dedent("""\
-            import importlib
-            import ui_word_weighting as _uww; importlib.reload(_uww)
-            import blendshape_setup.logic as _bsl; importlib.reload(_bsl)
-            import blendshape_setup.ui as _bsu; importlib.reload(_bsu)
-            import blendshapeSetup; importlib.reload(blendshapeSetup)
-            blendshapeSetup.show()
-        """),
+        'modules': [
+            'ui_word_weighting',
+            'blendshape_setup.logic',
+            'blendshape_setup.ui',
+        ],
+        'entry': 'blendshape_setup.ui.show()',
     },
     {
         'label': 'Tools',
-        'annotation': 'Scene Tools (cleanup, plugin requires, helpers)',
         'image': 'SceneTools.png',
-        'command': textwrap.dedent("""\
-            import importlib
-            import ui_word_weighting as _uww; importlib.reload(_uww)
-            import tools_window.chypershade as _twh; importlib.reload(_twh)
-            import tools_window.logic as _twl; importlib.reload(_twl)
-            import tools_window.ui as _twu; importlib.reload(_twu)
-            _twu.show_window()
-        """),
+        'modules': [
+            'ui_word_weighting',
+            'tools_window.chypershade',
+            'tools_window.logic',
+            'tools_window.ui',
+        ],
+        'entry': 'tools_window.ui.show_window()',
     },
     {
         'label': 'Render\nLyr',
-        'annotation': 'Render Layer Setter',
         'image': 'RenderLayerSetter.png',
-        'command': textwrap.dedent("""\
-            import importlib
-            import render_layer_setter.logic as _rls; importlib.reload(_rls)
-            import render_layer_setter.run as _rlr; importlib.reload(_rlr)
-            _rlr.run()
-        """),
+        'modules': [
+            'render_layer_setter.logic',
+            'render_layer_setter.run',
+        ],
+        'entry': 'render_layer_setter.run.run()',
     },
     {
         'label': 'Shelf\nSetup',
-        'annotation': 'Reinstall / update this C_Scripts shelf',
         'image': 'refresh.png',
-        'command': textwrap.dedent("""\
-            import importlib
-            import install_shelf; importlib.reload(install_shelf)
-            install_shelf.install_deferred()
-        """),
+        'modules': ['install_shelf'],
+        'entry': 'install_shelf.install_deferred()',
     },
 ]
+
+
+def _build_reload_command(btn):
+    """Compose a Python snippet that reloads `modules` then runs `entry`.
+
+    `hard_reload` packages get their cached submodules purged from
+    `sys.modules` before re-import so a fresh copy is loaded.
+    """
+    lines = ['import importlib']
+    hard = btn.get('hard_reload') or []
+    if hard:
+        lines.append('import sys')
+        for pkg in hard:
+            lines.append(
+                "for _m in [m for m in list(sys.modules) "
+                "if m == {p!r} or m.startswith({p!r} + '.')]: "
+                "del sys.modules[_m]".format(p=pkg)
+            )
+    for mod in btn.get('modules', []):
+        alias = '_' + mod.replace('.', '_')
+        lines.append('import {m} as {a}; importlib.reload({a})'.format(m=mod, a=alias))
+    for pkg in hard:
+        lines.append('import {p}'.format(p=pkg))
+    lines.append(btn['entry'])
+    return '\n'.join(lines) + '\n'
 
 
 # ── installer ─────────────────────────────────────────────────────
@@ -457,7 +442,7 @@ def _install_now():
             label=btn['label'],
             annotation=tooltip,
             image1=_button_icon(btn),
-            command=btn['command'],
+            command=_build_reload_command(btn),
             sourceType='python',
         )
         button_tooltips.append((button, tooltip))
