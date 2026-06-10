@@ -71,11 +71,12 @@ _ui = {}
 _records = []
 _active_wire_test = None
 _active_target_index = None
+_target_switch_busy = False
 _BIND_POSE_INDEX = -1
 
 
 def show(move_to_primary=False):
-    global _active_wire_test, _active_target_index
+    global _active_wire_test, _active_target_index, _target_switch_busy
 
     _kill_legacy_wrap_display_jobs()
     if cmds.window(WINDOW_NAME, exists=True):
@@ -85,6 +86,7 @@ def show(move_to_primary=False):
     _ui.clear()
     _active_wire_test = None
     _active_target_index = _BIND_POSE_INDEX
+    _target_switch_busy = False
 
     cmds.window(
         WINDOW_NAME,
@@ -251,8 +253,13 @@ def show(move_to_primary=False):
     )
     _button(action_row, "Discover Setup", _discover,
             THEME["neutral"], tooltip=TOOLTIPS["discover"])
-    _button(action_row, "All Targets Off", _activate_all_off,
-            THEME["neutral"], tooltip=TOOLTIPS["all_off"])
+    _ui["all_off_button"] = _button(
+        action_row,
+        "All Targets Off",
+        _activate_all_off,
+        THEME["neutral"],
+        tooltip=TOOLTIPS["all_off"],
+    )
 
     _button(actions, "GenerateKeyGroups", _generate_key_groups,
             THEME["edit"], tooltip=TOOLTIPS["key_groups"])
@@ -362,6 +369,8 @@ def _generate(*_):
 def _discover(*_, update_status=True):
     global _records, _active_target_index
     _records = logic.discover_setups()
+    live_count = len(logic.discover_blendshape_setups())
+    key_group_count = len(logic.discover_key_group_setups())
     wrap_count = len(logic.discover_wrap_setups())
     helper_count = len(logic.discover_helper_nodes())
     transform_key_count = len(logic.discover_transform_key_nodes())
@@ -371,9 +380,11 @@ def _discover(*_, update_status=True):
     if update_status:
         if _records or wrap_count or helper_count or transform_key_count:
             _set_status(
-                "Discovered {0} blendShape node(s), {1} wrap node(s), "
-                "{2} helper node(s), and transform keys on {3} node(s).".format(
-                    len(_records),
+                "Discovered {0} blendShape node(s), {1} key-group setup(s), "
+                "{2} wrap node(s), {3} helper node(s), and transform keys "
+                "on {4} node(s).".format(
+                    live_count,
+                    key_group_count,
                     wrap_count,
                     helper_count,
                     transform_key_count,
@@ -385,40 +396,103 @@ def _discover(*_, update_status=True):
 
 
 def _activate(index):
+    if not _begin_target_switch():
+        return
+    _execute_deferred(lambda i=index: _activate_now(i))
+
+
+def _activate_now(index):
     global _active_target_index
 
     try:
-        frame = logic.activate_target(
-            index,
-            records=_records,
-            open_editor=False,
-        )
-    except Exception as exc:
-        _set_status(str(exc), warning=True)
-        cmds.warning(str(exc))
-        return
+        try:
+            frame = logic.activate_target(
+                index,
+                records=_records,
+                open_editor=False,
+            )
+        except Exception as exc:
+            _set_status(str(exc), warning=True)
+            cmds.warning(str(exc))
+            return
 
-    _active_target_index = index
-    _update_target_button_states()
-    target_name = _records[0]["targets"][index]
-    _set_status_with_auto_key(
-        "Editing {0} at frame {1}.".format(target_name, frame)
-    )
-    logic.hide_blendshape_editor()
+        _active_target_index = index
+        _update_target_button_states()
+        target_name = _records[0]["targets"][index]
+        _set_status_with_auto_key(
+            "Editing {0} at frame {1}.".format(target_name, frame)
+        )
+        logic.hide_blendshape_editor()
+    finally:
+        _end_target_switch_deferred()
 
 
 def _activate_all_off(*_):
+    if not _begin_target_switch():
+        return
+    _execute_deferred(_activate_all_off_now)
+
+
+def _activate_all_off_now():
     global _active_target_index
 
     try:
-        frame = logic.activate_all_off(records=_records)
-    except Exception as exc:
-        _set_status(str(exc), warning=True)
-        cmds.warning(str(exc))
-        return
-    _active_target_index = _BIND_POSE_INDEX
+        try:
+            frame = logic.activate_all_off(records=_records)
+        except Exception as exc:
+            _set_status(str(exc), warning=True)
+            cmds.warning(str(exc))
+            return
+        _active_target_index = _BIND_POSE_INDEX
+        _update_target_button_states()
+        _set_status_with_auto_key("BindPose at frame {0}.".format(frame))
+    finally:
+        _end_target_switch_deferred()
+
+
+def _begin_target_switch():
+    global _target_switch_busy
+
+    if _target_switch_busy:
+        _set_status("Target switch is still settling; ignored extra click.")
+        return False
+
+    _target_switch_busy = True
+    _set_target_controls_enabled(False)
+    return True
+
+
+def _end_target_switch_deferred():
+    def _release_after_second_idle():
+        _execute_deferred(_release_target_switch)
+
+    _execute_deferred(_release_after_second_idle)
+
+
+def _release_target_switch():
+    global _target_switch_busy
+
+    _target_switch_busy = False
+    _set_target_controls_enabled(True)
     _update_target_button_states()
-    _set_status_with_auto_key("BindPose at frame {0}.".format(frame))
+
+
+def _set_target_controls_enabled(enabled):
+    controls = []
+    bind_button = _ui.get("bind_pose_button")
+    if bind_button:
+        controls.append(bind_button)
+    all_off_button = _ui.get("all_off_button")
+    if all_off_button:
+        controls.append(all_off_button)
+    controls.extend((_ui.get("target_buttons") or {}).values())
+
+    for control in controls:
+        if control and cmds.control(control, exists=True):
+            try:
+                cmds.button(control, edit=True, enable=bool(enabled))
+            except Exception:
+                pass
 
 
 def _stop_edit_mode(*_):
@@ -527,12 +601,13 @@ def _remove_setup(*_):
     _set_status(
         "Removed {0} blendShape node(s), {1} wrap node(s), "
         "{2} helper node(s), transform keys on {3} node(s), "
-        "and {4} wrap influence attr(s).".format(
+        "{4} wrap influence attr(s), and {5} key group root(s).".format(
             removed_count.get("blendShapes", 0),
             removed_count.get("wraps", 0),
             removed_count.get("helpers", 0),
             removed_count.get("transformKeyedNodes", 0),
             removed_count.get("wrapInfluenceAttrs", 0),
+            removed_count.get("keyGroups", 0),
         )
     )
     _finish_deferred()
@@ -931,11 +1006,15 @@ def _finish_deferred():
         _disable_horizontal_scroll()
         ui_word_weighting.apply_to_window(WINDOW_NAME)
 
+    _execute_deferred(_finish)
+
+
+def _execute_deferred(callback):
     try:
         import maya.utils as maya_utils
-        maya_utils.executeDeferred(_finish)
+        maya_utils.executeDeferred(callback)
     except Exception:
-        _finish()
+        callback()
 
 
 def _move_window_to_primary_screen_deferred():

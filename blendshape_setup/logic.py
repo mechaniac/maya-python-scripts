@@ -268,8 +268,8 @@ def activate_target(index, records=None, open_editor=False,
 
         selected_meshes = []
         for record in records:
-            node = record["node"]
-            if not cmds.objExists(node):
+            node = record.get("node")
+            if not node or not cmds.objExists(node):
                 continue
             if index >= len(record.get("targets", [])):
                 continue
@@ -319,8 +319,8 @@ def activate_all_off(records=None, preserve_selection=True):
         cmds.currentTime(start_frame, edit=True)
         ensure_transform_keys(records, start_frame)
         for record in records:
-            node = record["node"]
-            if not cmds.objExists(node):
+            node = record.get("node")
+            if not node or not cmds.objExists(node):
                 continue
             _set_active_weights(node, len(record["targets"]), -1)
             try:
@@ -353,8 +353,8 @@ def disable_edit_mode(records=None):
     """Turn off sculpt target edit mode on all managed blendShapes."""
     records = records or discover_setups()
     for record in records:
-        node = record["node"]
-        if cmds.objExists(node):
+        node = record.get("node")
+        if node and cmds.objExists(node):
             try:
                 cmds.sculptTarget(node, edit=True, target=-1)
             except Exception:
@@ -370,9 +370,10 @@ def auto_key_enabled():
 
 
 def generated_setup_exists():
-    """Return True if this tool has generated blendShapes or wraps."""
+    """Return True if this tool has generated blendShapes, wraps, or states."""
     return bool(discover_setups() or discover_wrap_setups()
-                or discover_helper_nodes() or discover_transform_key_nodes())
+                or discover_helper_nodes() or discover_transform_key_nodes()
+                or _key_group_roots())
 
 
 def generate_key_groups(records=None):
@@ -400,7 +401,7 @@ def generate_key_groups(records=None):
     cmds.undoInfo(openChunk=True)
     try:
         root = _ensure_key_group_root()
-        _write_key_group_root_metadata(root)
+        _write_key_group_root_metadata(root, targets, start_frame, interval)
         for index, label, frame in key_items:
             group = _ensure_key_group(root, index, label)
             _write_key_group_metadata(group, index, label)
@@ -650,7 +651,12 @@ def bake_targets(records=None, preserve_selection=True):
         # ---- Loop 2: rebuild a fresh BlendshapeKeyGroups hierarchy. ----
         new_root = cmds.group(empty=True, name=_unique_name(KEY_GROUP_ROOT))
         new_root = _long_name(new_root)
-        _write_key_group_root_metadata(new_root)
+        _write_key_group_root_metadata(
+            new_root,
+            targets,
+            first.get("start_frame", DEFAULT_START_FRAME),
+            first.get("interval", DEFAULT_INTERVAL),
+        )
 
         for state_index, (label, snapshot_group) in enumerate(snapshots):
             kg_name = _unique_child_name(new_root, _safe_target_name(label))
@@ -1073,8 +1079,9 @@ def remove_setup(records=None):
     wrap_records = discover_wrap_setups()
     helper_nodes = discover_helper_nodes()
     transform_key_nodes = discover_transform_key_nodes()
+    key_group_roots = _key_group_roots()
     if (not records and not wrap_records and not helper_nodes
-            and not transform_key_nodes):
+            and not transform_key_nodes and not key_group_roots):
         raise RuntimeError("No managed blendshape setup found.")
 
     blend_nodes = []
@@ -1092,7 +1099,13 @@ def remove_setup(records=None):
             wrap_nodes.append(node)
             seen.add(node)
 
-    nodes = helper_nodes + wrap_nodes + blend_nodes
+    key_group_nodes = []
+    for node in key_group_roots:
+        if node and node not in seen and cmds.objExists(node):
+            key_group_nodes.append(node)
+            seen.add(node)
+
+    nodes = helper_nodes + wrap_nodes + blend_nodes + key_group_nodes
     if not nodes and not transform_key_nodes:
         raise RuntimeError("No managed setup nodes exist anymore.")
 
@@ -1112,17 +1125,19 @@ def remove_setup(records=None):
         "helpers": len(helper_nodes),
         "transformKeyedNodes": len(transform_key_nodes),
         "wrapInfluenceAttrs": removed_wrap_attrs,
+        "keyGroups": len(key_group_nodes),
         "total": len(nodes),
     }
     print(
         "Removed {0} blendShape node(s), {1} wrap node(s), "
         "{2} helper node(s), transform keys on {3} node(s), "
-        "and {4} wrap influence attr(s).".format(
+        "{4} wrap influence attr(s), and {5} key group root(s).".format(
             result["blendShapes"],
             result["wraps"],
             result["helpers"],
             result["transformKeyedNodes"],
             result["wrapInfluenceAttrs"],
+            result["keyGroups"],
         )
     )
     return result
@@ -1148,7 +1163,15 @@ def create_template():
 
 
 def discover_setups():
-    """Find blendShape nodes created by this tool."""
+    """Find blendShape nodes created by this tool, or saved key groups."""
+    records = discover_blendshape_setups()
+    if records:
+        return records
+    return discover_key_group_setups()
+
+
+def discover_blendshape_setups():
+    """Find only live managed blendShape nodes created by this tool."""
     records = []
     for node in cmds.ls(type="blendShape") or []:
         attr = "{0}.{1}".format(node, MANAGED_ATTR)
@@ -1169,6 +1192,37 @@ def discover_setups():
         })
 
     records.sort(key=lambda record: record["node"])
+    return records
+
+
+def discover_key_group_setups():
+    """Rebuild a target-button record from saved BlendshapeKeyGroups."""
+    records = []
+    for root in _key_group_roots():
+        targets = _key_group_targets(root)
+        if not targets:
+            continue
+        start_frame = int(_read_numeric_attr(
+            root,
+            START_ATTR,
+            DEFAULT_START_FRAME,
+        ))
+        interval = int(_read_numeric_attr(
+            root,
+            INTERVAL_ATTR,
+            DEFAULT_INTERVAL,
+        ))
+        records.append({
+            "mesh": None,
+            "node": "",
+            "targets": targets,
+            "start_frame": start_frame,
+            "interval": interval,
+            "key_group_root": root,
+            "key_group_only": True,
+        })
+
+    records.sort(key=lambda record: record["key_group_root"])
     return records
 
 
@@ -2130,15 +2184,38 @@ def _key_group_roots():
     roots = []
     for node in cmds.ls(type="transform", long=True) or []:
         attr = "{0}.{1}".format(node, KEY_GROUP_ROOT_ATTR)
-        if cmds.objExists(attr) and cmds.getAttr(attr):
+        has_marker = False
+        if cmds.objExists(attr):
+            try:
+                has_marker = bool(cmds.getAttr(attr))
+            except Exception:
+                has_marker = False
+        if has_marker or _short_name(node).startswith(KEY_GROUP_ROOT):
             roots.append(node)
     roots.sort()
     return roots
 
 
-def _write_key_group_root_metadata(root):
+def _write_key_group_root_metadata(root, targets=None, start_frame=None,
+                                   interval=None):
     _ensure_bool_attr(root, KEY_GROUP_ROOT_ATTR)
     cmds.setAttr("{0}.{1}".format(root, KEY_GROUP_ROOT_ATTR), True)
+
+    if targets is not None:
+        _ensure_string_attr(root, TARGETS_ATTR)
+        cmds.setAttr(
+            "{0}.{1}".format(root, TARGETS_ATTR),
+            "|".join(targets),
+            type="string",
+        )
+
+    if start_frame is not None:
+        _ensure_long_attr(root, START_ATTR)
+        cmds.setAttr("{0}.{1}".format(root, START_ATTR), int(start_frame))
+
+    if interval is not None:
+        _ensure_long_attr(root, INTERVAL_ATTR)
+        cmds.setAttr("{0}.{1}".format(root, INTERVAL_ATTR), int(interval))
 
 
 def _ensure_key_group(root, index, label):
@@ -2167,9 +2244,53 @@ def _key_group_children(root):
     result = []
     for child in children:
         attr = "{0}.{1}".format(child, KEY_GROUP_MANAGED_ATTR)
-        if cmds.objExists(attr) and cmds.getAttr(attr):
+        has_marker = False
+        if cmds.objExists(attr):
+            try:
+                has_marker = bool(cmds.getAttr(attr))
+            except Exception:
+                has_marker = False
+        if has_marker or _is_likely_key_group_child(child):
             result.append(child)
     return result
+
+
+def _key_group_targets(root):
+    stored = [
+        target for target in _read_string_attr(root, TARGETS_ATTR).split("|")
+        if target
+    ]
+    if stored:
+        return stored
+
+    targets = []
+    seen = set()
+    for order, child in enumerate(_key_group_children(root)):
+        label = _read_string_attr(child, KEY_GROUP_TARGET_ATTR) or \
+            _short_name(child)
+        if label == KEY_GROUP_BIND_POSE:
+            continue
+        index = _read_numeric_attr(child, KEY_GROUP_INDEX_ATTR, None)
+        if index is None or int(index) < 0:
+            sort_key = 100000 + order
+        else:
+            sort_key = int(index)
+        targets.append((sort_key, order, label))
+
+    result = []
+    for _sort_key, _order, label in sorted(targets):
+        if label in seen:
+            continue
+        result.append(label)
+        seen.add(label)
+    return result
+
+
+def _is_likely_key_group_child(child):
+    name = _short_name(child)
+    if name == KEY_GROUP_BIND_POSE:
+        return True
+    return not name.startswith("_")
 
 
 def _write_key_group_metadata(group, index, label):

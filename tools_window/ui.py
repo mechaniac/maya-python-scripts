@@ -64,6 +64,10 @@ def _css_rgb(color):
     )
 
 
+def _shift_color(color, amount):
+    return tuple(max(0.0, min(1.0, channel + amount)) for channel in color)
+
+
 def _remember_style(control, fg=None, bg=None, padding=None,
                     top=True, border=False):
     parts = []
@@ -79,6 +83,42 @@ def _remember_style(control, fg=None, bg=None, padding=None,
         parts.append("border: 1px solid rgba(255, 255, 255, 28);")
     if parts:
         _QT_STYLES[control] = " ".join(parts)
+
+
+def _remember_button_style(control, area_key):
+    area = AREAS[area_key]
+    bg = area["button"]
+    hover = _shift_color(bg, 0.075)
+    pressed = _shift_color(bg, -0.075)
+    accent = area["accent"]
+    _QT_STYLES[control] = """
+        QPushButton {{
+            background-color: {bg};
+            color: {fg};
+            border: 1px solid rgba(255, 255, 255, 32);
+            padding: 0px 6px;
+            text-align: center;
+        }}
+        QPushButton:hover {{
+            background-color: {hover};
+            border: 1px solid {fg};
+        }}
+        QPushButton:pressed {{
+            background-color: {pressed};
+            border: 1px solid rgba(0, 0, 0, 150);
+            padding: 1px 5px 0px 7px;
+        }}
+        QPushButton:disabled {{
+            color: rgba(180, 190, 196, 120);
+            background-color: rgb(50, 54, 58);
+            border: 1px solid rgba(255, 255, 255, 16);
+        }}
+    """.format(
+        bg=_css_rgb(bg),
+        fg=accent,
+        hover=_css_rgb(hover),
+        pressed=_css_rgb(pressed),
+    )
 
 
 def _apply_qt_styles_deferred():
@@ -188,8 +228,7 @@ def _button(parent, label, command, area_key, height=20, width=None):
         **kwargs
     )
     _apply_bg(control, area["button"])
-    _remember_style(control, fg=area["accent"], bg=area["button"],
-                    padding="0px 6px", border=True)
+    _remember_button_style(control, area_key)
     return control
 
 
