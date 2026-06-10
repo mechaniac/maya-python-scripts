@@ -106,8 +106,8 @@ _SHELF_TOOLTIPS = {
         'BindPose, and keyed modeling poses.'
     ),
     'SceneTools.png': (
-        'Open Scene Tools for cleanup, UV/layout helpers, reduced '
-        'Hypershade, and scene utilities.'
+        'Open Scene Tools for cleanup, UV/layout helpers, layout tools, '
+        'and scene utilities.'
     ),
     'RenderLayerSetter.png': (
         'Run Render Layer Setter for render layer setup.'
@@ -360,7 +360,6 @@ _BUTTONS = [
         'image': 'SceneTools.png',
         'modules': [
             'ui_word_weighting',
-            'tools_window.chypershade',
             'tools_window.logic',
             'tools_window.ui',
         ],

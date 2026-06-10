@@ -307,7 +307,6 @@ def show_window():
         logic.toggle_display_affected,
         "scene",
     )
-    _button(scene, "Open cHypershade", logic.open_chypershade, "scene")
 
     naming = _section(main, "Naming", "naming")
     _label(naming, "Rename Selected Nodes", "naming")

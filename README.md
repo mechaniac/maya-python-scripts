@@ -38,7 +38,7 @@ from animation_generators.launcher import show; show()
 | `gltf_io/` | glTF / GLB import & export (Maya plugin or pure-Python fallback) |
 | `clip_setter/` | Manage animation clip layout for Maya → s&box FBX export |
 | `blendshape_setup/` | Multi-mesh blendshape targets, wrap deformers, BindPose, keyed modeling poses |
-| `tools_window/` | Scene cleanup, UV/layout helpers, reduced Hypershade panel |
+| `tools_window/` | Scene cleanup, UV/layout helpers, and layout utilities |
 | `render_layer_setter/` | Per-light / AO / depth render layer setup |
 | `install_shelf.py` | One-click shelf installer — creates/updates `C_Scripts` shelf with reload buttons for all tools |
 | `ui_word_weighting.py` | Shared word-weight helper used by every tool window for consistent label sizing |
@@ -460,7 +460,6 @@ Combined scene maintenance + helper UI. Replaces the old root-level `SceneCleanu
 - Rename selected nodes with `_##` suffix; remove substrings
 - Delete/rename UV sets, set active UV set
 - Grid-place selected objects; spiral / circular instance generators
-- Reduced Hypershade panel that hides default materials
 
 ```python
 from tools_window.ui import show_window; show_window()

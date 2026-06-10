@@ -1,8 +1,6 @@
 import maya.cmds as cmds
 import math
 
-from . import chypershade
-
 # === Plugin and node cleanup ===
 plugin_blacklist = [
     "CP_Exporter2009",
@@ -25,10 +23,6 @@ def toggle_display_affected(*args):
     cmds.displayPref(displayAffected=not current)
     print("Display Affected (History Highlight) is now: {0}".format(
         not current))
-
-
-def open_chypershade(*args):
-    chypershade.open_panel()
 
 
 def prep_function(*args):
