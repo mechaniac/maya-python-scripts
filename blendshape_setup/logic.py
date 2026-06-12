@@ -5,6 +5,9 @@ import re
 import maya.cmds as cmds
 import maya.mel as mel
 
+import crash_logger
+import maya_display
+
 
 MANAGED_ATTR = "cbsManaged"
 TARGETS_ATTR = "cbsTargets"
@@ -17,6 +20,8 @@ KEY_GROUP_ROOT_ATTR = "cbsKeyGroupRootManaged"
 KEY_GROUP_MANAGED_ATTR = "cbsKeyGroupManaged"
 KEY_GROUP_INDEX_ATTR = "cbsKeyGroupIndex"
 KEY_GROUP_TARGET_ATTR = "cbsKeyGroupTarget"
+KEY_GROUP_LINEUP_ACTIVE_ATTR = "cbsKeyGroupLineupActive"
+KEY_GROUP_LINEUP_OFFSET_ATTR = "cbsKeyGroupLineupOffset"
 WRAP_MANAGED_ATTR = "cbsWrapManaged"
 WRAP_DRIVER_ATTR = "cbsWrapDriver"
 WRAP_TARGET_ATTR = "cbsWrapTarget"
@@ -53,6 +58,15 @@ DEFAULT_TARGET_COUNT = len(DEFAULT_TARGET_NAMES)
 DEFAULT_START_FRAME = 0
 DEFAULT_INTERVAL = 10
 DEFAULT_WRAP_MAX_DISTANCE = 6.0
+DEFAULT_LINEUP_OFFSET = 50.0
+OUTLINER_KEY_ROOT_COLOR = (0.48, 0.83, 0.95)
+OUTLINER_KEY_TARGET_COLOR = (0.49, 0.72, 0.96)
+OUTLINER_KEY_ACTIVE_COLOR = (0.55, 0.95, 0.62)
+OUTLINER_KEY_BIND_COLOR = (0.72, 0.66, 1.0)
+OUTLINER_TEMPLATE_ROOT_COLOR = (0.72, 0.66, 1.0)
+OUTLINER_TEMPLATE_MESH_COLOR = (0.62, 0.94, 0.88)
+OUTLINER_TEMPLATE_WRAP_COLOR = (0.95, 0.76, 0.45)
+OUTLINER_TEMPLATE_TARGET_COLOR = (0.55, 0.95, 0.62)
 TRANSFORM_KEY_ATTRS = (
     "translateX",
     "translateY",
@@ -160,13 +174,13 @@ def generate_setup(target_count=DEFAULT_TARGET_COUNT,
                    open_editor=True,
                    wrap_max_distance=DEFAULT_WRAP_MAX_DISTANCE):
     """Create managed blendShape deformers and keyed targets on selection."""
+    maya_display.ensure_display_affected()
     if generated_setup_exists():
         raise RuntimeError(
             "Remove the existing generated setup before generating a new one."
         )
 
     meshes = selected_mesh_transforms()
-    transform_nodes = selected_transform_nodes()
     if not meshes:
         raise RuntimeError("Select one or more polygon mesh transforms.")
 
@@ -190,7 +204,6 @@ def generate_setup(target_count=DEFAULT_TARGET_COUNT,
     target_count = len(target_names)
     wrap_links = discover_wrap_links(meshes)
     meshes = _with_wrap_target_meshes(meshes, wrap_links)
-    transform_nodes = _with_wrap_target_meshes(transform_nodes, wrap_links)
     records = []
     wrap_records = []
 
@@ -218,12 +231,6 @@ def generate_setup(target_count=DEFAULT_TARGET_COUNT,
             wrap_links,
             max_distance=wrap_max_distance,
         )
-        _key_transform_channels(
-            transform_nodes,
-            target_count,
-            start_frame,
-            interval,
-        )
         _delete_temporary_target_meshes()
 
         end_frame = target_frame(target_count - 1, start_frame, interval)
@@ -250,6 +257,7 @@ def generate_setup(target_count=DEFAULT_TARGET_COUNT,
 def activate_target(index, records=None, open_editor=False,
                     preserve_selection=True):
     """Set target index active on every managed blendShape and edit it."""
+    maya_display.ensure_display_affected()
     records = records or discover_setups()
     if not records:
         raise RuntimeError("No managed blendshape setup found.")
@@ -263,43 +271,90 @@ def activate_target(index, records=None, open_editor=False,
     auto_key_state = _set_auto_key_state(False)
     try:
         frame = target_frame(index, first["start_frame"], first["interval"])
-        cmds.currentTime(frame, edit=True)
-        ensure_transform_keys(records, frame)
-
+        key_group_only = _records_are_key_group_only(records)
+        crash_logger.log_event(
+            "activate_target_begin",
+            action="activate_target",
+            index=index,
+            target=targets[index],
+            frame=frame,
+            records=len(records),
+            key_group_only=key_group_only,
+        )
         selected_meshes = []
-        for record in records:
-            node = record.get("node")
-            if not node or not cmds.objExists(node):
-                continue
-            if index >= len(record.get("targets", [])):
-                continue
+        if key_group_only:
+            crash_logger.log_event(
+                "activate_target_key_group_only",
+                action="activate_target",
+                target=targets[index],
+                reason="skip_time_and_blendshape_writes",
+            )
+        else:
+            crash_logger.log_event(
+                "activate_target_time_change_skipped",
+                action="activate_target",
+                frame=frame,
+                reason="avoid_evaluating_child_transform_keys",
+            )
 
-            _set_active_weights(node, len(record["targets"]), index)
-            mesh = record.get("mesh")
-            try:
-                _set_sculpt_target(node, index, mesh)
-            except Exception as exc:
-                cmds.warning("Could not set edit target on {0}: {1}".format(
-                    node, exc))
+            for record in records:
+                node = record.get("node")
+                if not node or not cmds.objExists(node):
+                    continue
+                if index >= len(record.get("targets", [])):
+                    continue
 
-            if mesh and cmds.objExists(mesh):
-                selected_meshes.append(mesh)
+                crash_logger.log_event(
+                    "activate_target_weights_begin",
+                    action="activate_target",
+                    node=node,
+                    active_index=index,
+                )
+                _set_active_weights(node, len(record["targets"]), index)
+                crash_logger.log_event(
+                    "activate_target_weights_end",
+                    action="activate_target",
+                    node=node,
+                    active_index=index,
+                )
+                mesh = record.get("mesh")
+                if mesh and cmds.objExists(mesh):
+                    selected_meshes.append(mesh)
 
-        if selected_meshes and not preserve_selection:
-            cmds.select(selected_meshes, replace=True)
+            if selected_meshes and not preserve_selection:
+                cmds.select(selected_meshes, replace=True)
 
-        if open_editor:
-            open_blendshape_editor()
+            if open_editor:
+                open_blendshape_editor()
 
         # Direct visibility: no animCurves, no time dependency, no DG
         # eval surprises. The label of the active key group equals the
         # target name; BindPose is shown only by activate_all_off.
+        crash_logger.log_event(
+            "activate_target_groups_begin",
+            action="activate_target",
+            active_label=targets[index],
+        )
         _apply_group_visibility(targets[index])
+        crash_logger.log_event(
+            "activate_target_groups_end",
+            action="activate_target",
+            active_label=targets[index],
+        )
 
         _force_viewport_update()
     finally:
         if preserve_selection:
+            crash_logger.log_event(
+                "activate_target_restore_selection_begin",
+                action="activate_target",
+                count=len(previous_selection),
+            )
             _restore_selection(previous_selection)
+            crash_logger.log_event(
+                "activate_target_restore_selection_end",
+                action="activate_target",
+            )
         _set_auto_key_state(auto_key_state)
 
     print("Editing {0} at frame {1}.".format(targets[index], frame))
@@ -308,6 +363,7 @@ def activate_target(index, records=None, open_editor=False,
 
 def activate_all_off(records=None, preserve_selection=True):
     """Set all managed blendShape targets to zero and jump to start frame."""
+    maya_display.ensure_display_affected()
     records = records or discover_setups()
     if not records:
         raise RuntimeError("No managed blendshape setup found.")
@@ -316,24 +372,49 @@ def activate_all_off(records=None, preserve_selection=True):
     auto_key_state = _set_auto_key_state(False)
     try:
         start_frame = records[0]["start_frame"]
-        cmds.currentTime(start_frame, edit=True)
-        ensure_transform_keys(records, start_frame)
-        for record in records:
-            node = record.get("node")
-            if not node or not cmds.objExists(node):
-                continue
-            _set_active_weights(node, len(record["targets"]), -1)
-            try:
-                cmds.sculptTarget(node, edit=True, target=-1)
-            except Exception:
-                pass
+        key_group_only = _records_are_key_group_only(records)
+        crash_logger.log_event(
+            "activate_bind_pose_begin",
+            action="activate_bind_pose",
+            frame=start_frame,
+            records=len(records),
+            key_group_only=key_group_only,
+        )
+        if key_group_only:
+            crash_logger.log_event(
+                "activate_bind_pose_key_group_only",
+                action="activate_bind_pose",
+                reason="skip_time_and_blendshape_writes",
+            )
+        else:
+            crash_logger.log_event(
+                "activate_bind_pose_time_change_skipped",
+                action="activate_bind_pose",
+                frame=start_frame,
+                reason="avoid_evaluating_child_transform_keys",
+            )
+            for record in records:
+                node = record.get("node")
+                if not node or not cmds.objExists(node):
+                    continue
+                crash_logger.log_event(
+                    "activate_bind_pose_weights_begin",
+                    action="activate_bind_pose",
+                    node=node,
+                )
+                _set_active_weights(node, len(record["targets"]), -1)
+                crash_logger.log_event(
+                    "activate_bind_pose_weights_end",
+                    action="activate_bind_pose",
+                    node=node,
+                )
 
-        meshes = [
-            record["mesh"] for record in records
-            if record.get("mesh") and cmds.objExists(record["mesh"])
-        ]
-        if meshes and not preserve_selection:
-            cmds.select(meshes, replace=True)
+            meshes = [
+                record["mesh"] for record in records
+                if record.get("mesh") and cmds.objExists(record["mesh"])
+            ]
+            if meshes and not preserve_selection:
+                cmds.select(meshes, replace=True)
 
         # Direct visibility: show BindPose only.
         _apply_group_visibility(KEY_GROUP_BIND_POSE)
@@ -341,7 +422,16 @@ def activate_all_off(records=None, preserve_selection=True):
         _force_viewport_update()
     finally:
         if preserve_selection:
+            crash_logger.log_event(
+                "activate_bind_pose_restore_selection_begin",
+                action="activate_bind_pose",
+                count=len(previous_selection),
+            )
             _restore_selection(previous_selection)
+            crash_logger.log_event(
+                "activate_bind_pose_restore_selection_end",
+                action="activate_bind_pose",
+            )
         _set_auto_key_state(auto_key_state)
 
     print("All managed blendShape targets set to 0 at frame {0}.".format(
@@ -349,16 +439,68 @@ def activate_all_off(records=None, preserve_selection=True):
     return start_frame
 
 
+def activate_none(records=None, preserve_selection=True):
+    """Set all managed blendShape targets to zero and hide every key group."""
+    maya_display.ensure_display_affected()
+    records = records or discover_setups()
+    if not records:
+        raise RuntimeError("No managed blendshape setup found.")
+
+    previous_selection = cmds.ls(selection=True, long=True) or []
+    auto_key_state = _set_auto_key_state(False)
+    try:
+        crash_logger.log_event(
+            "activate_none_begin",
+            action="activate_none",
+            records=len(records),
+        )
+        for record in records:
+            node = record.get("node")
+            if not node or not cmds.objExists(node):
+                continue
+            crash_logger.log_event(
+                "activate_none_weights_begin",
+                action="activate_none",
+                node=node,
+            )
+            _set_active_weights(node, len(record["targets"]), -1)
+            crash_logger.log_event(
+                "activate_none_weights_end",
+                action="activate_none",
+                node=node,
+            )
+
+        _apply_group_visibility(None)
+        _force_viewport_update()
+    finally:
+        if preserve_selection:
+            crash_logger.log_event(
+                "activate_none_restore_selection_begin",
+                action="activate_none",
+                count=len(previous_selection),
+            )
+            _restore_selection(previous_selection)
+            crash_logger.log_event(
+                "activate_none_restore_selection_end",
+                action="activate_none",
+            )
+        _set_auto_key_state(auto_key_state)
+
+    print("All managed blendShape targets hidden.")
+    return None
+
+
+def _records_are_key_group_only(records):
+    return bool(records) and all(
+        bool(record.get("key_group_only")) or not record.get("node")
+        for record in records
+    )
+
+
 def disable_edit_mode(records=None):
     """Turn off sculpt target edit mode on all managed blendShapes."""
-    records = records or discover_setups()
-    for record in records:
-        node = record.get("node")
-        if node and cmds.objExists(node):
-            try:
-                cmds.sculptTarget(node, edit=True, target=-1)
-            except Exception:
-                pass
+    del records
+    print("Blendshape edit mode calls are disabled for Maya crash safety.")
 
 
 def auto_key_enabled():
@@ -427,24 +569,137 @@ def generate_key_groups(records=None):
     }
 
 
+def style_key_group_outliner(active_label=None):
+    """Apply outliner colors to key groups owned by this tool."""
+    styled = 0
+    for root in _key_group_roots():
+        if _set_outliner_color(root, OUTLINER_KEY_ROOT_COLOR):
+            styled += 1
+        for group in _key_group_children(root):
+            label = _read_string_attr(group, KEY_GROUP_TARGET_ATTR) or \
+                _short_name(group)
+            if _style_key_group_outliner_node(
+                group,
+                label,
+                active=label == active_label,
+            ):
+                styled += 1
+    return styled
+
+
+def key_group_lineup_is_active():
+    """Return True if any managed key-group root is in lineup mode."""
+    for root in _key_group_roots():
+        attr = "{0}.{1}".format(root, KEY_GROUP_LINEUP_ACTIVE_ATTR)
+        if not cmds.objExists(attr):
+            continue
+        try:
+            if cmds.getAttr(attr):
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def set_key_group_lineup(active, offset=DEFAULT_LINEUP_OFFSET,
+                         active_label=None):
+    """Toggle direct key groups visible in an X-axis lineup.
+
+    Deliberately simple and narrow:
+    - touches only direct children of BlendshapeKeyGroups
+    - writes only .visibility and .translateX on those direct key groups
+    - never traverses or edits child meshes / shapes
+    """
+    crash_logger.log_event(
+        "key_group_lineup_begin",
+        action="key_group_lineup",
+        active=bool(active),
+        offset=offset,
+        active_label=active_label,
+    )
+    roots = _key_group_roots()
+    if not roots:
+        raise RuntimeError("No BlendshapeKeyGroups hierarchy found.")
+
+    offset = float(offset)
+    if active:
+        total = 0
+        for root in roots:
+            _write_key_group_lineup_root_state(root, True, offset)
+            groups = _ordered_key_group_children(root)
+            total += len(groups)
+            _lineup_direct_key_groups(groups, offset)
+        crash_logger.log_event(
+            "key_group_lineup_end",
+            action="key_group_lineup",
+            active=True,
+            groups=total,
+        )
+        return total
+
+    restored = 0
+    for root in roots:
+        _write_key_group_lineup_root_state(root, False, offset)
+        groups = _ordered_key_group_children(root)
+        _reset_direct_key_group_lineup(groups)
+        restored += len(groups)
+    _apply_group_visibility(active_label)
+    crash_logger.log_event(
+        "key_group_lineup_end",
+        action="key_group_lineup",
+        active=False,
+        groups=restored,
+    )
+    return restored
+
+
+def update_key_group_lineup_offset(offset):
+    """Update the active lineup spacing without changing stored originals."""
+    if not key_group_lineup_is_active():
+        return 0
+
+    total = 0
+    for root in _key_group_roots():
+        _write_key_group_lineup_root_state(root, True, offset)
+        groups = _ordered_key_group_children(root)
+        _lineup_direct_key_groups(groups, float(offset))
+        total += len(groups)
+    crash_logger.log_event(
+        "key_group_lineup_offset",
+        action="key_group_lineup",
+        offset=offset,
+        groups=total,
+    )
+    return total
+
+
+def repair_lineup_offsets(active_label=KEY_GROUP_BIND_POSE):
+    """Clear lineup X offsets from direct key-group members only."""
+    repaired = 0
+    for root in _key_group_roots():
+        _write_key_group_lineup_root_state(root, False, DEFAULT_LINEUP_OFFSET)
+        groups = _key_group_children(root)
+        _reset_direct_key_group_lineup(groups)
+        repaired += len(groups)
+
+    if repaired:
+        _apply_group_visibility(active_label)
+    crash_logger.log_event(
+        "repair_lineup_offsets",
+        action="repair_lineup_offsets",
+        nodes=repaired,
+        active_label=active_label,
+    )
+    return repaired
+
+
 def repair_setup():
     """Repair an existing setup whose visibility has drifted out of sync.
 
-    Safe, non-destructive operation for existing scenes:
-
-    1. Clear any keys / direct overrides on per-mesh ``.visibility`` and
-       ``.lodVisibility`` under every ``BlendshapeKeyGroups/*`` group, and
-       force them to 1. Effective visibility is then governed exclusively
-       by the keyed parent-group ``.visibility``.
-    2. Also clear ``.visibility`` keys on the shape nodes and force them
-       on (shapes hidden directly will not respond to parent visibility).
-    3. Re-key every parent key group's ``.visibility`` cleanly via
-       :func:`generate_key_groups` (step tangents, single source of truth).
-    4. Force a DG dirty + viewport refresh.
-
-    Returns a summary dict with the number of nodes touched. Does not
-    re-parent meshes, does not regenerate blendShape nodes, does not
-    touch wrap deformers.
+    Safe, non-destructive operation for existing scenes. It only strips
+    stale animation curves from direct ``BlendshapeKeyGroups/*`` visibility
+    channels and re-applies direct group visibility. It does not walk into
+    children and does not touch child transforms or mesh shapes.
     """
     records = discover_setups()
     if not records:
@@ -456,19 +711,11 @@ def repair_setup():
             "No BlendshapeKeyGroups root found. Run Generate Key Groups first."
         )
 
-    touched_transforms = 0
-    touched_shapes = 0
     stripped_curves = 0
     cmds.undoInfo(openChunk=True)
     try:
         for root in roots:
-            groups = cmds.listRelatives(
-                root,
-                children=True,
-                type="transform",
-                fullPath=True,
-            ) or []
-            for group in groups:
+            for group in _key_group_children(root):
                 # Delete every animCurve on this group's visibility.
                 # The curve-driven visibility system was unreliable in
                 # Maya 2026 (orphaned time inputs, DG eval refusing to
@@ -479,27 +726,8 @@ def repair_setup():
                     if cmds.objExists(attr):
                         stripped_curves += _strip_anim_curves(attr)
 
-                descendants = cmds.listRelatives(
-                    group,
-                    allDescendents=True,
-                    type="transform",
-                    fullPath=True,
-                ) or []
-                for node in descendants:
-                    if _reset_visibility(node):
-                        touched_transforms += 1
-                    shapes = cmds.listRelatives(
-                        node,
-                        shapes=True,
-                        fullPath=True,
-                        noIntermediate=True,
-                    ) or []
-                    for shape in shapes:
-                        if _reset_visibility(shape):
-                            touched_shapes += 1
-
-        # Rewrite parent group visibility (now direct setAttr, no curves).
-        generate_key_groups(records=records)
+        # Re-apply direct parent-group visibility. No child traversal.
+        _apply_group_visibility(KEY_GROUP_BIND_POSE)
     finally:
         cmds.undoInfo(closeChunk=True)
 
@@ -507,15 +735,12 @@ def repair_setup():
 
     print(
         "Repaired blendshape setup: "
-        "reset visibility on {0} transform(s) and {1} shape(s); "
-        "stripped {2} stale animCurve(s) from key group visibility; "
-        "key group visibility is now direct setAttr (no animation).".format(
-            touched_transforms, touched_shapes, stripped_curves,
-        )
+        "stripped {0} stale animCurve(s) from direct key group visibility; "
+        "children untouched.".format(stripped_curves)
     )
     return {
-        "transforms": touched_transforms,
-        "shapes": touched_shapes,
+        "transforms": 0,
+        "shapes": 0,
         "stripped_curves": stripped_curves,
     }
 
@@ -548,6 +773,7 @@ def bake_targets(records=None, preserve_selection=True):
 
     Returns ``{"states": int, "snapshot_root": str}``.
     """
+    maya_display.ensure_display_affected()
     records = records or discover_setups()
     if not records:
         raise RuntimeError("No managed blendshape setup found.")
@@ -1047,28 +1273,14 @@ def _collapse_in_outliner(nodes):
 
 
 def _reset_visibility(node):
-    """Clear visibility keys and force visibility/lodVisibility on."""
-    changed = False
-    for attr_name in ("visibility", "lodVisibility"):
-        attr = "{0}.{1}".format(node, attr_name)
-        if not cmds.objExists(attr):
-            continue
-        try:
-            if cmds.getAttr(attr, lock=True):
-                cmds.setAttr(attr, lock=False)
-        except Exception:
-            pass
-        try:
-            cmds.cutKey(attr, clear=True)
-        except Exception:
-            pass
-        try:
-            if not bool(cmds.getAttr(attr)):
-                cmds.setAttr(attr, True)
-                changed = True
-        except Exception:
-            pass
-    return changed
+    """Deprecated: child visibility resets are disabled."""
+    crash_logger.log_event(
+        "visibility_reset_skipped",
+        action="reset_visibility",
+        node=node,
+        reason="child_transform_writes_disabled",
+    )
+    return False
 
 
 def remove_setup(records=None):
@@ -1130,7 +1342,7 @@ def remove_setup(records=None):
     }
     print(
         "Removed {0} blendShape node(s), {1} wrap node(s), "
-        "{2} helper node(s), transform keys on {3} node(s), "
+        "{2} helper node(s), transform metadata on {3} node(s), "
         "{4} wrap influence attr(s), and {5} key group root(s).".format(
             result["blendShapes"],
             result["wraps"],
@@ -1153,6 +1365,10 @@ def create_template():
         name=TEMPLATE_WRAP_TARGET,
         parent=wrap_group,
     )
+    _set_outliner_color(root, OUTLINER_TEMPLATE_ROOT_COLOR)
+    _set_outliner_color(meshes, OUTLINER_TEMPLATE_MESH_COLOR)
+    _set_outliner_color(wrap_group, OUTLINER_TEMPLATE_WRAP_COLOR)
+    _set_outliner_color(wrap_targets, OUTLINER_TEMPLATE_TARGET_COLOR)
     cmds.select(root, replace=True)
     return {
         "root": root,
@@ -1308,6 +1524,7 @@ def discover_wrap_links(meshes=None):
 
 def create_wrap_deformers(links, max_distance=DEFAULT_WRAP_MAX_DISTANCE):
     """Create managed wrap deformers for discovered driver/target pairs."""
+    maya_display.ensure_display_affected()
     created = []
     max_distance = float(max_distance)
     for link in links:
@@ -1348,6 +1565,8 @@ def create_wrap_deformers(links, max_distance=DEFAULT_WRAP_MAX_DISTANCE):
 
 def apply_wire_display_test(method_id):
     """Apply one isolated wire/display method to the selected mesh transforms."""
+    if method_id == "curve_proxy":
+        maya_display.ensure_display_affected()
     meshes = selected_mesh_transforms()
     if not meshes:
         raise RuntimeError("Select one or more polygon mesh transforms.")
@@ -1405,6 +1624,21 @@ def ensure_transform_keys(records, frame):
     _set_transform_keys(meshes, [int(frame)])
 
 
+def apply_transform_keys_at_current_time():
+    """Deprecated safety no-op.
+
+    Transform-keyed child objects must be evaluated by Maya's timeline, not
+    force-written by this tool. Direct writes caused child rotations/scales to
+    snap to the setup defaults.
+    """
+    crash_logger.log_event(
+        "transform_keys_apply_skipped",
+        action="apply_transform_keys",
+        reason="direct_transform_writes_disabled",
+    )
+    return 0
+
+
 def target_frame(index, start_frame=DEFAULT_START_FRAME,
                  interval=DEFAULT_INTERVAL):
     return int(start_frame) + (int(interval) * (int(index) + 1))
@@ -1412,6 +1646,17 @@ def target_frame(index, start_frame=DEFAULT_START_FRAME,
 
 def all_zero_frame(start_frame=DEFAULT_START_FRAME):
     return int(start_frame)
+
+
+def _set_current_frame_safely(frame, reason):
+    """Deprecated: timeline writes are disabled for child-transform safety."""
+    crash_logger.log_event(
+        "current_time_write_skipped",
+        action=reason,
+        frame=frame,
+        reason="timeline_writes_disabled_to_protect_child_transforms",
+    )
+    return int(frame)
 
 
 def build_target_names(target_count=DEFAULT_TARGET_COUNT,
@@ -1497,9 +1742,8 @@ def _with_wrap_target_meshes(meshes, wrap_links):
 
 
 def _set_sculpt_target(node, index, mesh=None):
-    before = _transform_snapshot()
-    cmds.sculptTarget(node, edit=True, target=index)
-    _delete_new_sculpt_helpers(before, node)
+    del node, index, mesh
+    return False
 
 
 def _create_wrap_deformer(driver, target, parent_group=None):
@@ -1990,6 +2234,34 @@ def _set_attr_if_exists(node, attr_name, value):
         return False
 
 
+def _set_outliner_color(node, color):
+    if not node or not cmds.objExists(node):
+        return False
+
+    enabled_attr = "{0}.useOutlinerColor".format(node)
+    color_attr = "{0}.outlinerColor".format(node)
+    if not cmds.objExists(enabled_attr) or not cmds.objExists(color_attr):
+        return False
+
+    try:
+        if cmds.getAttr(enabled_attr, lock=True):
+            cmds.setAttr(enabled_attr, lock=False)
+    except Exception:
+        pass
+    try:
+        if cmds.getAttr(color_attr, lock=True):
+            cmds.setAttr(color_attr, lock=False)
+    except Exception:
+        pass
+
+    try:
+        cmds.setAttr(enabled_attr, True)
+        cmds.setAttr(color_attr, color[0], color[1], color[2])
+        return True
+    except Exception:
+        return False
+
+
 def _unlock_display_attrs(node):
     for attr_name in DISPLAY_LOCK_ATTRS:
         _set_display_lock(node, attr_name, False)
@@ -2123,53 +2395,12 @@ def _set_auto_key_state(state):
 
 
 def _force_viewport_update():
-    """Force the DG and viewport to re-evaluate after a time/weight change.
-
-    Without this, Maya 2026 cached playback / Viewport 2.0 will frequently
-    skip re-evaluating keyed .visibility on currently-hidden DAG nodes, so
-    the time slider moves but the viewport keeps drawing the previous
-    target's state (meshes look hidden-but-painted or visible-but-blank).
-    """
-    # 1. Invalidate the cached playback cache for the current frame range.
-    #    Cached playback can hold stale visibility values on currently-hidden
-    #    DAG nodes; refresh(force=True) alone does not flush it.
-    try:
-        cmds.cacheEvaluator(invalidate=True)
-    except Exception:
-        pass
-    try:
-        cmds.flushIdleQueue()
-    except Exception:
-        pass
-
-    # 2. Force every managed key-group visibility plug to re-evaluate. This
-    #    is the surgical fix for "key value is 1 at current frame but
-    #    getAttr returns 0" — dgeval forces the animCurve to recompute.
-    try:
-        for root in _key_group_roots():
-            groups = cmds.listRelatives(
-                root, children=True, type="transform", fullPath=True,
-            ) or []
-            for group in groups:
-                for attr_name in ("visibility", "lodVisibility"):
-                    attr = "{0}.{1}".format(group, attr_name)
-                    if cmds.objExists(attr):
-                        try:
-                            cmds.dgeval(attr)
-                        except Exception:
-                            pass
-    except Exception:
-        pass
-
-    # 3. Mark everything dirty and force a viewport redraw.
-    try:
-        cmds.dgdirty(allPlugs=True)
-    except Exception:
-        pass
-    try:
-        cmds.refresh(force=True)
-    except Exception:
-        pass
+    """Do not force a viewport refresh from target-button callbacks."""
+    crash_logger.log_event(
+        "viewport_refresh_skipped",
+        action="safe_button_mode",
+    )
+    return
 
 
 def _ensure_key_group_root():
@@ -2198,6 +2429,8 @@ def _key_group_roots():
 
 def _write_key_group_root_metadata(root, targets=None, start_frame=None,
                                    interval=None):
+    _set_outliner_color(root, OUTLINER_KEY_ROOT_COLOR)
+
     _ensure_bool_attr(root, KEY_GROUP_ROOT_ATTR)
     cmds.setAttr("{0}.{1}".format(root, KEY_GROUP_ROOT_ATTR), True)
 
@@ -2255,6 +2488,23 @@ def _key_group_children(root):
     return result
 
 
+def _ordered_key_group_children(root):
+    children = _key_group_children(root)
+    order_by_child = dict((child, order) for order, child in enumerate(children))
+
+    def _sort_key(child):
+        label = _read_string_attr(child, KEY_GROUP_TARGET_ATTR) or \
+            _short_name(child)
+        if label == KEY_GROUP_BIND_POSE:
+            return (-1, order_by_child.get(child, 0), label)
+        index = _read_numeric_attr(child, KEY_GROUP_INDEX_ATTR, None)
+        if index is None:
+            return (100000, order_by_child.get(child, 0), label)
+        return (int(index), order_by_child.get(child, 0), label)
+
+    return sorted(children, key=_sort_key)
+
+
 def _key_group_targets(root):
     stored = [
         target for target in _read_string_attr(root, TARGETS_ATTR).split("|")
@@ -2293,7 +2543,90 @@ def _is_likely_key_group_child(child):
     return not name.startswith("_")
 
 
+def _write_key_group_lineup_root_state(root, active, offset):
+    _ensure_bool_attr(root, KEY_GROUP_LINEUP_ACTIVE_ATTR)
+    _ensure_double_attr(root, KEY_GROUP_LINEUP_OFFSET_ATTR)
+    try:
+        cmds.setAttr(
+            "{0}.{1}".format(root, KEY_GROUP_LINEUP_ACTIVE_ATTR),
+            bool(active),
+        )
+        cmds.setAttr(
+            "{0}.{1}".format(root, KEY_GROUP_LINEUP_OFFSET_ATTR),
+            float(offset),
+        )
+    except Exception:
+        pass
+
+
+def _lineup_direct_key_groups(groups, offset):
+    count = len(groups)
+    if not count:
+        return
+
+    center = (count - 1) / 2.0
+    for index, group in enumerate(groups):
+        label = _read_string_attr(group, KEY_GROUP_TARGET_ATTR) or \
+            _short_name(group)
+        _style_key_group_outliner_node(group, label, active=True)
+        _set_key_group_visibility(group, True)
+        _set_key_group_translate_x(
+            group,
+            (index - center) * float(offset),
+        )
+
+
+def _reset_direct_key_group_lineup(groups):
+    for group in groups:
+        _set_key_group_translate_x(group, 0.0)
+
+
+def _set_key_group_translate_x(group, value):
+    attr = "{0}.translateX".format(group)
+    if not cmds.objExists(attr):
+        return
+    auto_key_state = _set_auto_key_state(False)
+    try:
+        if cmds.getAttr(attr, lock=True):
+            cmds.setAttr(attr, lock=False)
+    except Exception:
+        pass
+    try:
+        try:
+            cmds.setAttr(attr, float(value))
+        except Exception:
+            pass
+    finally:
+        _set_auto_key_state(auto_key_state)
+
+
+def _apply_key_group_lineup(root, groups, offset, store_original=True):
+    del root, store_original
+    _lineup_direct_key_groups(groups, offset)
+
+
+def _set_key_group_visibility(group, visible):
+    attr = "{0}.visibility".format(group)
+    if not cmds.objExists(attr):
+        return
+    auto_key_state = _set_auto_key_state(False)
+    try:
+        if cmds.getAttr(attr, lock=True):
+            cmds.setAttr(attr, lock=False)
+    except Exception:
+        pass
+    try:
+        try:
+            cmds.setAttr(attr, bool(visible))
+        except Exception:
+            pass
+    finally:
+        _set_auto_key_state(auto_key_state)
+
+
 def _write_key_group_metadata(group, index, label):
+    _style_key_group_outliner_node(group, label, active=False)
+
     _ensure_bool_attr(group, KEY_GROUP_MANAGED_ATTR)
     cmds.setAttr("{0}.{1}".format(group, KEY_GROUP_MANAGED_ATTR), True)
 
@@ -2306,6 +2639,16 @@ def _write_key_group_metadata(group, index, label):
         label,
         type="string",
     )
+
+
+def _style_key_group_outliner_node(group, label, active=False):
+    if active:
+        color = OUTLINER_KEY_ACTIVE_COLOR
+    elif label == KEY_GROUP_BIND_POSE:
+        color = OUTLINER_KEY_BIND_COLOR
+    else:
+        color = OUTLINER_KEY_TARGET_COLOR
+    return _set_outliner_color(group, color)
 
 
 def _key_key_group_visibility(group, active_frame, key_items):
@@ -2338,24 +2681,22 @@ def _key_key_group_visibility(group, active_frame, key_items):
     except Exception:
         pass
 
-    try:
-        cmds.setAttr(attr, int(active_frame) == int(current_frame))
-    except Exception:
-        pass
+    _set_key_group_visibility(group, int(active_frame) == int(current_frame))
 
 
 def _apply_group_visibility(active_label):
     """Show only the key group matching ``active_label``; hide the rest.
 
-    Direct setAttr, no animCurves. Strips any leftover animCurves on each
-    group's .visibility before writing, so nothing fights the value.
+    Direct setAttr only. Normal target switching must not delete nodes or
+    rebuild animation connections.
     """
     for root in _key_group_roots():
+        _set_outliner_color(root, OUTLINER_KEY_ROOT_COLOR)
+        _set_key_group_visibility(root, True)
         for group in _key_group_children(root):
             attr = "{0}.visibility".format(group)
             if not cmds.objExists(attr):
                 continue
-            _strip_anim_curves(attr)
             try:
                 if cmds.getAttr(attr, lock=True):
                     cmds.setAttr(attr, lock=False)
@@ -2363,10 +2704,20 @@ def _apply_group_visibility(active_label):
                 pass
             label = _read_string_attr(group, KEY_GROUP_TARGET_ATTR) or \
                 _short_name(group)
-            try:
-                cmds.setAttr(attr, label == active_label)
-            except Exception:
-                pass
+            visible = label == active_label
+            _style_key_group_outliner_node(
+                group,
+                label,
+                active=visible,
+            )
+            crash_logger.log_event(
+                "key_group_visibility_set",
+                action="apply_group_visibility",
+                group=group,
+                label=label,
+                visible=visible,
+            )
+            _set_key_group_visibility(group, visible)
 
 
 def _strip_anim_curves(attr):
@@ -2676,11 +3027,6 @@ def _configure_targets(node, mesh, target_names):
         cmds.blendShape(node, edit=True, weight=(index, 0.0))
         _alias_weight(node, index, target_name)
 
-    try:
-        cmds.sculptTarget(node, edit=True, target=-1)
-    except Exception:
-        pass
-
 
 def _ensure_internal_target(node, mesh, index, target_name):
     if _target_index_exists(node, index):
@@ -2805,41 +3151,29 @@ def _write_metadata(node, target_names, start_frame, interval):
 
 
 def _key_transform_channels(meshes, target_count, start_frame, interval):
-    frames = _setup_frames(target_count, start_frame, interval)
-    _set_transform_keys(meshes, frames)
-    for mesh in meshes:
-        if cmds.objExists(mesh):
-            _write_transform_metadata(mesh, frames)
+    """Deprecated: transform-channel keying is disabled.
+
+    The tool must never write translate/rotate/scale keys on selected
+    hierarchy contents. Target buttons are now controlled by blendShape
+    weights and direct visibility on the generated key groups only.
+    """
+    del meshes, target_count, start_frame, interval
+    crash_logger.log_event(
+        "transform_key_generation_skipped",
+        action="generate_setup",
+        reason="direct_transform_keying_disabled",
+    )
+    return 0
 
 
 def _set_transform_keys(meshes, frames):
-    for mesh in meshes:
-        if not mesh or not cmds.objExists(mesh):
-            continue
-        for frame in frames:
-            for attr_name in TRANSFORM_KEY_ATTRS:
-                attr = "{0}.{1}".format(mesh, attr_name)
-                if not cmds.objExists(attr):
-                    continue
-                try:
-                    value = cmds.getAttr(attr)
-                    cmds.setKeyframe(attr, time=frame, value=value)
-                except Exception:
-                    pass
-
-        for attr_name in TRANSFORM_KEY_ATTRS:
-            attr = "{0}.{1}".format(mesh, attr_name)
-            if not cmds.objExists(attr):
-                continue
-            try:
-                cmds.keyTangent(
-                    attr,
-                    edit=True,
-                    inTangentType="step",
-                    outTangentType="step",
-                )
-            except Exception:
-                pass
+    del meshes, frames
+    crash_logger.log_event(
+        "transform_key_write_skipped",
+        action="set_transform_keys",
+        reason="direct_transform_keying_disabled",
+    )
+    return 0
 
 
 def _setup_frames(target_count, start_frame, interval):
@@ -2850,18 +3184,22 @@ def _setup_frames(target_count, start_frame, interval):
 
 
 def _write_transform_metadata(mesh, frames):
-    _ensure_bool_attr(mesh, TRANSFORM_KEYS_ATTR)
-    cmds.setAttr("{0}.{1}".format(mesh, TRANSFORM_KEYS_ATTR), True)
-
-    _ensure_string_attr(mesh, TRANSFORM_FRAMES_ATTR)
-    cmds.setAttr(
-        "{0}.{1}".format(mesh, TRANSFORM_FRAMES_ATTR),
-        "|".join(str(int(frame)) for frame in frames),
-        type="string",
+    del mesh, frames
+    crash_logger.log_event(
+        "transform_metadata_write_skipped",
+        action="write_transform_metadata",
+        reason="direct_transform_keying_disabled",
     )
+    return 0
 
 
 def _clear_transform_keys(records, extra_nodes=None):
+    """Remove only obsolete transform-key metadata, never transform keys.
+
+    Older versions marked selected children/groups with cbsTransform* attrs
+    and wrote translate/rotate/scale keys. Removing keys here is no longer
+    safe because scenes may contain unrelated animation on those channels.
+    """
     meshes = []
     seen = set()
     for record in records or []:
@@ -2875,19 +3213,6 @@ def _clear_transform_keys(records, extra_nodes=None):
             _append_unique(meshes, seen, node)
 
     for node in meshes:
-        frames = _transform_frames_from_metadata(node)
-        if not frames:
-            frames = _transform_frames_from_record(node, records)
-        for attr_name in TRANSFORM_KEY_ATTRS:
-            attr = "{0}.{1}".format(node, attr_name)
-            if not cmds.objExists(attr):
-                continue
-            for frame in frames:
-                try:
-                    cmds.cutKey(attr, time=(frame, frame), clear=True)
-                except Exception:
-                    pass
-            _delete_empty_anim_curves(attr)
         _remove_transform_metadata(node)
 
 
@@ -2914,6 +3239,57 @@ def _transform_frames_from_record(mesh, records):
             record.get("interval", DEFAULT_INTERVAL),
         )
     return []
+
+
+def _apply_transform_keys_at_frame(frame):
+    crash_logger.log_event(
+        "transform_keys_apply_skipped",
+        action="apply_transform_keys",
+        frame=frame,
+        reason="direct_transform_writes_disabled",
+    )
+    return 0
+
+
+def _keyed_attr_value_at_frame(attr, frame):
+    try:
+        values = cmds.keyframe(
+            attr,
+            query=True,
+            time=(frame, frame),
+            valueChange=True,
+        ) or []
+    except Exception:
+        values = []
+    if values:
+        return values[-1]
+
+    try:
+        frames = cmds.keyframe(
+            attr,
+            query=True,
+            timeChange=True,
+        ) or []
+    except Exception:
+        return None
+
+    previous = [
+        keyed_frame for keyed_frame in frames
+        if int(round(float(keyed_frame))) <= int(frame)
+    ]
+    if not previous:
+        return None
+    nearest = max(previous)
+    try:
+        values = cmds.keyframe(
+            attr,
+            query=True,
+            time=(nearest, nearest),
+            valueChange=True,
+        ) or []
+    except Exception:
+        values = []
+    return values[-1] if values else None
 
 
 def _remove_transform_metadata(mesh):
@@ -2981,7 +3357,23 @@ def _key_targets(node, target_names, start_frame, interval):
 def _set_active_weights(node, count, active_index):
     for index in range(count):
         value = 1.0 if index == active_index else 0.0
+        crash_logger.log_event(
+            "maya_call_begin",
+            action="set_blendshape_weight",
+            call="cmds.blendShape",
+            node=node,
+            weight_index=index,
+            value=value,
+        )
         cmds.blendShape(node, edit=True, weight=(index, value))
+        crash_logger.log_event(
+            "maya_call_end",
+            action="set_blendshape_weight",
+            call="cmds.blendShape",
+            node=node,
+            weight_index=index,
+            value=value,
+        )
 
 
 def _mesh_from_blendshape(node):

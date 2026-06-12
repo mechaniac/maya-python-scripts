@@ -106,8 +106,8 @@ _SHELF_TOOLTIPS = {
         'BindPose, and keyed modeling poses.'
     ),
     'SceneTools.png': (
-        'Open Scene Tools for cleanup, UV/layout helpers, layout tools, '
-        'and scene utilities.'
+        'Open Scene Tools for cleanup, UV/layout helpers, chain creation, '
+        'layout tools, and scene utilities.'
     ),
     'RenderLayerSetter.png': (
         'Run Render Layer Setter for render layer setup.'
@@ -349,6 +349,7 @@ _BUTTONS = [
         'label': 'Blend\nSetup',
         'image': 'BlendShapeSetup.png',
         'modules': [
+            'maya_display',
             'ui_word_weighting',
             'blendshape_setup.logic',
             'blendshape_setup.ui',
@@ -359,7 +360,9 @@ _BUTTONS = [
         'label': 'Tools',
         'image': 'SceneTools.png',
         'modules': [
+            'maya_display',
             'ui_word_weighting',
+            'tools_window.chain_creator',
             'tools_window.logic',
             'tools_window.ui',
         ],
@@ -404,11 +407,22 @@ def _build_reload_command(btn):
         lines.append('import {m} as {a}; importlib.reload({a})'.format(m=mod, a=alias))
     for pkg in hard:
         lines.append('import {p}'.format(p=pkg))
+    entry_module = _entry_module(btn['entry'])
+    if entry_module:
+        lines.append('import {m}'.format(m=entry_module))
     lines.append(btn['entry'])
     return '\n'.join(lines) + '\n'
 
 
 # ── installer ─────────────────────────────────────────────────────
+
+def _entry_module(entry):
+    call_target = entry.split('(', 1)[0].strip()
+    parts = [part for part in call_target.split('.') if part]
+    if len(parts) < 2:
+        return None
+    return '.'.join(parts[:-1])
+
 
 def _ensure_shelf():
     """Create the shelf if it doesn't already exist.  Return its full path."""

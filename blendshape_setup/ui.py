@@ -2,6 +2,8 @@
 
 import maya.cmds as cmds
 
+import crash_logger
+import maya_display
 import ui_word_weighting
 from . import logic
 
@@ -17,8 +19,18 @@ for _legacy_name in (
 
 WINDOW_NAME = "blendshapeSetupWin"
 WINDOW_TITLE = "Blendshape Setup"
-DEFAULT_WIDTH = 300
-MIN_WIDTH = 260
+DEFAULT_WIDTH = 280
+MIN_WIDTH = 240
+DEFAULT_HEIGHT = 520
+WINDOW_PAD = 3
+SECTION_MARGIN = 3
+SECTION_ROW_SPACING = 2
+BUTTON_HEIGHT = 20
+TARGET_BUTTON_HEIGHT = 24
+PRIMARY_BUTTON_HEIGHT = 24
+TEXT_ROW_HEIGHT = 18
+STATUS_HEIGHT = 34
+HALF_ROW_WIDTH = 116
 
 THEME = {
     "window": (0.14, 0.15, 0.16),
@@ -35,7 +47,7 @@ THEME = {
 TOOLTIPS = {
     "header": "Creates one synchronized blendShape target set across multiple selected polygon meshes.",
     "subtitle": "Each target becomes an editable modelling pose and a keyed time-slider state.",
-    "generate_section": "Set up generated blendShape names, timing, transform keys, and editor behavior.",
+    "generate_section": "Set up generated blendShape names, timing, key groups, and editor behavior.",
     "targets_section": "Buttons for BindPose and generated targets. Each button activates one keyed time-slider state.",
     "actions_section": "Utility actions for finding, resetting, or leaving the generated edit setup.",
     "wire_tests_section": "Isolated viewport display tests for selected polygon meshes. Use these on wrap drivers like wrapSkull or wrapJaw to find the method Maya respects in this scene.",
@@ -49,11 +61,14 @@ TOOLTIPS = {
     "wrap_distance": "Maximum wrap influence distance in scene units. Vertices farther away from the wrap driver receive 0 wrap weight; 0 disables the distance limit.",
     "target_names": "Names for the blendShape weight aliases and final target buttons. Invalid Maya characters are cleaned on generate.",
     "open_editor": "When enabled, Generate opens Maya's Blend Shape or Shape Editor once. Target buttons keep it hidden.",
-    "generate": "Generate blendShapes for meshes, transform keys for selected/descendant transforms plus mesh parent groups, and managed wraps from WRAP*/WRAPTarget groups.",
+    "generate": "Generate blendShapes for meshes, direct key-group visibility, and managed wraps from WRAP*/WRAPTarget groups. Child transforms are left untouched.",
     "remove": "Delete all blendShape, wrap, and helper nodes created by this tool and return to a clean setup state.",
     "discover": "Scan the scene for blendShape setups created by this tool and rebuild the target button list.",
     "all_off": "Set all generated target weights to 0, jump to the start frame, and keep the current selection.",
+    "none": "Set all generated target weights to 0 and hide every generated key group.",
     "bind_pose": "Jump to the setup start frame and set every generated blendShape target to 0.",
+    "lineup": "Toggle inspection mode: show BindPose and all target groups, spread along the X axis, centered around the scene origin.",
+    "lineup_offset": "Distance in scene units between neighboring pose groups while lineup mode is active.",
     "key_groups": "Create or update a separate BlendshapeKeyGroups hierarchy with one visibility-keyed empty group per target button.",
     "bake": "Bake every blendshape state into its key group as a static mesh with no construction history. Source meshes are hidden so target buttons just toggle which baked set is shown.",
     "stop_edit": "Leave blendShape sculpt/edit mode without deleting the generated setup.",
@@ -72,12 +87,26 @@ _records = []
 _active_wire_test = None
 _active_target_index = None
 _target_switch_busy = False
+_button_action_busy = False
+_button_action_label = None
+_button_action_auto_key_state = None
+_lineup_active = False
+_NONE_INDEX = -2
 _BIND_POSE_INDEX = -1
+_BUTTON_RELEASE_IDLE_STEPS = 4
 
 
 def show(move_to_primary=False):
     global _active_wire_test, _active_target_index, _target_switch_busy
+    global _button_action_busy, _button_action_label
+    global _button_action_auto_key_state, _lineup_active
 
+    crash_logger.log_event(
+        "window_show",
+        action=WINDOW_TITLE,
+        window=WINDOW_NAME,
+    )
+    maya_display.ensure_display_affected()
     _kill_legacy_wrap_display_jobs()
     if cmds.window(WINDOW_NAME, exists=True):
         cmds.deleteUI(WINDOW_NAME)
@@ -87,11 +116,15 @@ def show(move_to_primary=False):
     _active_wire_test = None
     _active_target_index = _BIND_POSE_INDEX
     _target_switch_busy = False
+    _button_action_busy = False
+    _button_action_label = None
+    _button_action_auto_key_state = None
+    _lineup_active = False
 
     cmds.window(
         WINDOW_NAME,
         title=WINDOW_TITLE,
-        widthHeight=(DEFAULT_WIDTH, 620),
+        widthHeight=(DEFAULT_WIDTH, DEFAULT_HEIGHT),
         sizeable=True,
     )
 
@@ -106,8 +139,8 @@ def show(move_to_primary=False):
     main = cmds.columnLayout(
         parent=scroll,
         adjustableColumn=True,
-        rowSpacing=5,
-        columnAttach=("both", 5),
+        rowSpacing=SECTION_ROW_SPACING,
+        columnAttach=("both", WINDOW_PAD),
     )
     _apply_bg(main, THEME["window"])
 
@@ -121,7 +154,7 @@ def show(move_to_primary=False):
         parent=header,
         label="// multi-object blendshape modelling",
         align="left",
-        height=16,
+        height=14,
         font="smallObliqueLabelFont",
     )
     _annotate(subtitle, TOOLTIPS["subtitle"])
@@ -136,14 +169,14 @@ def show(move_to_primary=False):
         parent=setup,
         label="Selected polygon meshes: 0",
         align="left",
-        height=20,
+        height=TEXT_ROW_HEIGHT,
     )
     _annotate(_ui["selection"], TOOLTIPS["selection"])
     template_row = cmds.rowLayout(
         parent=setup,
         numberOfColumns=2,
         adjustableColumn=1,
-        columnWidth2=(126, 126),
+        columnWidth2=(HALF_ROW_WIDTH, HALF_ROW_WIDTH),
         columnAttach2=("both", "both"),
     )
     _button(template_row, "Refresh Count", _refresh_selection,
@@ -197,13 +230,13 @@ def show(move_to_primary=False):
         parent=setup,
         label="Target Names",
         align="left",
-        height=20,
+        height=TEXT_ROW_HEIGHT,
     )
     _annotate(target_names_label, TOOLTIPS["target_names"])
     _ui["target_name_col"] = cmds.columnLayout(
         parent=setup,
         adjustableColumn=True,
-        rowSpacing=3,
+        rowSpacing=SECTION_ROW_SPACING,
     )
     _apply_bg(_ui["target_name_col"], THEME["panel"])
     _ui["target_name_fields"] = []
@@ -221,7 +254,7 @@ def show(move_to_primary=False):
         "Generate Blend Shapes",
         _generate_or_remove,
         THEME["create"],
-        height=32,
+        height=PRIMARY_BUTTON_HEIGHT,
         tooltip=TOOLTIPS["generate"],
     )
 
@@ -231,10 +264,33 @@ def show(move_to_primary=False):
         (0.21, 0.24, 0.32),
         tooltip=TOOLTIPS["targets_section"],
     )
+    _ui["lineup_toggle"] = _button(
+        targets,
+        "Lineup All Poses",
+        _toggle_lineup,
+        THEME["target"],
+        tooltip=TOOLTIPS["lineup"],
+    )
+    _ui["lineup_offset"] = cmds.floatSliderGrp(
+        parent=targets,
+        label="Lineup Offset",
+        field=True,
+        minValue=1.0,
+        maxValue=200.0,
+        fieldMinValue=0.0,
+        fieldMaxValue=1000.0,
+        value=logic.DEFAULT_LINEUP_OFFSET,
+        columnWidth3=(78, 44, 100),
+        dragCommand=_lineup_offset_changed,
+        changeCommand=_lineup_offset_changed,
+    )
+    _apply_bg(_ui["lineup_offset"], THEME["input"])
+    _annotate(_ui["lineup_offset"], TOOLTIPS["lineup_offset"])
+
     _ui["target_col"] = cmds.columnLayout(
         parent=targets,
         adjustableColumn=True,
-        rowSpacing=5,
+        rowSpacing=SECTION_ROW_SPACING,
     )
     _apply_bg(_ui["target_col"], THEME["panel"])
 
@@ -248,7 +304,7 @@ def show(move_to_primary=False):
         parent=actions,
         numberOfColumns=2,
         adjustableColumn=1,
-        columnWidth2=(126, 126),
+        columnWidth2=(HALF_ROW_WIDTH, HALF_ROW_WIDTH),
         columnAttach2=("both", "both"),
     )
     _button(action_row, "Discover Setup", _discover,
@@ -275,7 +331,7 @@ def show(move_to_primary=False):
         label="Select polygon meshes, choose a target count, then generate.",
         align="left",
         wordWrap=True,
-        height=44,
+        height=STATUS_HEIGHT,
     )
     _annotate(_ui["status"], TOOLTIPS["status"])
 
@@ -354,12 +410,11 @@ def _generate(*_):
     _refresh_selection()
     _set_status_with_auto_key(
         "Generated {0} target(s) on {1} mesh(es), {2} wrap(s), "
-        "{3} helper(s), {4} transform-keyed node(s).".format(
+        "{3} helper(s). Child transforms untouched.".format(
             len(_records[0]["targets"]) if _records else 0,
             len(_records),
             len(logic.discover_wrap_setups()),
             len(logic.discover_helper_nodes()),
-            len(logic.discover_transform_key_nodes()),
         )
     )
     _update_generate_toggle()
@@ -367,7 +422,7 @@ def _generate(*_):
 
 
 def _discover(*_, update_status=True):
-    global _records, _active_target_index
+    global _records, _active_target_index, _lineup_active
     _records = logic.discover_setups()
     live_count = len(logic.discover_blendshape_setups())
     key_group_count = len(logic.discover_key_group_setups())
@@ -375,14 +430,17 @@ def _discover(*_, update_status=True):
     helper_count = len(logic.discover_helper_nodes())
     transform_key_count = len(logic.discover_transform_key_nodes())
     _active_target_index = _target_index_from_current_time()
+    _lineup_active = False
+    logic.style_key_group_outliner(active_label=_active_key_group_label())
     _rebuild_target_buttons()
+    _update_lineup_button_state()
     _update_generate_toggle()
     if update_status:
         if _records or wrap_count or helper_count or transform_key_count:
             _set_status(
                 "Discovered {0} blendShape node(s), {1} key-group setup(s), "
-                "{2} wrap node(s), {3} helper node(s), and transform keys "
-                "on {4} node(s).".format(
+                "{2} wrap node(s), {3} helper node(s), and obsolete "
+                "transform metadata on {4} node(s).".format(
                     live_count,
                     key_group_count,
                     wrap_count,
@@ -395,17 +453,33 @@ def _discover(*_, update_status=True):
         _finish_deferred()
 
 
+def _active_key_group_label():
+    if _active_target_index == _BIND_POSE_INDEX:
+        return logic.KEY_GROUP_BIND_POSE
+    if _active_target_index == _NONE_INDEX:
+        return None
+    if _active_target_index is None or _active_target_index < 0:
+        return None
+    if not _records:
+        return None
+    targets = _records[0].get("targets") or []
+    if _active_target_index >= len(targets):
+        return None
+    return targets[_active_target_index]
+
+
 def _activate(index):
     if not _begin_target_switch():
         return
-    _execute_deferred(lambda i=index: _activate_now(i))
+    _activate_now(index)
 
 
 def _activate_now(index):
-    global _active_target_index
+    global _active_target_index, _lineup_active
 
     try:
         try:
+            _disable_lineup_if_active()
             frame = logic.activate_target(
                 index,
                 records=_records,
@@ -417,12 +491,16 @@ def _activate_now(index):
             return
 
         _active_target_index = index
+        _lineup_active = False
         _update_target_button_states()
+        _update_lineup_button_state()
         target_name = _records[0]["targets"][index]
         _set_status_with_auto_key(
-            "Editing {0} at frame {1}.".format(target_name, frame)
+            "Editing {0}. Target frame is {1}; timeline not moved.".format(
+                target_name,
+                frame,
+            )
         )
-        logic.hide_blendshape_editor()
     finally:
         _end_target_switch_deferred()
 
@@ -430,22 +508,55 @@ def _activate_now(index):
 def _activate_all_off(*_):
     if not _begin_target_switch():
         return
-    _execute_deferred(_activate_all_off_now)
+    _activate_all_off_now()
 
 
 def _activate_all_off_now():
-    global _active_target_index
+    global _active_target_index, _lineup_active
 
     try:
         try:
+            _disable_lineup_if_active()
             frame = logic.activate_all_off(records=_records)
         except Exception as exc:
             _set_status(str(exc), warning=True)
             cmds.warning(str(exc))
             return
         _active_target_index = _BIND_POSE_INDEX
+        _lineup_active = False
         _update_target_button_states()
-        _set_status_with_auto_key("BindPose at frame {0}.".format(frame))
+        _update_lineup_button_state()
+        _set_status_with_auto_key(
+            "BindPose active. Target frame is {0}; timeline not moved.".format(
+                frame
+            )
+        )
+    finally:
+        _end_target_switch_deferred()
+
+
+def _activate_none(*_):
+    if not _begin_target_switch():
+        return
+    _activate_none_now()
+
+
+def _activate_none_now():
+    global _active_target_index, _lineup_active
+
+    try:
+        try:
+            _disable_lineup_if_active()
+            logic.activate_none(records=_records)
+        except Exception as exc:
+            _set_status(str(exc), warning=True)
+            cmds.warning(str(exc))
+            return
+        _active_target_index = _NONE_INDEX
+        _lineup_active = False
+        _update_target_button_states()
+        _update_lineup_button_state()
+        _set_status("No blendshape target group visible.")
     finally:
         _end_target_switch_deferred()
 
@@ -479,6 +590,9 @@ def _release_target_switch():
 
 def _set_target_controls_enabled(enabled):
     controls = []
+    none_button = _ui.get("none_button")
+    if none_button:
+        controls.append(none_button)
     bind_button = _ui.get("bind_pose_button")
     if bind_button:
         controls.append(bind_button)
@@ -508,6 +622,7 @@ def _generate_key_groups(*_):
         cmds.warning(str(exc))
         return
 
+    logic.style_key_group_outliner(active_label=_active_key_group_label())
     _set_status(
         "Generated key groups under {0}: {1} group(s).".format(
             result.get("root", ""),
@@ -517,10 +632,93 @@ def _generate_key_groups(*_):
     _finish_deferred()
 
 
+def _toggle_lineup(*_):
+    global _lineup_active
+
+    target_state = not _lineup_active
+    try:
+        count = logic.set_key_group_lineup(
+            target_state,
+            offset=_lineup_offset_value(),
+            active_label=_active_key_group_label(),
+        )
+    except Exception as exc:
+        _set_status(str(exc), warning=True)
+        cmds.warning(str(exc))
+        return
+
+    _lineup_active = target_state
+    _update_lineup_button_state()
+    if _lineup_active:
+        _set_status(
+            "Lineup mode: showing {0} pose group(s) along X.".format(count)
+        )
+    else:
+        _set_status("Lineup mode off; restored active pose visibility.")
+    _finish_deferred()
+
+
+def _lineup_offset_changed(*_):
+    if not _lineup_active:
+        return
+    try:
+        count = logic.update_key_group_lineup_offset(_lineup_offset_value())
+    except Exception as exc:
+        _set_status(str(exc), warning=True)
+        cmds.warning(str(exc))
+        return
+    _set_status("Updated lineup spacing for {0} pose group(s).".format(count))
+
+
+def _lineup_offset_value():
+    field = _ui.get("lineup_offset")
+    if field and cmds.control(field, exists=True):
+        try:
+            return cmds.floatSliderGrp(field, query=True, value=True)
+        except Exception:
+            pass
+    return logic.DEFAULT_LINEUP_OFFSET
+
+
+def _disable_lineup_if_active():
+    global _lineup_active
+
+    if not _lineup_active:
+        return
+    logic.set_key_group_lineup(
+        False,
+        offset=_lineup_offset_value(),
+        active_label=_active_key_group_label(),
+    )
+    _lineup_active = False
+    _update_lineup_button_state()
+
+
+def _update_lineup_button_state():
+    button = _ui.get("lineup_toggle")
+    if button and cmds.control(button, exists=True):
+        if _lineup_active:
+            cmds.button(button, edit=True, label="[ON] Lineup All Poses",
+                        enable=True)
+            _apply_bg(button, THEME["create"])
+        else:
+            cmds.button(button, edit=True, label="Lineup All Poses",
+                        enable=True)
+            _apply_bg(button, THEME["target"])
+
+    slider = _ui.get("lineup_offset")
+    if slider and cmds.control(slider, exists=True):
+        try:
+            cmds.floatSliderGrp(slider, edit=True, enable=True)
+        except Exception:
+            pass
+
+
 def _bake_targets(*_):
-    global _active_target_index
+    global _active_target_index, _lineup_active
 
     try:
+        _disable_lineup_if_active()
         result = logic.bake_targets(records=_records)
     except Exception as exc:
         _set_status(str(exc), warning=True)
@@ -528,7 +726,9 @@ def _bake_targets(*_):
         return
 
     _active_target_index = _BIND_POSE_INDEX
+    _lineup_active = False
     _update_target_button_states()
+    _update_lineup_button_state()
     _set_status(
         "Baked {0} mesh state(s) across {1} key group(s).".format(
             result.get("bakes", 0),
@@ -585,7 +785,7 @@ def _reset_wire_tests(*_):
 
 
 def _remove_setup(*_):
-    global _records, _active_target_index
+    global _records, _active_target_index, _lineup_active
 
     try:
         removed_count = logic.remove_setup(records=_records)
@@ -596,11 +796,13 @@ def _remove_setup(*_):
 
     _records = []
     _active_target_index = None
+    _lineup_active = False
     _rebuild_target_buttons()
+    _update_lineup_button_state()
     _update_generate_toggle()
     _set_status(
         "Removed {0} blendShape node(s), {1} wrap node(s), "
-        "{2} helper node(s), transform keys on {3} node(s), "
+        "{2} helper node(s), transform metadata on {3} node(s), "
         "{4} wrap influence attr(s), and {5} key group root(s).".format(
             removed_count.get("blendShapes", 0),
             removed_count.get("wraps", 0),
@@ -679,6 +881,7 @@ def _rebuild_target_buttons():
         return
 
     _ui["target_buttons"] = {}
+    _ui["none_button"] = None
     _ui["bind_pose_button"] = None
     children = cmds.columnLayout(
         target_col,
@@ -693,7 +896,7 @@ def _rebuild_target_buttons():
             parent=target_col,
             label="No generated targets yet.",
             align="left",
-            height=24,
+            height=TEXT_ROW_HEIGHT,
         )
         _annotate(empty, TOOLTIPS["empty_targets"])
         return
@@ -701,12 +904,21 @@ def _rebuild_target_buttons():
     first = _records[0]
     targets = first["targets"]
 
+    _ui["none_button"] = _button(
+        target_col,
+        "None",
+        _activate_none,
+        THEME["target"],
+        height=TARGET_BUTTON_HEIGHT,
+        tooltip=TOOLTIPS["none"],
+    )
+
     _ui["bind_pose_button"] = _button(
         target_col,
         "BindPose",
         _activate_all_off,
         THEME["target"],
-        height=32,
+        height=TARGET_BUTTON_HEIGHT,
         tooltip=TOOLTIPS["bind_pose"],
     )
 
@@ -716,11 +928,10 @@ def _rebuild_target_buttons():
             target_name,
             lambda *_args, i=index: _activate(i),
             THEME["target"],
-            height=32,
+            height=TARGET_BUTTON_HEIGHT,
             tooltip=(
                 "Activate {0}: jump to its keyed frame, set only this "
-                "target to 1, ensure transform keys, and enter blendShape "
-                "edit mode while keeping the current selection."
+                "target to 1, and keep the current selection."
             ).format(target_name),
         )
         _ui["target_buttons"][index] = button
@@ -729,6 +940,15 @@ def _rebuild_target_buttons():
 
 def _update_target_button_states():
     buttons = _ui.get("target_buttons", {})
+    none_button = _ui.get("none_button")
+    if none_button and cmds.control(none_button, exists=True):
+        if _active_target_index == _NONE_INDEX:
+            cmds.button(none_button, edit=True, label="[ON] None")
+            _apply_bg(none_button, THEME["create"])
+        else:
+            cmds.button(none_button, edit=True, label="None")
+            _apply_bg(none_button, THEME["target"])
+
     bind_button = _ui.get("bind_pose_button")
     if bind_button and cmds.control(bind_button, exists=True):
         if _active_target_index == _BIND_POSE_INDEX:
@@ -803,7 +1023,7 @@ def _sync_target_name_fields(*_):
             parent=name_col,
             numberOfColumns=2,
             adjustableColumn=2,
-            columnWidth2=(24, 220),
+            columnWidth2=(20, 190),
             columnAttach2=("both", "both"),
         )
         index_label = cmds.text(parent=row, label=str(index + 1), align="left")
@@ -844,10 +1064,14 @@ def _wire_test_buttons(parent):
             row_kwargs["columnAttach1"] = "both"
         else:
             row_kwargs["columnAttach2"] = ("both", "both")
-            row_kwargs["columnWidth2"] = (126, 126)
+            row_kwargs["columnWidth2"] = (HALF_ROW_WIDTH, HALF_ROW_WIDTH)
         row = cmds.rowLayout(**row_kwargs)
         if len(row_methods) == 2:
-            cmds.rowLayout(row, edit=True, columnWidth2=(126, 126))
+            cmds.rowLayout(
+                row,
+                edit=True,
+                columnWidth2=(HALF_ROW_WIDTH, HALF_ROW_WIDTH),
+            )
 
         for method in row_methods:
             method_id = method["id"]
@@ -906,10 +1130,15 @@ def _field_row(parent, label, key, field_type="int", value=0,
         parent=parent,
         numberOfColumns=2,
         adjustableColumn=2,
-        columnWidth2=(92, 160),
+        columnWidth2=(84, 136),
         columnAttach2=("both", "both"),
     )
-    label_control = cmds.text(parent=row, label=label, align="left")
+    label_control = cmds.text(
+        parent=row,
+        label=label,
+        align="left",
+        height=TEXT_ROW_HEIGHT,
+    )
     _annotate(label_control, tooltip)
 
     kwargs = {}
@@ -939,15 +1168,15 @@ def _section(parent, label, color, tooltip=""):
         label=label,
         collapsable=True,
         collapse=False,
-        marginWidth=5,
-        marginHeight=5,
+        marginWidth=SECTION_MARGIN,
+        marginHeight=SECTION_MARGIN,
     )
     _apply_bg(frame, color)
     _annotate(frame, tooltip)
     body = cmds.columnLayout(
         parent=frame,
         adjustableColumn=True,
-        rowSpacing=4,
+        rowSpacing=SECTION_ROW_SPACING,
     )
     _apply_bg(body, THEME["panel"])
     _annotate(body, tooltip)
@@ -959,7 +1188,7 @@ def _title(parent, label, color, tooltip=""):
         parent=parent,
         label=label,
         align="center",
-        height=24,
+        height=TEXT_ROW_HEIGHT,
         font="boldLabelFont",
     )
     _apply_bg(control, color)
@@ -967,16 +1196,153 @@ def _title(parent, label, color, tooltip=""):
     return control
 
 
-def _button(parent, label, command, color, height=24, tooltip=""):
+def _button(parent, label, command, color, height=BUTTON_HEIGHT, tooltip=""):
     control = cmds.button(
         parent=parent,
         label=label,
         height=height,
-        command=command,
+        command=_safe_button_command(label, command),
     )
+    _ui.setdefault("buttons", []).append(control)
     _apply_bg(control, color)
     _annotate(control, tooltip)
     return control
+
+
+def _safe_button_command(label, command):
+    def _wrapped(*args):
+        _run_button_action(label, command, args)
+    return _wrapped
+
+
+def _run_button_action(label, command, args):
+    global _button_action_busy, _button_action_label
+    global _button_action_auto_key_state
+
+    crash_logger.log_event(
+        "button_pressed",
+        action=label,
+        window=WINDOW_NAME,
+        maya=crash_logger.maya_state(),
+    )
+
+    if _button_action_busy:
+        crash_logger.log_event(
+            "button_ignored_busy",
+            action=label,
+            active_action=_button_action_label,
+        )
+        _set_status(
+            "Still finishing {0}; ignored {1}.".format(
+                _button_action_label or "previous action",
+                label,
+            ),
+            warning=True,
+        )
+        return
+
+    _button_action_busy = True
+    _button_action_label = label
+    _button_action_auto_key_state = _set_auto_key_state(False)
+    crash_logger.log_event(
+        "button_auto_key_disabled",
+        action=label,
+        window=WINDOW_NAME,
+        previous_state=bool(_button_action_auto_key_state),
+    )
+    _set_all_buttons_enabled(False)
+    _set_status("Running {0}...".format(label))
+
+    def _run():
+        crash_logger.log_event(
+            "button_start",
+            action=label,
+            window=WINDOW_NAME,
+            maya=crash_logger.maya_state(),
+        )
+        try:
+            command(*args)
+            crash_logger.log_event(
+                "button_return",
+                action=label,
+                window=WINDOW_NAME,
+                maya=crash_logger.maya_state(),
+            )
+        except Exception as exc:
+            crash_logger.log_exception(
+                "button_exception",
+                action=label,
+                exc=exc,
+            )
+            _set_status(str(exc), warning=True)
+            cmds.warning(str(exc))
+        finally:
+            _release_button_action_deferred(label)
+
+    _execute_deferred(_run)
+
+
+def _release_button_action_deferred(label, idle_steps=None):
+    if idle_steps is None:
+        idle_steps = _BUTTON_RELEASE_IDLE_STEPS
+    if idle_steps <= 0:
+        _release_button_action(label)
+        return
+    _execute_deferred(
+        lambda: _release_button_action_deferred(label, idle_steps - 1)
+    )
+
+
+def _release_button_action(label):
+    global _button_action_busy, _button_action_label
+    global _button_action_auto_key_state
+
+    if _button_action_label != label:
+        return
+
+    crash_logger.log_event(
+        "button_release",
+        action=label,
+        window=WINDOW_NAME,
+        maya=crash_logger.maya_state(),
+    )
+    if _button_action_auto_key_state is not None:
+        _set_auto_key_state(_button_action_auto_key_state)
+        crash_logger.log_event(
+            "button_auto_key_restored",
+            action=label,
+            window=WINDOW_NAME,
+            restored_state=bool(_button_action_auto_key_state),
+        )
+    _button_action_busy = False
+    _button_action_label = None
+    _button_action_auto_key_state = None
+    _set_all_buttons_enabled(True)
+    _update_target_button_states()
+    _update_lineup_button_state()
+    _update_generate_toggle()
+    _update_wire_test_toggles()
+
+
+def _set_all_buttons_enabled(enabled):
+    for control in list(_ui.get("buttons") or []):
+        if control and cmds.control(control, exists=True):
+            try:
+                cmds.button(control, edit=True, enable=bool(enabled))
+            except Exception:
+                pass
+
+
+def _set_auto_key_state(enabled):
+    try:
+        previous = bool(cmds.autoKeyframe(query=True, state=True))
+    except Exception:
+        previous = False
+    try:
+        cmds.autoKeyframe(state=bool(enabled))
+    except Exception:
+        pass
+    return previous
 
 
 def _apply_bg(control, color):
